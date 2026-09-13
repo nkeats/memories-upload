@@ -139,7 +139,15 @@ async function dateOf(file){
   try{
     const x = await exifr.parse(file, ['DateTimeOriginal','CreateDate','ModifyDate']);
     const d = x?.DateTimeOriginal || x?.CreateDate || x?.ModifyDate;
-    if (d instanceof Date && !isNaN(d)) return { at:d.toISOString(), src:'exif' };
+    if (d instanceof Date && !isNaN(d)){
+      // A photo's timestamp carries NO timezone — the camera just wrote
+      // "19 Oct, 04:17". The browser assumes that means local time and shifts
+      // it by wherever the uploader happens to be sitting, which drags a
+      // sunrise in Cambodia back into the previous evening in Auckland.
+      // Undo that shift so what we store is the camera's own reading.
+      const wall = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+      return { at: wall.toISOString(), src:'exif' };
+    }
   }catch(e){ /* no EXIF, or a format exifr can't read — fall through */ }
 
   const m = file.name.match(/(20\d{2})[-_]?(\d{2})[-_]?(\d{2})/);
