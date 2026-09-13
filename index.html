@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Add your photos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#E7E9E4; --print:#FDFDFC; --ink:#1F2D2B; --ink-soft:#54635F;
+  --ink-faint:#8B9793; --rule:#CDD2CB; --viridian:#12564C; --viridian-lift:#1A6F62;
+  --tungsten:#C8912F; --warn:#8A4B2A;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding:28px 20px 90px}
+h1{font-family:"Newsreader",Georgia,serif;font-weight:400;
+  font-size:clamp(27px,5.2vw,36px);line-height:1.15;margin:0 0 8px}
+.sub{color:var(--ink-soft);margin:0 0 26px;font-size:16px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--rule);margin-bottom:26px}
+.tab{background:none;border:none;border-bottom:2px solid transparent;padding:9px 14px;
+  font:inherit;font-size:15px;color:var(--ink-faint);cursor:pointer;margin-bottom:-1px}
+.tab[aria-selected=true]{color:var(--ink);border-bottom-color:var(--viridian);font-weight:600}
+.card{background:var(--print);border:1px solid var(--rule);border-radius:3px;padding:20px 22px;margin-bottom:18px}
+label.fl{display:block;font-weight:600;font-size:15px;margin-bottom:4px}
+.hint{color:var(--ink-faint);font-size:14px;margin:0 0 10px}
+input[type=text]{width:100%;background:var(--print);border:1px solid var(--rule);
+  border-radius:3px;padding:11px 13px;font:inherit;color:var(--ink)}
+input[type=text]:focus{outline:none;border-color:var(--viridian);box-shadow:0 0 0 3px rgba(18,86,76,.14)}
+.drop{border:2px dashed var(--rule);border-radius:4px;background:var(--print);
+  padding:38px 22px;text-align:center;cursor:pointer;transition:all .15s}
+.drop:hover,.drop.over{border-color:var(--viridian);background:#F4F7F3}
+.drop b{display:block;font-family:"Newsreader",Georgia,serif;font-size:21px;font-weight:500;margin-bottom:5px}
+.drop span{color:var(--ink-faint);font-size:14.5px}
+button.go{background:var(--viridian);color:#fff;border:1px solid var(--viridian);border-radius:3px;
+  padding:12px 26px;font:inherit;font-weight:600;font-size:15.5px;cursor:pointer;width:100%}
+button.go:hover:not(:disabled){background:var(--viridian-lift)}
+button.go:disabled{background:#B9C1BC;border-color:#B9C1BC;cursor:not-allowed}
+.ghost{background:none;border:1px solid var(--rule);color:var(--ink);border-radius:3px;
+  padding:9px 16px;font:inherit;font-size:14.5px;cursor:pointer}
+.ghost:hover{border-color:var(--viridian);color:var(--viridian)}
+.bar{height:5px;background:var(--rule);border-radius:3px;overflow:hidden;margin:14px 0 6px}
+.bar i{display:block;height:100%;background:var(--viridian);width:0;transition:width .25s}
+.rows{margin-top:14px;max-height:320px;overflow-y:auto;font-size:14px}
+.row{display:flex;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid #EFF1ED}
+.row:last-child{border-bottom:none}
+.row .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .st{font-size:12.5px;white-space:nowrap}
+.ok{color:var(--viridian)} .bad{color:var(--warn)} .wait{color:var(--ink-faint)}
+.tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:2px;
+  background:#DFE3DD;color:var(--ink-soft);margin-left:6px}
+.tag.exif{background:#DCE9E2;color:var(--viridian)}
+.tag.none{background:#F0E2D6;color:var(--warn)}
+.stats{display:flex;gap:22px;flex-wrap:wrap;margin-bottom:16px}
+.stat b{display:block;font-family:"Newsreader",Georgia,serif;font-size:29px;font-weight:400;line-height:1.1}
+.stat span{font-size:13px;color:var(--ink-faint)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:7px}
+.cell{background:var(--print);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.cell img{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:#DFE3DD}
+.cell .ph{width:100%;aspect-ratio:1;background:#DFE3DD;display:flex;align-items:center;
+  justify-content:center;color:var(--ink-faint);font-size:11px;text-align:center;padding:6px}
+.cell p{margin:0;padding:5px 7px;font-size:11.5px;color:var(--ink-faint);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.msg{padding:13px 16px;border-radius:3px;font-size:14.5px;margin-bottom:16px}
+.msg.err{background:#F5E6DC;border:1px solid #E0C4AC;color:var(--warn)}
+.msg.inf{background:#DCE9E2;border:1px solid #B8D3C7;color:var(--viridian)}
+.note{font-size:13.5px;color:var(--ink-faint);margin-top:12px}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="title">Add your photos</h1>
+  <p class="sub" id="sub">Loading…</p>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" id="tabAdd" role="tab" aria-selected="true">Add photos</button>
+    <button class="tab" id="tabSee" role="tab" aria-selected="false">What's in so far</button>
+  </div>
+
+  <div id="paneAdd">
+    <div id="gate" class="msg err hide"></div>
+
+    <div class="card">
+      <label class="fl" for="who">Who's uploading?</label>
+      <p class="hint">So we know whose camera each photo came from.</p>
+      <input type="text" id="who" placeholder="Leisa" autocomplete="name">
+    </div>
+
+    <div class="drop" id="drop">
+      <b>Choose photos</b>
+      <span>Or drag them here. Photos and short video clips.</span>
+      <input type="file" id="file" multiple accept="image/*,video/*,.heic,.heif" class="hide">
+    </div>
+
+    <div id="picked" class="card hide">
+      <div id="summary"></div>
+      <div class="bar"><i id="prog"></i></div>
+      <div class="rows" id="rows"></div>
+      <div style="margin-top:16px"><button class="go" id="send">Upload</button></div>
+    </div>
+
+    <p class="note">Photos go straight to private storage. Nothing is public, and nothing is shared
+    outside this collection. The date each photo was taken is read on your own device before it
+    uploads, so it can't be lost along the way.</p>
+  </div>
+
+  <div id="paneSee" class="hide">
+    <div id="seeMsg" class="msg inf hide"></div>
+    <div class="stats" id="stats"></div>
+    <div style="margin-bottom:14px"><button class="ghost" id="refresh">Refresh</button></div>
+    <div class="grid" id="grid"></div>
+  </div>
+</div>
+
+<script type="module">
+import exifr from 'https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.esm.mjs';
+
+const FN  = 'https://wkgkkxeooldeyzjfzmhu.supabase.co/functions/v1';
+const KEY = 'sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
+const TOKEN = new URLSearchParams(location.search).get('t') || '';
+
+const $ = id => document.getElementById(id);
+let queue = [];
+
+const api = (fn, body) => fetch(`${FN}/${fn}`, {
+  method:'POST',
+  headers:{ 'Content-Type':'application/json', apikey:KEY, Authorization:`Bearer ${KEY}` },
+  body: JSON.stringify({ token: TOKEN, ...body })
+});
+
+/* ---------- date detection: EXIF, then filename, then file date ---------- */
+async function dateOf(file){
+  try{
+    const x = await exifr.parse(file, ['DateTimeOriginal','CreateDate','ModifyDate']);
+    const d = x?.DateTimeOriginal || x?.CreateDate || x?.ModifyDate;
+    if (d instanceof Date && !isNaN(d)) return { at:d.toISOString(), src:'exif' };
+  }catch(e){ /* no EXIF, or a format exifr can't read — fall through */ }
+
+  const m = file.name.match(/(20\d{2})[-_]?(\d{2})[-_]?(\d{2})/);
+  if (m){
+    const d = new Date(`${m[1]}-${m[2]}-${m[3]}T12:00:00Z`);
+    if (!isNaN(d)) return { at:d.toISOString(), src:'filename' };
+  }
+
+  if (file.lastModified){
+    const d = new Date(file.lastModified);
+    if (!isNaN(d) && d.getFullYear() > 1980) return { at:d.toISOString(), src:'modified' };
+  }
+  return { at:null, src:'none' };
+}
+
+const LABEL = { exif:'date from camera', filename:'date from filename', modified:'file date only', none:'no date' };
+const CLS   = { exif:'exif', filename:'', modified:'', none:'none' };
+
+/* ---------- picking ---------- */
+async function pick(files){
+  queue = [...files].map(f => ({ file:f, status:'reading' }));
+  $('picked').classList.remove('hide');
+  paint();
+  for (const item of queue){
+    const d = await dateOf(item.file);
+    item.at = d.at; item.src = d.src; item.status = 'ready';
+    paint();
+  }
+}
+
+function paint(){
+  const n = queue.length;
+  const undated = queue.filter(q => q.src === 'none').length;
+  $('summary').innerHTML =
+    `<strong>${n} file${n===1?'':'s'}</strong>` +
+    (undated ? ` — <span class="bad">${undated} with no date</span>, which you'll have to place by hand later.` : ' — all dated.');
+  $('rows').innerHTML = queue.map(q => `
+    <div class="row">
+      <span class="nm">${q.file.name.replace(/[<>&]/g,'')}</span>
+      <span class="st ${q.status==='done'?'ok':q.status==='failed'?'bad':'wait'}">
+        ${q.status==='done'?'uploaded':q.status==='failed'?(q.err||'failed'):q.status}
+        ${q.src?`<span class="tag ${CLS[q.src]}">${LABEL[q.src]}</span>`:''}
+      </span>
+    </div>`).join('');
+}
+
+/* ---------- uploading ---------- */
+async function send(){
+  const who = $('who').value.trim() || 'unknown';
+  $('send').disabled = true;
+  let done = 0;
+
+  for (const q of queue){
+    if (q.status === 'done') { done++; continue; }
+    q.status = 'uploading'; paint();
+    try{
+      const r = await api('upload', {
+        action:'sign', filename:q.file.name,
+        mime:q.file.type || 'image/jpeg', size:q.file.size,
+        taken_at:q.at, date_source:q.src, uploaded_by:who
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'rejected');
+
+      const put = await fetch(j.signed_url, {
+        method:'PUT',
+        headers:{ 'Content-Type': q.file.type || 'application/octet-stream' },
+        body:q.file
+      });
+      if (!put.ok) throw new Error('upload failed');
+
+      await api('upload', { action:'confirm', asset_id:j.asset_id });
+      q.status = 'done';
+    }catch(e){
+      q.status = 'failed'; q.err = e.message;
+    }
+    done++;
+    $('prog').style.width = Math.round(done / queue.length * 100) + '%';
+    paint();
+  }
+
+  const failed = queue.filter(q => q.status === 'failed').length;
+  $('send').disabled = false;
+  $('send').textContent = failed ? `Retry ${failed} that failed` : 'All uploaded — add more';
+  if (!failed) { queue = []; setTimeout(()=>{ $('picked').classList.add('hide');
+    $('send').textContent='Upload'; $('prog').style.width='0'; }, 2200); }
+}
+
+/* ---------- gallery ---------- */
+async function look(){
+  const r = await api('gallery', {});
+  const j = await r.json();
+  if (!r.ok){ $('seeMsg').textContent = j.error; $('seeMsg').className='msg err'; return; }
+  $('stats').innerHTML = `
+    <div class="stat"><b>${j.stats.total}</b><span>files in</span></div>
+    <div class="stat"><b>${j.stats.dated}</b><span>with a date</span></div>
+    <div class="stat"><b>${j.stats.undated}</b><span>to place by hand</span></div>`;
+  $('grid').innerHTML = j.assets.map(a => {
+    const when = a.taken_at ? new Date(a.taken_at).toLocaleDateString(undefined,
+      {day:'numeric',month:'short',year:'numeric'}) : 'no date';
+    const heic = /hei[cf]/i.test(a.mime_type);
+    const vid  = /^video/.test(a.mime_type);
+    const top  = (heic || vid || !a.url)
+      ? `<div class="ph">${vid?'video':heic?'HEIC<br>no preview':'no preview'}</div>`
+      : `<img loading="lazy" src="${a.url}" alt="">`;
+    return `<div class="cell">${top}<p>${when}${a.uploaded_by?' · '+a.uploaded_by.replace(/[<>&]/g,''):''}</p></div>`;
+  }).join('') || '<p class="note">Nothing uploaded yet.</p>';
+}
+
+/* ---------- wiring ---------- */
+$('drop').onclick = () => $('file').click();
+$('file').onchange = e => pick(e.target.files);
+$('drop').ondragover = e => { e.preventDefault(); $('drop').classList.add('over'); };
+$('drop').ondragleave = () => $('drop').classList.remove('over');
+$('drop').ondrop = e => { e.preventDefault(); $('drop').classList.remove('over'); pick(e.dataTransfer.files); };
+$('send').onclick = send;
+$('refresh').onclick = look;
+
+$('tabAdd').onclick = () => {
+  $('tabAdd').setAttribute('aria-selected','true'); $('tabSee').setAttribute('aria-selected','false');
+  $('paneAdd').classList.remove('hide'); $('paneSee').classList.add('hide');
+};
+$('tabSee').onclick = () => {
+  $('tabSee').setAttribute('aria-selected','true'); $('tabAdd').setAttribute('aria-selected','false');
+  $('paneSee').classList.remove('hide'); $('paneAdd').classList.add('hide'); look();
+};
+
+/* ---------- open ---------- */
+(async () => {
+  if (!TOKEN){
+    $('sub').textContent = 'This link is missing its code.';
+    $('gate').textContent = 'Use the full link you were sent — it needs the part after ?t=';
+    $('gate').classList.remove('hide');
+    $('drop').style.display='none';
+    return;
+  }
+  const r = await api('gallery', {});
+  const j = await r.json();
+  if (!r.ok){
+    $('sub').textContent = 'This link isn\u2019t valid.';
+    $('gate').textContent = j.error || 'Not authorised.';
+    $('gate').classList.remove('hide');
+    $('drop').style.display='none';
+    return;
+  }
+  $('title').textContent = j.collection.name;
+  $('sub').textContent = j.stats.total
+    ? `${j.stats.total} file${j.stats.total===1?'':'s'} in so far. Add more below.`
+    : 'Nothing here yet. Add the first photos below.';
+})();
+</script>
+</body>
+</html>
