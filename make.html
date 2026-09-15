@@ -333,8 +333,8 @@ function paintDups(){
     <h2>These two look like the same photograph.</h2>
     <p class="lede">Tap the one you'd rather keep. If they're actually different, keep both.</p>
     <div class="dup">
-      <div class="side ${d.keep===0?'keep':''}" data-keep="0"><img src="${d[0].url}"><div class="t">${d.keep===0?'Keeping this one':'Keep this one'}</div></div>
-      <div class="side ${d.keep===1?'keep':''}" data-keep="1"><img src="${d[1].url}"><div class="t">${d.keep===1?'Keeping this one':'Keep this one'}</div></div>
+      <div class="side ${d.keep===0?'keep':''}" data-keep="0"><img src="${d[0].thumb_url||d[0].url}" decoding="async"><div class="t">${d.keep===0?'Keeping this one':'Keep this one'}</div></div>
+      <div class="side ${d.keep===1?'keep':''}" data-keep="1"><img src="${d[1].thumb_url||d[1].url}" decoding="async"><div class="t">${d.keep===1?'Keeping this one':'Keep this one'}</div></div>
     </div>
     <button class="big" id="bothd">They're different — keep both</button>`;
   nav(`<button id="dnext" class="go">${cur<dups.length-1?'Next':'Done'}</button>`,
@@ -359,12 +359,12 @@ function paintOrg(){
       ${Object.keys(REG).map(r=>`<button class="chip" data-reg="${r}" aria-pressed="${m.register===r}">${LAB[r]}</button>`).join('')}</div>
     <div class="grid">`;
   inn.forEach((p,i)=>{ h+=`<div class="c ${sel===p.id?'sel':''} ${p.is_hero?'best':''}" data-p="${p.id}">
-    <img src="${p.url}" loading="lazy"><div class="n">${i+1}</div>
+    <img src="${p.thumb_url||p.url}" loading="lazy" decoding="async"><div class="n">${i+1}</div>
     ${p.is_hero?'<div class="tag">BEST</div>':''}</div>`; });
   h+='</div>';
   if(!inn.length) h+=`<p class="lede">Nothing left in this part.</p>`;
   if(gone.length){ h+=`<div class="leftout"><h4>Left out</h4><p>Tap to put one back.</p><div class="lostrip">`;
-    gone.forEach(p=>{h+=`<div class="lo" data-back="${p.id}"><img src="${p.url}" loading="lazy"><div class="put">put back</div></div>`;});
+    gone.forEach(p=>{h+=`<div class="lo" data-back="${p.id}"><img src="${p.thumb_url||p.url}" loading="lazy" decoding="async"><div class="put">put back</div></div>`;});
     h+='</div></div>'; }
   document.getElementById('stage').innerHTML=h;
   nav(cur<M.length-1?'<button class="go" id="onext">Next part →</button>'
@@ -379,7 +379,7 @@ function paintAsk(){
   const qs=questions(m);
   let h=`<div class="step">Part <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')}</div>
     <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(112px,1fr));margin-bottom:24px">`;
-  inn.forEach((p,i)=>{ h+=`<div class="c" data-zoom="${i}"><img src="${p.url}" loading="lazy"><div class="n">${i+1}</div></div>`; });
+  inn.forEach((p,i)=>{ h+=`<div class="c" data-zoom="${i}"><img src="${p.thumb_url||p.url}" loading="lazy" decoding="async"><div class="n">${i+1}</div></div>`; });
   h+=`</div><p class="lede" style="margin-top:-14px;font-size:14.5px">Tap a photo to see it properly.</p>`;
   qs.forEach((q,i)=>{ h+=`<h2 style="margin-top:${i?28:10}px">${esc(q)}</h2>`; });
   h+=`<textarea id="ans" placeholder="Write it however it comes out. A sentence is fine; more is better.">${esc(m.story||'')}</textarea>
