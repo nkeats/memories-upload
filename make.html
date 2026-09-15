@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Your film</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0C0D10;--panel:#15171C;--p2:#1D1F26;--line:#2A2E37;--l2:#3C414C;
+  --fg:#F4F1EA;--fg2:#9BA0AB;--fg3:#6B707A;--brass:#D4A24C;--green:#5E8C6A;--red:#B4543A}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--ink);color:var(--fg);font-family:"Public Sans",sans-serif;
+  font-size:17px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:980px;margin:0 auto;padding:20px 18px calc(190px + env(safe-area-inset-bottom))}
+h1{font-family:"Newsreader",serif;font-weight:300;font-size:clamp(28px,7vw,38px);margin:10px 0 8px;line-height:1.18}
+h2{font-family:"Newsreader",serif;font-weight:300;font-size:clamp(22px,5.5vw,30px);
+  line-height:1.3;margin:0 0 10px}
+p.lede{color:var(--fg2);font-size:16.5px;line-height:1.6;margin:0 0 22px;max-width:56ch}
+.step{font-size:13px;color:var(--fg3);letter-spacing:.06em;text-transform:uppercase}
+.step b{color:var(--brass)}
+
+input[type=text],textarea{width:100%;background:var(--panel);border:1px solid var(--l2);
+  border-radius:8px;color:var(--fg);font:inherit;font-size:18px;padding:16px 17px}
+input[type=text]:focus,textarea:focus{outline:none;border-color:var(--brass)}
+textarea{min-height:170px;line-height:1.65;resize:vertical}
+::placeholder{color:var(--fg3)}
+.count{text-align:right;font-size:13.5px;color:var(--fg3);margin-top:7px}
+.count.good{color:var(--green)}
+
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 24px}
+.chips .lab{width:100%;font-size:15px;color:var(--fg2);margin-bottom:3px}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;
+  padding:12px 20px;font:inherit;font-size:16px;color:var(--fg2);cursor:pointer}
+.chip[aria-pressed=true]{background:var(--brass);border-color:var(--brass);color:#20180A;font-weight:600}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:9px}
+.c{background:var(--panel);border:3px solid var(--line);border-radius:7px;overflow:hidden;
+  cursor:pointer;position:relative}
+.c.sel{border-color:var(--brass)} .c.best{border-color:var(--green)}
+.c img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:var(--p2)}
+.c .n{position:absolute;top:6px;left:6px;background:rgba(12,13,16,.82);font-size:12.5px;
+  font-weight:600;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.c .tag{position:absolute;top:6px;right:6px;font-size:10.5px;font-weight:600;padding:3px 8px;
+  border-radius:4px;background:var(--green);color:#fff}
+
+.dup{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:26px}
+.dup .side{background:var(--panel);border:3px solid var(--line);border-radius:7px;
+  overflow:hidden;cursor:pointer;text-align:center}
+.dup .side.keep{border-color:var(--green)}
+.dup .side img{width:100%;aspect-ratio:1;object-fit:cover;display:block}
+.dup .side .t{padding:11px;font-size:14.5px;color:var(--fg2)}
+.dup .side.keep .t{color:var(--green);font-weight:600}
+
+.leftout{margin-top:26px;padding-top:18px;border-top:1px solid var(--line)}
+.leftout h4{font-family:"Newsreader",serif;font-weight:300;font-size:19px;margin:0 0 4px}
+.leftout p{color:var(--fg3);font-size:14px;margin:0 0 11px}
+.lostrip{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:7px}
+.lo{border:2px solid var(--line);border-radius:5px;overflow:hidden;cursor:pointer;opacity:.45;position:relative}
+.lo img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}
+.lo .put{position:absolute;inset:auto 0 0 0;background:rgba(12,13,16,.86);font-size:11px;
+  text-align:center;padding:4px;color:var(--fg2)}
+
+.sheet{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--l2);
+  padding:15px 18px calc(16px + env(safe-area-inset-bottom));z-index:40}
+.sheet .in{max-width:980px;margin:0 auto}
+.sheet h3{font-family:"Newsreader",serif;font-weight:300;font-size:20px;margin:0 0 11px}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.acts button,.picker button{flex:1;min-width:145px;background:var(--p2);border:1px solid var(--line);
+  border-radius:7px;color:var(--fg);font:inherit;font-size:16px;padding:15px;cursor:pointer}
+.acts button:disabled{opacity:.3}
+.acts button.warn{color:var(--fg2)}
+.picker{display:flex;gap:8px;flex-wrap:wrap}
+.close{background:none;border:none;color:var(--fg3);font:inherit;font-size:15px;cursor:pointer;padding:13px 0 0}
+
+.nav{position:fixed;left:0;right:0;bottom:0;background:rgba(12,13,16,.97);backdrop-filter:blur(12px);
+  border-top:1px solid var(--line);padding:13px 18px calc(14px + env(safe-area-inset-bottom));z-index:30}
+.nin{max-width:980px;margin:0 auto;display:flex;align-items:center;gap:14px}
+.nav button{background:none;border:1px solid var(--line);color:var(--fg);border-radius:7px;
+  padding:15px 20px;font:inherit;font-size:17px;cursor:pointer}
+.nav button:disabled{opacity:.3}
+.nav button.go{background:var(--brass);border-color:var(--brass);color:#20180A;font-weight:600;flex:1;max-width:260px}
+.tally{font-size:13px;color:var(--fg3);line-height:1.4}
+.tally b{color:var(--fg);font-size:17px;font-family:"Newsreader",serif;font-weight:400}
+.sp{flex:1}
+.saved{font-size:13px;color:var(--green);opacity:0;transition:opacity .3s}
+.saved.on{opacity:1}
+
+.clock{background:#241F18;border:1px solid var(--brass);border-radius:8px;padding:16px;
+  margin-bottom:22px;font-size:16px;line-height:1.55}
+.clock b{color:var(--brass)}
+.clock .row{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap}
+.clock button{background:var(--brass);border:none;border-radius:6px;color:#20180A;font:inherit;
+  font-weight:600;font-size:15px;padding:12px 18px;cursor:pointer}
+.clock button.no{background:none;border:1px solid var(--l2);color:var(--fg2);font-weight:400}
+
+.lb{position:fixed;inset:0;background:rgba(6,7,9,.97);z-index:60;display:flex;align-items:center;
+  justify-content:center;flex-direction:column}
+.lb img{max-width:94vw;max-height:80vh;object-fit:contain}
+.lb .cap{color:var(--fg2);font-size:14.5px;margin-top:14px;display:flex;gap:14px;align-items:center}
+.lb .cap button{background:none;border:1px solid var(--l2);color:var(--fg);border-radius:6px;
+  font:inherit;font-size:15px;padding:10px 16px;cursor:pointer}
+.big{background:var(--brass);border:none;border-radius:8px;color:#20180A;font:inherit;font-weight:600;
+  font-size:18px;padding:17px 30px;cursor:pointer}
+.load{padding:70px 0;color:var(--fg2);line-height:1.8;text-align:center}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap"><div id="stage" class="load">Loading your photos…</div></div>
+<div class="sheet hide" id="sheet"></div>
+<div class="nav hide" id="nav"></div>
+
+<script>
+const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
+const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
+const TOKEN=new URLSearchParams(location.search).get('t')||'';
+
+const REG={ lively:3.5, wry:3.5, warm:4.0, awe:4.5, tender:5.0, grief:6.5 };
+const LAB={ lively:'Busy, fun', wry:'Funny', warm:'Warm', awe:'Big scenery',
+            tender:'Quiet, tender', grief:'Sad' };
+
+let A=[], M=[], dups=[], screen='welcome', cur=0, sel=null, picking=false,
+    zoom=null, skew=null, skewDone=false, name='', qIndex=0;
+
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const mmss=s=>`${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}`;
+const words=s=>s&&s.trim()?s.trim().split(/\s+/).length:0;
+const secs=m=>m.photos.filter(p=>!p.excluded)
+  .reduce((t,p)=>t+REG[m.register]+(p.faces>=4?1.5:p.faces>=2?0.5:p.faces?0:-0.5),0);
+const total=()=>M.reduce((t,m)=>t+secs(m),0);
+
+async function api(action,extra){
+  const r=await fetch(SB+'/functions/v1/flow',{method:'POST',
+    headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY},
+    body:JSON.stringify({token:TOKEN,action,...extra})});
+  if(!r.ok) throw new Error('save failed');
+  return r.json();
+}
+let saveTimer=null, dirty=false;
+function flash(){ const s=document.getElementById('saved');
+  if(s){ s.classList.add('on'); setTimeout(()=>s.classList.remove('on'),1400);} }
+function queueSave(){ dirty=true; clearTimeout(saveTimer); saveTimer=setTimeout(saveGroups,1200); }
+async function saveGroups(){
+  if(!dirty) return; dirty=false;
+  try{ await api('save_groups',{
+    groups:M.map(m=>({title:m.title,register:m.register,
+      assets:m.photos.filter(p=>!p.excluded).map(p=>p.id),
+      hero:(m.photos.find(p=>p.is_hero)||{}).id||null})),
+    excluded:A.filter(p=>p.excluded).map(p=>p.id)});
+    flash();
+  }catch(e){ dirty=true; }
+}
+const prog=o=>api('save_progress',{progress:o}).catch(()=>{});
+
+/* ── clock skew between two cameras ─────────────────────────── */
+function detectSkew(){
+  const byCam={};
+  A.forEach(p=>{ const k=/^DSC/i.test(p.original_filename)?'B':'A'; (byCam[k]=byCam[k]||[]).push(p); });
+  if(!byCam.A||!byCam.B||byCam.A.length<5||byCam.B.length<5) return null;
+  const g=byCam.B.map(b=>{let best=0,bd=1e15;
+    byCam.A.forEach(a=>{const d=new Date(b.taken_at)-new Date(a.taken_at);
+      if(Math.abs(d)<bd){bd=Math.abs(d);best=d;}}); return best/3600000;}).sort((x,y)=>x-y);
+  const med=g[Math.floor(g.length/2)], r=Math.round(med);
+  return (Math.abs(med-r)<0.4 && Math.abs(r)>=1)?r:null;
+}
+/* ── duplicate pairs: near-identical hash, not the same moment ── */
+function findDups(){
+  const out=[]; const seen=new Set();
+  for(let i=0;i<A.length;i++) for(let j=i+1;j<A.length;j++){
+    const a=A[i],b=A[j];
+    if(!a.phash||!b.phash) continue;
+    if(seen.has(b.id)) continue;
+    if(hamming(a.phash,b.phash)<=6){ out.push([a,b]); seen.add(b.id); }
+  }
+  return out;
+}
+function hamming(x,y){ let n=0;
+  for(let i=0;i<Math.min(x.length,y.length);i++){
+    let v=parseInt(x[i],16)^parseInt(y[i],16);
+    while(v){n+=v&1;v>>=1;} } return n; }
+
+/* ── the one grouping proposal ──────────────────────────────── */
+function propose(){
+  const on=A.filter(p=>!p.excluded);
+  M=[]; let c=null;
+  on.forEach(p=>{
+    let brk=!c;
+    if(c){ const l=c.photos[c.photos.length-1];
+      if((new Date(p.taken_at)-new Date(l.taken_at))/3600000>6) brk=true; }
+    if(brk){ c={title:'',register:'warm',photos:[]}; M.push(c); }
+    c.photos.push(p);
+  });
+}
+/* ── questions, generated from what is in each memory ───────── */
+function questions(m){
+  const inn=m.photos.filter(p=>!p.excluded);
+  const qs=[];
+  const most=M.reduce((a,b)=>a.photos.length>b.photos.length?a:b)===m;
+  const night=inn.length>2 && inn.every(p=>{const h=new Date(p.taken_at).getHours(); return h>=19||h<5;});
+  const days=new Set(inn.map(p=>new Date(p.taken_at).toDateString())).size;
+  const withFaces=inn.filter(p=>p.faces>0).length;
+
+  if(most && inn.length>=6) qs.push("You took more photographs here than anywhere else. What was it about this place?");
+  else if(night) qs.push("These are all in the evening. What was that night?");
+  else if(inn.length<=3) qs.push("Only a few from here. What happened?");
+  else if(days>1) qs.push(`This covers ${days} days. What stands out from them?`);
+  else qs.push("What was happening here?");
+
+  qs.push("What sticks in your mind about this — something that isn't in the photographs?");
+  if(inn.length>=6 && withFaces>=2) qs.push("Who else was around, and what were they like?");
+  return qs;
+}
+
+/* ── render ─────────────────────────────────────────────────── */
+function paint(){
+  const st=document.getElementById('stage');
+  if(screen==='welcome'){
+    st.innerHTML=`<h1>Let's make your film</h1>
+      <p class="lede">Your photographs are in. Next you'll put them into a few parts —
+      the places you went, the days that felt different — and then tell us a bit about each one.
+      It saves as you go, so you can stop whenever you like and pick it up later.</p>
+      <p class="lede">Takes about twenty minutes. There's no wrong way to do it.</p>
+      <label class="lede" style="display:block">What should we call you?<br><br>
+      <input type="text" id="who" value="${esc(name)}" placeholder="Your name" autocomplete="name"></label>
+      <br><button class="big" id="start">Start</button>`;
+    document.getElementById('nav').classList.add('hide');
+    document.getElementById('sheet').classList.add('hide');
+    return;
+  }
+  if(screen==='dups'){ paintDups(); return; }
+  if(screen==='organise'){ paintOrg(); return; }
+  if(screen==='describe'){ paintAsk(); return; }
+  if(screen==='done'){
+    st.innerHTML=`<h1>All done — thank you</h1>
+      <p class="lede">That's everything we need. ${esc(name||'')} — your film will be put together from this.</p>
+      <p class="lede">${A.filter(p=>!p.excluded).length} photographs · ${M.length} parts · about ${mmss(total())} of film.</p>`;
+    document.getElementById('nav').classList.add('hide');
+    document.getElementById('sheet').classList.add('hide');
+    prog({screen:'done'});
+  }
+}
+function paintDups(){
+  const d=dups[cur];
+  if(!d){ screen='organise'; cur=0; propose(); paint(); return; }
+  document.getElementById('stage').innerHTML=`
+    <div class="step">Same photo twice? <b>${cur+1}</b> of ${dups.length}</div>
+    <h2>These two look like the same photograph.</h2>
+    <p class="lede">Tap the one you'd rather keep. If they're actually different, keep both.</p>
+    <div class="dup">
+      <div class="side ${d.keep===0?'keep':''}" data-keep="0"><img src="${d[0].url}"><div class="t">${d.keep===0?'Keeping this one':'Keep this one'}</div></div>
+      <div class="side ${d.keep===1?'keep':''}" data-keep="1"><img src="${d[1].url}"><div class="t">${d.keep===1?'Keeping this one':'Keep this one'}</div></div>
+    </div>
+    <button class="big" id="bothd">They're different — keep both</button>`;
+  nav(`<button id="dnext" class="go">${cur<dups.length-1?'Next':'Done'}</button>`,
+      `${dups.length} to look at`);
+}
+function paintOrg(){
+  const m=M[cur]; if(!m) return;
+  const inn=m.photos.filter(p=>!p.excluded), gone=m.photos.filter(p=>p.excluded);
+  let h='';
+  if(skew && !skewDone && cur===0)
+    h+=`<div class="clock"><b>One camera has the wrong time on it.</b><br>
+      It looks about ${Math.abs(skew)} hours ${skew>0?'ahead of':'behind'} the other,
+      so some photos are out of order. Shall we put that right?
+      <div class="row"><button id="fixclock">Yes, fix it</button>
+      <button class="no" id="skipclock">Leave it</button></div></div>`;
+  h+=`<div class="step">Part <b>${cur+1}</b> of ${M.length}</div>
+    <h2>What do you call this part?</h2>
+    <input type="text" id="nm" value="${esc(m.title)}" placeholder="Anything you like" autocomplete="off">
+    <p class="lede" style="margin:9px 0 22px;font-size:14.5px">
+      ${inn.length} photo${inn.length===1?'':'s'} · about ${mmss(secs(m))} of film · tap a photo to change it</p>
+    <div class="chips"><span class="lab">How did it feel?</span>
+      ${Object.keys(REG).map(r=>`<button class="chip" data-reg="${r}" aria-pressed="${m.register===r}">${LAB[r]}</button>`).join('')}</div>
+    <div class="grid">`;
+  inn.forEach((p,i)=>{ h+=`<div class="c ${sel===p.id?'sel':''} ${p.is_hero?'best':''}" data-p="${p.id}">
+    <img src="${p.url}" loading="lazy"><div class="n">${i+1}</div>
+    ${p.is_hero?'<div class="tag">BEST</div>':''}</div>`; });
+  h+='</div>';
+  if(!inn.length) h+=`<p class="lede">Nothing left in this part.</p>`;
+  if(gone.length){ h+=`<div class="leftout"><h4>Left out</h4><p>Tap to put one back.</p><div class="lostrip">`;
+    gone.forEach(p=>{h+=`<div class="lo" data-back="${p.id}"><img src="${p.url}" loading="lazy"><div class="put">put back</div></div>`;});
+    h+='</div></div>'; }
+  document.getElementById('stage').innerHTML=h;
+  nav(cur<M.length-1?'<button class="go" id="onext">Next part →</button>'
+                    :'<button class="go" id="toask">Now the questions →</button>',
+      `<b>${mmss(total())}</b><br>${A.filter(p=>!p.excluded).length} photos · ${M.length} parts`,
+      cur>0);
+  sheet();
+}
+function paintAsk(){
+  const m=M[cur]; if(!m) return;
+  const inn=m.photos.filter(p=>!p.excluded);
+  const qs=questions(m);
+  let h=`<div class="step">Part <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')}</div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(112px,1fr));margin-bottom:24px">`;
+  inn.forEach((p,i)=>{ h+=`<div class="c" data-zoom="${i}"><img src="${p.url}" loading="lazy"><div class="n">${i+1}</div></div>`; });
+  h+=`</div><p class="lede" style="margin-top:-14px;font-size:14.5px">Tap a photo to see it properly.</p>`;
+  qs.forEach((q,i)=>{ h+=`<h2 style="margin-top:${i?28:10}px">${esc(q)}</h2>`; });
+  h+=`<textarea id="ans" placeholder="Write it however it comes out. A sentence is fine; more is better.">${esc(m.story||'')}</textarea>
+      <div class="count" id="cnt"></div>`;
+  if(cur===M.length-1) h+=`<div class="leftout"><h4>Anything else, from the whole trip?</h4>
+      <p>Inside jokes, something one of you kept saying, anything that has to be in there.</p>
+      <textarea id="extra" placeholder="Optional">${esc(M.extra||'')}</textarea></div>`;
+  document.getElementById('stage').innerHTML=h;
+  countUp();
+  nav(cur<M.length-1?'<button class="go" id="anext">Next →</button>'
+                    :'<button class="go" id="finish">Finished</button>',
+      `${M.filter(x=>words(x.story)>=12).length} of ${M.length} answered`, cur>0);
+  document.getElementById('sheet').classList.add('hide');
+}
+function countUp(){ const c=document.getElementById('cnt'); if(!c) return;
+  const w=words(M[cur].story);
+  c.textContent=w?`${w} words`:'a few sentences is plenty';
+  c.className='count'+(w>=25?' good':''); }
+function nav(right,tally,back){
+  const n=document.getElementById('nav'); n.classList.remove('hide');
+  n.innerHTML=`<div class="nin">
+    ${back?'<button id="back">←</button>':''}
+    <div class="tally">${tally||''}</div><span class="saved" id="saved">saved</span>
+    <span class="sp"></span>${right}</div>`;
+}
+function sheet(){
+  const s=document.getElementById('sheet');
+  if(!sel||screen!=='organise'){ s.classList.add('hide'); return; }
+  const m=M[cur], inn=m.photos.filter(p=>!p.excluded);
+  const p=inn.find(x=>x.id===sel); if(!p){ s.classList.add('hide'); return; }
+  const i=inn.indexOf(p);
+  s.innerHTML = picking
+   ? `<div class="in"><h3>Move it to which part?</h3><div class="picker">
+      ${M.map((x,j)=>j===cur?'':`<button data-to="${j}">${esc(x.title||('Part '+(j+1)))}</button>`).join('')}
+      <button data-to="new">A new part of its own</button></div>
+      <button class="close" id="cancel">Cancel</button></div>`
+   : `<div class="in"><h3>Photo ${i+1}</h3><div class="acts">
+      <button data-a="up" ${i<=0?'disabled':''}>← Earlier</button>
+      <button data-a="down" ${i>=inn.length-1?'disabled':''}>Later →</button>
+      <button data-a="best">${p.is_hero?'Not the best':'This is the best'}</button>
+      <button data-a="move">Different part</button>
+      <button data-a="out" class="warn">Leave it out</button>
+      <button data-a="see">See it bigger</button>
+      </div><button class="close" id="cancel">Done</button></div>`;
+  s.classList.remove('hide');
+}
+function drawZoom(){
+  let lb=document.getElementById('lb');
+  if(zoom===null){ if(lb) lb.remove(); return; }
+  const inn=M[cur].photos.filter(p=>!p.excluded), p=inn[zoom];
+  if(!p){ zoom=null; if(lb) lb.remove(); return; }
+  if(!lb){ lb=document.createElement('div'); lb.id='lb'; lb.className='lb'; document.body.appendChild(lb); }
+  lb.innerHTML=`<img src="${p.url}">
+    <div class="cap"><button data-z="prev" ${zoom===0?'disabled':''}>←</button>
+    <span>${zoom+1} of ${inn.length}</span>
+    <button data-z="next" ${zoom===inn.length-1?'disabled':''}>→</button>
+    <button data-z="close">Close</button></div>`;
+}
+
+/* ── interaction ────────────────────────────────────────────── */
+document.addEventListener('click',async e=>{
+  const t=e.target;
+  if(t.id==='start'){ name=(document.getElementById('who')||{}).value||'';
+    api('set_owner',{name}).catch(()=>{});
+    dups=findDups().map(d=>{ d.keep = (d[0].sharpness||0)>=(d[1].sharpness||0)?0:1; return d; });
+    screen = dups.length ? 'dups' : 'organise'; cur=0;
+    if(screen==='organise') propose();
+    prog({screen,name_given:!!name}); paint(); scrollTo(0,0); return; }
+
+  if(t.dataset.keep!==undefined){ dups[cur].keep=+t.dataset.keep; paint(); return; }
+  if(t.id==='bothd'){ dups[cur].keep=-1; if(cur<dups.length-1){cur++;}else{screen='organise';cur=0;propose();}
+    paint(); scrollTo(0,0); return; }
+  if(t.id==='dnext'){ const d=dups[cur];
+    if(d.keep>=0){ const drop=d[1-d.keep], keep=d[d.keep];
+      drop.excluded=true; api('mark_dup',{keep:keep.id,drop:drop.id}).catch(()=>{}); }
+    if(cur<dups.length-1) cur++; else { screen='organise'; cur=0; propose(); prog({screen:'organise'}); }
+    paint(); scrollTo(0,0); return; }
+
+  if(t.id==='fixclock'){ A.forEach(p=>{ if(/^DSC/i.test(p.original_filename))
+      p.taken_at=new Date(new Date(p.taken_at).getTime()-skew*3600000).toISOString(); });
+    A.sort((a,b)=>new Date(a.taken_at)-new Date(b.taken_at));
+    skewDone=true; propose(); cur=0; queueSave(); paint(); return; }
+  if(t.id==='skipclock'){ skewDone=true; paint(); return; }
+
+  if(t.dataset.reg){ M[cur].register=t.dataset.reg; queueSave(); paint(); return; }
+  if(t.id==='onext'){ cur++; sel=null; picking=false; saveGroups(); prog({screen:'organise',part:cur+1}); paint(); scrollTo(0,0); return; }
+  if(t.id==='back'){ if(cur>0){cur--;} sel=null; picking=false; paint(); scrollTo(0,0); return; }
+  if(t.id==='toask'){ await saveGroups(); screen='describe'; cur=0; sel=null;
+    prog({screen:'describe'}); paint(); scrollTo(0,0); return; }
+  if(t.id==='anext'){ saveStory(); cur++; prog({screen:'describe',part:cur+1}); paint(); scrollTo(0,0); return; }
+  if(t.id==='finish'){ saveStory(); screen='done'; paint(); scrollTo(0,0); return; }
+  if(t.id==='cancel'){ sel=null; picking=false; sheet(); paint(); return; }
+
+  if(t.dataset.to!==undefined){
+    const m=M[cur], p=m.photos.find(x=>x.id===sel);
+    m.photos.splice(m.photos.indexOf(p),1);
+    if(t.dataset.to==='new') M.splice(cur+1,0,{title:'',register:'warm',photos:[p]});
+    else M[+t.dataset.to].photos.push(p);
+    if(!m.photos.length){ M.splice(M.indexOf(m),1); cur=Math.min(cur,M.length-1); }
+    sel=null; picking=false; queueSave(); paint(); return; }
+
+  if(t.dataset.a){
+    const m=M[cur], inn=m.photos.filter(x=>!x.excluded), p=inn.find(x=>x.id===sel);
+    const a=t.dataset.a, i=m.photos.indexOf(p);
+    if(a==='move'){ picking=true; sheet(); return; }
+    if(a==='see'){ zoom=inn.indexOf(p); sel=null; drawZoom(); paint(); return; }
+    if(a==='up'&&i>0){ m.photos.splice(i,1); m.photos.splice(i-1,0,p); }
+    if(a==='down'&&i<m.photos.length-1){ m.photos.splice(i,1); m.photos.splice(i+1,0,p); }
+    if(a==='best'){ m.photos.forEach(x=>x.is_hero=false); p.is_hero=!p.is_hero; sel=null; }
+    if(a==='out'){ p.excluded=true; sel=null; }
+    queueSave(); paint(); return; }
+
+  const back=t.closest('[data-back]');
+  if(back){ const p=A.find(x=>x.id===back.dataset.back); p.excluded=false; queueSave(); paint(); return; }
+  const z=t.closest('[data-zoom]');
+  if(z){ zoom=+z.dataset.zoom; drawZoom(); return; }
+  if(t.dataset.z){ const inn=M[cur].photos.filter(p=>!p.excluded);
+    if(t.dataset.z==='close') zoom=null;
+    if(t.dataset.z==='prev'&&zoom>0) zoom--;
+    if(t.dataset.z==='next'&&zoom<inn.length-1) zoom++;
+    drawZoom(); return; }
+  if(t.id==='lb'||t.tagName==='IMG'&&t.closest('#lb')){ zoom=null; drawZoom(); return; }
+  const c=t.closest('[data-p]');
+  if(c){ sel = sel===c.dataset.p ? null : c.dataset.p; picking=false; paint(); return; }
+});
+document.addEventListener('input',e=>{
+  if(e.target.id==='nm'){ M[cur].title=e.target.value; queueSave(); }
+  if(e.target.id==='ans'){ M[cur].story=e.target.value; countUp();
+    clearTimeout(saveTimer); saveTimer=setTimeout(saveStory,1400); }
+  if(e.target.id==='extra'){ M.extra=e.target.value; }
+});
+async function saveStory(){
+  const m=M[cur]; if(!m||!m.id) return;
+  try{ await api('save_story',{chapter_id:m.id,story:m.story||''}); flash(); }catch(e){}
+}
+
+/* ── boot ───────────────────────────────────────────────────── */
+(async()=>{
+  if(!TOKEN){ document.getElementById('stage').innerHTML='<p class="load">That link is missing its code.</p>'; return; }
+  try{
+    const d=await api('load',{});
+    A=d.assets.filter(a=>a.url);
+    if(!A.length){ document.getElementById('stage').innerHTML=
+      '<p class="load">No photographs yet.<br><br>Add them first, then come back to this link.</p>'; return; }
+    A.sort((a,b)=>new Date(a.taken_at)-new Date(b.taken_at));
+    name=d.collection.owner_name||'';
+    skew=detectSkew();
+    if(d.chapters.length){                       // resuming
+      M=d.chapters.map(c=>({id:c.id,title:c.title||'',register:c.register||'warm',
+        story:c.story||'',photos:A.filter(a=>a.chapter_id===c.id)
+          .sort((x,y)=>(x.sort_index??0)-(y.sort_index??0))}));
+      const orphan=A.filter(a=>!a.chapter_id&&!a.excluded);
+      if(orphan.length) M.push({title:'',register:'warm',story:'',photos:orphan});
+      screen=(d.collection.progress||{}).screen==='describe'?'describe':'organise';
+      cur=Math.min(((d.collection.progress||{}).part||1)-1, M.length-1);
+    }
+    paint();
+  }catch(e){ document.getElementById('stage').innerHTML=
+    '<p class="load">Couldn\'t load your photographs. Try the link again in a moment.</p>'; }
+})();
+</script>
+</body>
+</html>
