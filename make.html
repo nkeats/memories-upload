@@ -138,19 +138,27 @@ async function api(action,extra){
   if(!r.ok) throw new Error('save failed');
   return r.json();
 }
-let saveTimer=null, dirty=false;
-function flash(){ const s=document.getElementById('saved');
-  if(s){ s.classList.add('on'); setTimeout(()=>s.classList.remove('on'),1400);} }
+let saveTimer=null, dirty=false, failed=false;
+function flash(ok){ const s=document.getElementById('saved');
+  if(!s) return;
+  s.textContent = ok ? 'saved' : "couldn't save — trying again";
+  s.style.color = ok ? 'var(--green)' : 'var(--red)';
+  s.classList.add('on');
+  if(ok) setTimeout(()=>s.classList.remove('on'),1400);
+}
 function queueSave(){ dirty=true; clearTimeout(saveTimer); saveTimer=setTimeout(saveGroups,1200); }
 async function saveGroups(){
-  if(!dirty) return; dirty=false;
-  try{ await api('save_groups',{
-    groups:M.map(m=>({title:m.title,register:m.register,
+  if(!dirty) return;
+  const payload={ groups:M.map(m=>({title:m.title,register:m.register,story:m.story||'',
       assets:m.photos.filter(p=>!p.excluded).map(p=>p.id),
       hero:(m.photos.find(p=>p.is_hero)||{}).id||null})),
-    excluded:A.filter(p=>p.excluded).map(p=>p.id)});
-    flash();
-  }catch(e){ dirty=true; }
+    excluded:A.filter(p=>p.excluded).map(p=>p.id) };
+  try{
+    const r=await api('save_groups',payload);
+    if(!r.ids || r.ids.length!==M.length) throw new Error('no ids back');
+    M.forEach((m,i)=>{ m.id=r.ids[i]; });   // ⚠ answers save against these
+    dirty=false; failed=false; flash(true);
+  }catch(e){ dirty=true; failed=true; flash(false); setTimeout(saveGroups,4000); }
 }
 const prog=o=>api('save_progress',{progress:o}).catch(()=>{});
 
@@ -181,38 +189,92 @@ function hamming(x,y){ let n=0;
     let v=parseInt(x[i],16)^parseInt(y[i],16);
     while(v){n+=v&1;v>>=1;} } return n; }
 
-/* ── the one grouping proposal ──────────────────────────────── */
+/* ── the one grouping proposal ─────────────────────────────────
+   ⚠ A fixed gap threshold produces far too many groups — the first
+   real user spent most of her time merging them back together.
+   Instead: aim for a sensible NUMBER of memories and split at the
+   biggest gaps, whatever those gaps happen to be. */
 function propose(){
   const on=A.filter(p=>!p.excluded);
-  M=[]; let c=null;
-  on.forEach(p=>{
-    let brk=!c;
-    if(c){ const l=c.photos[c.photos.length-1];
-      if((new Date(p.taken_at)-new Date(l.taken_at))/3600000>6) brk=true; }
-    if(brk){ c={title:'',register:'warm',photos:[]}; M.push(c); }
+  M=[];
+  if(!on.length) return;
+  const want=Math.max(4, Math.min(10, Math.round(on.length/8)));
+  const gaps=[];
+  for(let i=1;i<on.length;i++)
+    gaps.push({i, d:new Date(on[i].taken_at)-new Date(on[i-1].taken_at)});
+  const cuts=new Set(gaps.sort((a,b)=>b.d-a.d).slice(0,want-1).map(g=>g.i));
+  let c={title:'',register:'warm',story:'',photos:[]}; M.push(c);
+  on.forEach((p,i)=>{
+    if(cuts.has(i)){ c={title:'',register:'warm',story:'',photos:[]}; M.push(c); }
     c.photos.push(p);
   });
 }
-/* ── questions, generated from what is in each memory ───────── */
+/* ── questions, generated from what is in each memory ─────────
+   Every question must come from something ACTUALLY IN this set —
+   a time, a count, a face, a gap. Never the same question twice
+   in a row, and never a question the photographs already answer. */
+const OPENERS=[
+ "What sticks in your mind about this?",
+ "What would you tell someone about this bit?",
+ "Was there a moment here you still talk about?",
+ "What isn't in these photographs that should be?",
+ "Did anything go wrong?",
+ "What did you eat, and was it any good?",
+ "What surprised you?",
+ "Who did you meet here?",
+ "What was the weather doing?",
+ "What would you do differently?",
+ "What was the first thing you did when you got here?",
+ "What did it smell like, or sound like?"
+];
 function questions(m){
   const inn=m.photos.filter(p=>!p.excluded);
-  const qs=[];
-  const most=M.reduce((a,b)=>a.photos.length>b.photos.length?a:b)===m;
-  const night=inn.length>2 && inn.every(p=>{const h=new Date(p.taken_at).getHours(); return h>=19||h<5;});
+  if(!inn.length) return ["What happened here?"];
+  const idx=M.indexOf(m);
+  /* ⚠ A photograph's stored time is reliable for ORDER and unreliable for
+     TIME OF DAY — a camera set to the wrong timezone makes an afternoon on a
+     beach read as midnight. Never ask a question that depends on the clock. */
+  const spanHrs=(new Date(inn[inn.length-1].taken_at)-new Date(inn[0].taken_at))/3600000;
   const days=new Set(inn.map(p=>new Date(p.taken_at).toDateString())).size;
-  const withFaces=inn.filter(p=>p.faces>0).length;
+  const counts=M.map(x=>x.photos.filter(p=>!p.excluded).length);
+  const most=inn.length===Math.max(...counts) && inn.length>=5;
+  const fewest=inn.length<=3;
+  const faces=inn.map(p=>p.faces||0);
+  const maxFaces=Math.max(...faces), withFaces=faces.filter(f=>f>0).length;
+  const crowd=inn[faces.indexOf(maxFaces)];
+  const closeup=inn.find(p=>(p.largest_face_frac||0)>0.09);
+  // biggest gap inside the memory
+  let gap=0, gapAt=null;
+  for(let i=1;i<inn.length;i++){
+    const d=(new Date(inn[i].taken_at)-new Date(inn[i-1].taken_at))/3600000;
+    if(d>gap){ gap=d; gapAt=i; }
+  }
+  // a burst — three or more inside two minutes
+  let burst=false;
+  for(let i=2;i<inn.length;i++)
+    if((new Date(inn[i].taken_at)-new Date(inn[i-2].taken_at))/60000<=2){ burst=true; break; }
 
-  if(most && inn.length>=6) qs.push("You took more photographs here than anywhere else. What was it about this place?");
-  else if(night) qs.push("These are all in the evening. What was that night?");
-  else if(inn.length<=3) qs.push("Only a few from here. What happened?");
-  else if(days>1) qs.push(`This covers ${days} days. What stands out from them?`);
-  else qs.push("What was happening here?");
+  const q=[];
+  // ── the anchored one: whichever signal is strongest here ──
+  if(most) q.push(`You took more photographs here than anywhere else — ${inn.length} of them. What was it about this place?`);
+  else if(fewest && days===1) q.push(`Only ${inn.length} from here. Was it a quick stop, or just not much to photograph?`);
+  else if(days>2) q.push(`This runs across ${days} days. Which of them was the best?`);
+  else if(maxFaces>=3) q.push("There's a group of you in one of these. Who else was there?");
+  else if(withFaces===0) q.push("There isn't a person in any of these. What were you looking at?");
+  else if(gap>=4 && gapAt) q.push(`There's about ${Math.round(gap)} hours between two of these. What happened in between?`);
+  else if(spanHrs>=8) q.push("This one covers a good chunk of a day. What did you get up to?");
+  else q.push("What was happening here?");
 
-  qs.push("What sticks in your mind about this — something that isn't in the photographs?");
-  if(inn.length>=6 && withFaces>=2) qs.push("Who else was around, and what were they like?");
-  return qs;
+  // ── a second, different one where there is material for it ──
+  if(closeup && maxFaces<=2) q.push("One of these is a close one of somebody. Who is that, and what were they saying?");
+  else if(burst && inn.length>=5) q.push("A few of these are seconds apart. What were you trying to get?");
+  else if(most && days>1) q.push("What was the best day of it?");
+  else if(withFaces>0 && withFaces<inn.length/3) q.push("Most of these are the place rather than the people. Where was everyone?");
+
+  // ── one open question, never the same as the last memory's ──
+  q.push(OPENERS[(idx*5+3) % OPENERS.length]);
+  return q;
 }
-
 /* ── render ─────────────────────────────────────────────────── */
 function paint(){
   const st=document.getElementById('stage');
@@ -428,9 +490,16 @@ document.addEventListener('input',e=>{
   if(e.target.id==='extra'){ M.extra=e.target.value; }
 });
 async function saveStory(){
-  const m=M[cur]; if(!m||!m.id) return;
-  try{ await api('save_story',{chapter_id:m.id,story:m.story||''}); flash(); }catch(e){}
+  const m=M[cur]; if(!m) return;
+  // no chapter id means the grouping never saved — fix that first
+  if(!m.id){ await saveGroups(); if(!m.id){ flash(false); return; } }
+  try{ await api('save_story',{chapter_id:m.id,story:m.story||''}); flash(true); }
+  catch(e){ flash(false); setTimeout(saveStory,4000); }
 }
+
+window.addEventListener('beforeunload',e=>{
+  if(dirty||failed){ e.preventDefault(); e.returnValue=''; }
+});
 
 /* ── boot ───────────────────────────────────────────────────── */
 (async()=>{
@@ -447,8 +516,31 @@ async function saveStory(){
       M=d.chapters.map(c=>({id:c.id,title:c.title||'',register:c.register||'warm',
         story:c.story||'',photos:A.filter(a=>a.chapter_id===c.id)
           .sort((x,y)=>(x.sort_index??0)-(y.sort_index??0))}));
+      /* Photographs added after the grouping was done: drop each one into
+         whichever memory its time falls inside, in the right position.
+         Anything outside every memory becomes a new one at the end. */
       const orphan=A.filter(a=>!a.chapter_id&&!a.excluded);
-      if(orphan.length) M.push({title:'',register:'warm',story:'',photos:orphan});
+      const loose=[];
+      orphan.forEach(a=>{
+        const t=new Date(a.taken_at);
+        const home=M.find(m=>m.photos.length &&
+          t>=new Date(m.photos[0].taken_at) &&
+          t<=new Date(m.photos[m.photos.length-1].taken_at));
+        if(home){ home.photos.push(a);
+          home.photos.sort((x,y)=>new Date(x.taken_at)-new Date(y.taken_at)); }
+        else loose.push(a);
+      });
+      if(loose.length){
+        // group the leftovers by day so they arrive in usable lumps
+        let c=null;
+        loose.sort((x,y)=>new Date(x.taken_at)-new Date(y.taken_at)).forEach(a=>{
+          const d=new Date(a.taken_at).toDateString();
+          if(!c||c.day!==d){ c={title:'',register:'warm',story:'',photos:[],day:d}; M.push(c); }
+          c.photos.push(a);
+        });
+      }
+      M.sort((a,b)=>new Date(a.photos[0].taken_at)-new Date(b.photos[0].taken_at));
+      if(orphan.length) dirty=true;   // save the new placement
       screen=(d.collection.progress||{}).screen==='describe'?'describe':'organise';
       cur=Math.min(((d.collection.progress||{}).part||1)-1, M.length-1);
     }
