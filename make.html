@@ -202,7 +202,25 @@ function propose(){
   const gaps=[];
   for(let i=1;i<on.length;i++)
     gaps.push({i, d:new Date(on[i].taken_at)-new Date(on[i-1].taken_at)});
-  const cuts=new Set(gaps.sort((a,b)=>b.d-a.d).slice(0,want-1).map(g=>g.i));
+  /* ⚠ Aiming for a number alone can still leave one enormous memory —
+     the first run put 47 photographs from three days into one. So take the
+     biggest gaps, then keep splitting anything over MAXG until none are. */
+  const MAXG=18;
+  const sorted=gaps.slice().sort((a,b)=>b.d-a.d);
+  const cuts=new Set(sorted.slice(0,want-1).map(g=>g.i));
+  for(let guard=0; guard<40; guard++){
+    const bounds=[0,...[...cuts].sort((a,b)=>a-b),on.length];
+    let biggest=null;
+    for(let k=1;k<bounds.length;k++){
+      const size=bounds[k]-bounds[k-1];
+      if(size>MAXG && (!biggest||size>biggest.size))
+        biggest={from:bounds[k-1],to:bounds[k],size};
+    }
+    if(!biggest) break;
+    const inner=sorted.find(g=>g.i>biggest.from && g.i<biggest.to && !cuts.has(g.i));
+    if(!inner) break;
+    cuts.add(inner.i);
+  }
   let c={title:'',register:'warm',story:'',photos:[]}; M.push(c);
   on.forEach((p,i)=>{
     if(cuts.has(i)){ c={title:'',register:'warm',story:'',photos:[]}; M.push(c); }
@@ -541,8 +559,15 @@ window.addEventListener('beforeunload',e=>{
       }
       M.sort((a,b)=>new Date(a.photos[0].taken_at)-new Date(b.photos[0].taken_at));
       if(orphan.length) dirty=true;   // save the new placement
-      screen=(d.collection.progress||{}).screen==='describe'?'describe':'organise';
-      cur=Math.min(((d.collection.progress||{}).part||1)-1, M.length-1);
+      /* ⚠ Never drop someone at the end. Go to the first memory that still
+         needs something — a name on the organise screen, an answer on the
+         questions screen — and to the start if everything is done. */
+      const pr=d.collection.progress||{};
+      screen = pr.screen==='describe' ? 'describe' : 'organise';
+      const need = screen==='describe'
+        ? M.findIndex(m=>!(m.story||'').trim())
+        : M.findIndex(m=>!(m.title||'').trim());
+      cur = need>=0 ? need : 0;
     }
     paint();
   }catch(e){ document.getElementById('stage').innerHTML=
