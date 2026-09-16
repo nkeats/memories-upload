@@ -139,6 +139,21 @@ async function api(action,extra){
   return r.json();
 }
 let saveTimer=null, dirty=false, failed=false;
+
+/* ⚠ A caught error that is not reported is a silent failure. On 15 Sep a save
+   failed for an hour and the customer lost everything, because the catch block
+   swallowed it. Every catch in this page reports. Never throws. */
+function report(what,e,detail){
+  try{
+    fetch(SB+'/functions/v1/flow',{method:'POST',keepalive:true,
+      headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY},
+      body:JSON.stringify({token:TOKEN,action:'report_error',page:'make.html',
+        what, message:(e&&e.message)||String(e||''), detail:detail||null,
+        url:location.href, user_agent:navigator.userAgent})}).catch(()=>{});
+  }catch(_){}
+}
+window.addEventListener('error', ev => report('uncaught', ev.error||ev.message));
+window.addEventListener('unhandledrejection', ev => report('unhandled promise', ev.reason));
 function flash(ok){ const s=document.getElementById('saved');
   if(!s) return;
   s.textContent = ok ? 'saved' : "couldn't save — trying again";
@@ -158,9 +173,11 @@ async function saveGroups(){
     if(!r.ids || r.ids.length!==M.length) throw new Error('no ids back');
     M.forEach((m,i)=>{ m.id=r.ids[i]; });   // ⚠ answers save against these
     dirty=false; failed=false; flash(true);
-  }catch(e){ dirty=true; failed=true; flash(false); setTimeout(saveGroups,4000); }
+  }catch(e){ dirty=true; failed=true; flash(false); report('save groups',e,
+      {memories:M.length, photos:A.filter(p=>!p.excluded).length});
+    setTimeout(saveGroups,4000); }
 }
-const prog=o=>api('save_progress',{progress:o}).catch(()=>{});
+const prog=o=>api('save_progress',{progress:o}).catch(e=>report('save progress',e));
 
 /* ── clock skew between two cameras ─────────────────────────── */
 function detectSkew(){
@@ -443,7 +460,7 @@ function drawZoom(){
 document.addEventListener('click',async e=>{
   const t=e.target;
   if(t.id==='start'){ name=(document.getElementById('who')||{}).value||'';
-    api('set_owner',{name}).catch(()=>{});
+    api('set_owner',{name}).catch(e=>report('save name',e));
     dups=findDups().map(d=>{ d.keep = (d[0].sharpness||0)>=(d[1].sharpness||0)?0:1; return d; });
     screen = dups.length ? 'dups' : 'organise'; cur=0;
     if(screen==='organise') propose();
@@ -454,7 +471,7 @@ document.addEventListener('click',async e=>{
     paint(); scrollTo(0,0); return; }
   if(t.id==='dnext'){ const d=dups[cur];
     if(d.keep>=0){ const drop=d[1-d.keep], keep=d[d.keep];
-      drop.excluded=true; api('mark_dup',{keep:keep.id,drop:drop.id}).catch(()=>{}); }
+      drop.excluded=true; api('mark_dup',{keep:keep.id,drop:drop.id}).catch(e=>report('mark duplicate',e)); }
     if(cur<dups.length-1) cur++; else { screen='organise'; cur=0; propose(); prog({screen:'organise'}); }
     paint(); scrollTo(0,0); return; }
 
@@ -514,9 +531,13 @@ document.addEventListener('input',e=>{
 async function saveStory(){
   const m=M[cur]; if(!m) return;
   // no chapter id means the grouping never saved — fix that first
-  if(!m.id){ await saveGroups(); if(!m.id){ flash(false); return; } }
+  if(!m.id){ await saveGroups(); if(!m.id){ flash(false);
+    report('answer has no memory to save against',new Error('no chapter id'),{memory:cur+1});
+    return; } }
   try{ await api('save_story',{chapter_id:m.id,story:m.story||''}); flash(true); }
-  catch(e){ flash(false); setTimeout(saveStory,4000); }
+  catch(e){ flash(false); report('save answer',e,{memory:cur+1,
+      words:(m.story||'').trim().split(/\s+/).filter(Boolean).length});
+    setTimeout(saveStory,4000); }
 }
 
 window.addEventListener('beforeunload',e=>{
@@ -574,7 +595,8 @@ window.addEventListener('beforeunload',e=>{
       cur = need>=0 ? need : 0;
     }
     paint();
-  }catch(e){ document.getElementById('stage').innerHTML=
+  }catch(e){ report('load the collection', e);
+    document.getElementById('stage').innerHTML=
     '<p class="load">Couldn\'t load your photographs. Try the link again in a moment.</p>'; }
 })();
 </script>
