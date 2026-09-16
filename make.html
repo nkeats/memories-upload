@@ -215,6 +215,7 @@ function propose(){
   const on=A.filter(p=>!p.excluded);
   M=[];
   if(!on.length) return;
+  if(!on.length){ M=[{title:'',register:'warm',story:'',photos:[]}]; return; }
   const want=Math.max(4, Math.min(10, Math.round(on.length/8)));
   const gaps=[];
   for(let i=1;i<on.length;i++)
@@ -567,8 +568,8 @@ window.addEventListener('beforeunload',e=>{
       orphan.forEach(a=>{
         const t=new Date(a.taken_at);
         const home=M.find(m=>m.photos.length &&
-          t>=new Date(m.photos[0].taken_at) &&
-          t<=new Date(m.photos[m.photos.length-1].taken_at));
+          t>=new Date(m.photos[0].taken_at).getTime() &&
+          t<=new Date(m.photos[m.photos.length-1].taken_at).getTime());
         if(home){ home.photos.push(a);
           home.photos.sort((x,y)=>new Date(x.taken_at)-new Date(y.taken_at)); }
         else loose.push(a);
@@ -582,7 +583,10 @@ window.addEventListener('beforeunload',e=>{
           c.photos.push(a);
         });
       }
-      M.sort((a,b)=>new Date(a.photos[0].taken_at)-new Date(b.photos[0].taken_at));
+      /* ⚠ A memory can legitimately hold nothing visible — every photo excluded,
+         or emptied by moving them out. photos[0] is then undefined. */
+      const firstAt = m => m.photos.length ? new Date(m.photos[0].taken_at).getTime() : Infinity;
+      M.sort((a,b)=>firstAt(a)-firstAt(b));
       if(orphan.length) dirty=true;   // save the new placement
       /* ⚠ Never drop someone at the end. Go to the first memory that still
          needs something — a name on the organise screen, an answer on the
