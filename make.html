@@ -128,7 +128,8 @@ const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;
 const mmss=s=>`${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}`;
 const words=s=>s&&s.trim()?s.trim().split(/\s+/).length:0;
 const secs=m=>m.photos.filter(p=>!p.excluded)
-  .reduce((t,p)=>t+REG[m.register]+(p.faces>=4?1.5:p.faces>=2?0.5:p.faces?0:-0.5),0);
+  .reduce((t,p)=>t+REG[m.register]+
+     (p.faces==null ? 0 : p.faces>=4?1.5 : p.faces>=2?0.5 : p.faces?0 : -0.5),0);
 const total=()=>M.reduce((t,m)=>t+secs(m),0);
 
 async function api(action,extra){
@@ -279,37 +280,33 @@ function questions(m){
   const counts=M.map(x=>x.photos.filter(p=>!p.excluded).length);
   const most=inn.length===Math.max(...counts) && inn.length>=5;
   const fewest=inn.length<=3;
-  const faces=inn.map(p=>p.faces||0);
-  const maxFaces=Math.max(...faces), withFaces=faces.filter(f=>f>0).length;
-  const crowd=inn[faces.indexOf(maxFaces)];
-  const closeup=inn.find(p=>(p.largest_face_frac||0)>0.09);
-  // biggest gap inside the memory
-  let gap=0, gapAt=null;
-  for(let i=1;i<inn.length;i++){
-    const d=(new Date(inn[i].taken_at)-new Date(inn[i-1].taken_at))/3600000;
-    if(d>gap){ gap=d; gapAt=i; }
-  }
-  // a burst — three or more inside two minutes
-  let burst=false;
-  for(let i=2;i<inn.length;i++)
-    if((new Date(inn[i].taken_at)-new Date(inn[i-2].taken_at))/60000<=2){ burst=true; break; }
-
+  /* ⚠ NO DATA IS NOT ZERO. faces is null until the photographs have been
+     scanned; treating null as 0 produced "there isn't a person in any of these"
+     over a set full of people. Every question below must check the signal
+     EXISTS before it fires. */
+  const scanned = inn.filter(p=>p.faces !== null && p.faces !== undefined);
+  const haveFaces = scanned.length >= Math.max(3, inn.length*0.5);
+  const faces = scanned.map(p=>p.faces);
+  const maxFaces = haveFaces ? Math.max(...faces) : null;
+  const withFaces = haveFaces ? faces.filter(f=>f>0).length : null;
+  const crowd = haveFaces ? scanned[faces.indexOf(maxFaces)] : null;
+  const closeup = haveFaces ? scanned.find(p=>(p.largest_face_frac||0)>0.09) : null;
   const q=[];
   // ── the anchored one: whichever signal is strongest here ──
   if(most) q.push(`You took more photographs here than anywhere else — ${inn.length} of them. What was it about this place?`);
   else if(fewest && days===1) q.push(`Only ${inn.length} from here. Was it a quick stop, or just not much to photograph?`);
   else if(days>2) q.push(`This runs across ${days} days. Which of them was the best?`);
-  else if(maxFaces>=3) q.push("There's a group of you in one of these. Who else was there?");
-  else if(withFaces===0) q.push("There isn't a person in any of these. What were you looking at?");
+  else if(haveFaces && maxFaces>=3) q.push("There's a group of you in one of these. Who else was there?");
+  else if(haveFaces && withFaces===0) q.push("There isn't a person in any of these. What were you looking at?");
   else if(gap>=4 && gapAt) q.push(`There's about ${Math.round(gap)} hours between two of these. What happened in between?`);
   else if(spanHrs>=8) q.push("This one covers a good chunk of a day. What did you get up to?");
   else q.push("What was happening here?");
 
   // ── a second, different one where there is material for it ──
-  if(closeup && maxFaces<=2) q.push("One of these is a close one of somebody. Who is that, and what were they saying?");
+  if(haveFaces && closeup && maxFaces<=2) q.push("One of these is a close one of somebody. Who is that, and what were they saying?");
   else if(burst && inn.length>=5) q.push("A few of these are seconds apart. What were you trying to get?");
   else if(most && days>1) q.push("What was the best day of it?");
-  else if(withFaces>0 && withFaces<inn.length/3) q.push("Most of these are the place rather than the people. Where was everyone?");
+  else if(haveFaces && withFaces>0 && withFaces<inn.length/3) q.push("Most of these are the place rather than the people. Where was everyone?");
 
   // ── one open question, never the same as the last memory's ──
   q.push(OPENERS[(idx*5+3) % OPENERS.length]);
@@ -385,8 +382,15 @@ function paintOrg(){
     gone.forEach(p=>{h+=`<div class="lo" data-back="${p.id}"><img src="${p.thumb_url||p.url}" loading="lazy" decoding="async"><div class="put">put back</div></div>`;});
     h+='</div></div>'; }
   document.getElementById('stage').innerHTML=h;
-  nav(cur<M.length-1?'<button class="go" id="onext">Next part →</button>'
-                    :'<button class="go" id="toask">Now the questions →</button>',
+  /* ⚠ Do not offer the questions while parts are still unnamed — and never make
+     it the only button. Moving on by accident used to be a one-way door. */
+  const unnamed = M.filter(x=>!(x.title||'').trim()).length;
+  const rightBtn = cur < M.length-1
+    ? '<button class="go" id="onext">Next part →</button>'
+    : (unnamed
+        ? `<button id="tofirst">Go to the ${unnamed} still to name</button>`
+        : '<button class="go" id="toask">Now the questions →</button>');
+  nav(rightBtn,
       `<b>${mmss(total())}</b><br>${A.filter(p=>!p.excluded).length} photos · ${M.length} parts`,
       cur>0);
   sheet();
@@ -407,8 +411,9 @@ function paintAsk(){
       <textarea id="extra" placeholder="Optional">${esc(M.extra||'')}</textarea></div>`;
   document.getElementById('stage').innerHTML=h;
   countUp();
-  nav(cur<M.length-1?'<button class="go" id="anext">Next →</button>'
-                    :'<button class="go" id="finish">Finished</button>',
+  nav((cur<M.length-1?'<button class="go" id="anext">Next →</button>'
+                     :'<button class="go" id="finish">Finished</button>')
+      + ' <button id="toorganise">Back to the photos</button>',
       `${M.filter(x=>words(x.story)>=12).length} of ${M.length} answered`, cur>0);
   document.getElementById('sheet').classList.add('hide');
 }
@@ -485,6 +490,11 @@ document.addEventListener('click',async e=>{
   if(t.dataset.reg){ M[cur].register=t.dataset.reg; queueSave(); paint(); return; }
   if(t.id==='onext'){ cur++; sel=null; picking=false; saveGroups(); prog({screen:'organise',part:cur+1}); paint(); scrollTo(0,0); return; }
   if(t.id==='back'){ if(cur>0){cur--;} sel=null; picking=false; paint(); scrollTo(0,0); return; }
+  if(t.id==='tofirst'){ const i=M.findIndex(x=>!(x.title||'').trim());
+    if(i>=0){ cur=i; sel=null; picking=false; paint(); scrollTo(0,0); } return; }
+  if(t.id==='toorganise'){ saveStory(); screen='organise';
+    cur=Math.max(0,M.findIndex(x=>!(x.title||'').trim())); if(cur<0) cur=0;
+    sel=null; picking=false; prog({screen:'organise',part:cur+1}); paint(); scrollTo(0,0); return; }
   if(t.id==='toask'){ await saveGroups(); screen='describe'; cur=0; sel=null;
     prog({screen:'describe'}); paint(); scrollTo(0,0); return; }
   if(t.id==='anext'){ saveStory(); cur++; prog({screen:'describe',part:cur+1}); paint(); scrollTo(0,0); return; }
