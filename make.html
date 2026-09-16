@@ -269,6 +269,10 @@ const OPENERS=[
  "What did it smell like, or sound like?"
 ];
 function questions(m){
+  /* ⚠ Questions written from what the vision pass actually found in these
+     photographs always beat anything derivable from counts. Only fall back to
+     the generated ones when a memory has none stored. */
+  if(Array.isArray(m.questions) && m.questions.length) return m.questions;
   const inn=m.photos.filter(p=>!p.excluded);
   if(!inn.length) return ["What happened here?"];
   const idx=M.indexOf(m);
@@ -568,7 +572,8 @@ window.addEventListener('beforeunload',e=>{
     skew=detectSkew();
     if(d.chapters.length){                       // resuming
       M=d.chapters.map(c=>({id:c.id,title:c.title||'',register:c.register||'warm',
-        story:c.story||'',photos:A.filter(a=>a.chapter_id===c.id)
+        story:c.story||'', questions:c.questions||null,
+        photos:A.filter(a=>a.chapter_id===c.id)
           .sort((x,y)=>(x.sort_index??0)-(y.sort_index??0))}));
       /* Photographs added after the grouping was done: drop each one into
          whichever memory its time falls inside, in the right position.
