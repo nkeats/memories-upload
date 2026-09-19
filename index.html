@@ -149,6 +149,12 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 .sug{font-family:"Public Sans",sans-serif;font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
   color:#20180A;background:var(--brass);border-radius:4px;padding:2px 7px;margin-left:8px;vertical-align:middle}
 .sug.on{background:var(--green);color:#fff}
+.helpline{text-align:right;margin:0 0 -6px}
+.helpline .quiet{padding:6px 0}
+.help textarea{min-height:90px}
+.help .reply{font-size:17px;line-height:1.55;margin:14px 0 6px;color:var(--fg)}
+.help .reply.bad{color:var(--red)}
+.help .ask2{color:var(--fg3);font-size:14.5px;margin:0 0 10px}
 .quiet{background:none;border:none;color:var(--fg3);font:inherit;font-size:14px;cursor:pointer;padding:12px 6px;text-decoration:underline;text-underline-offset:3px}
 .quiet:hover{color:var(--fg2)}
 .said{font-size:16.5px;line-height:1.5;color:var(--fg2);margin:8px 0 0;padding-left:14px;border-left:3px solid var(--brass)}
@@ -173,7 +179,7 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 </style>
 </head>
 <body>
-<div class="wrap"><div id="stage" class="load">Opening your film…</div></div>
+<div class="wrap"><p class="helpline hide" id="helpline"><button class="quiet" id="helpOpen" type="button">Something not right?</button></p><div id="stage" class="load">Opening your film…</div></div>
 <div class="sheet hide" id="sheet"></div>
 <div class="nav hide" id="nav"></div>
 
@@ -269,6 +275,7 @@ async function route(){
     return;
   }
   J=j;
+  $('helpline').classList.remove('hide');
   switch(j.stage){
     case 'upload':      return showUpload();
     case 'describing':  return showDescribing();
@@ -1720,6 +1727,150 @@ async function finishGenre(){
   await finishFilm(b);
 }
 
+/* ═══ HELP — "something not right?" ═══════════════════════════════
+   ⚠ Not a chat box. A chat box listens sympathetically and changes nothing,
+   which is worse than no help at all. POST help {token, asked} answers one of
+   three kinds: `do` — an action the PAGE applies, then shows the reply (⚠ if
+   the action fails, say so; never show a reply that claims something worked
+   when it didn't); `cannot` — show the reply and stop (logged as roadmap);
+   `person` — show the reply and stop (logged for a human: money, dates,
+   complaints, anybody upset — a tribute film is about a death and somebody
+   will write at 2am). After every reply, one line: "anything else you'd want
+   to be able to change here?" — what they ask for is what we build next. */
+let HELP={open:false,busy:false,asked:'',reply:'',bad:false,replied:false};
+function paintHelp(){
+  const sh=$('sheet');
+  if(!HELP.open){ if(sh.classList.contains('help')){ sh.classList.add('hide'); sh.classList.remove('help'); sh.innerHTML=''; } return; }
+  sh.classList.add('help'); sh.classList.remove('hide');
+  sh.innerHTML=`<div class="in"><h3>What\u2019s not right?</h3>
+    ${HELP.replied?'':'<p>Tell us in your own words \u2014 a name said wrongly, a photo in the wrong place, the wrong music \u2014 and we\u2019ll put it right if we can.</p>'}
+    ${HELP.reply?`<p class="reply ${HELP.bad?'bad':''}">${esc(HELP.reply)}</p>`:''}
+    ${HELP.replied?`<p class="ask2">Anything else you\u2019d want to be able to change here?</p>`:''}
+    <textarea id="helpAsk" placeholder="${HELP.replied?'Anything else\u2026':'What\u2019s wrong, or what would you change?'}" ${HELP.busy?'disabled':''}>${esc(HELP.asked)}</textarea>
+    <div class="acts" style="margin-top:12px"><button class="yes" id="helpSend" ${HELP.busy?'disabled':''}>${HELP.busy?'One moment\u2026':'Send'}</button>
+      <button id="helpClose">${HELP.replied?'Done':'Never mind'}</button></div></div>`;
+  if(!HELP.busy){ const t=$('helpAsk'); if(t) t.focus(); }
+}
+async function sendHelp(){
+  const asked=(HELP.asked||'').trim(); if(!asked||HELP.busy){ const t=$('helpAsk'); if(t) t.focus(); return; }
+  HELP.busy=true; HELP.reply=''; HELP.bad=false; paintHelp();
+  let j;
+  try{ const r=await post('help',{asked}); j=r.j; if(!r.ok||!j||j.error) throw new Error((j&&j.error)||('HTTP '+r.status)); }
+  catch(e){ report('help',e,{asked:asked.slice(0,200)}); HELP.busy=false; HELP.bad=true; HELP.reply="That didn\u2019t go through. Please try again in a moment."; HELP.replied=true; paintHelp(); return; }
+  if(j.kind==='do'){
+    const out=await applyHelp(j.action,j.details||{});
+    if(out.ok){ HELP.reply=j.reply||'Done.'; HELP.bad=false; }
+    else{ HELP.reply=out.why||"We couldn\u2019t make that change from here."; HELP.bad=true;
+      report('help: action not applied',new Error(j.action),{action:j.action,details:j.details,why:out.why}); }
+  }else{ HELP.reply=j.reply||''; HELP.bad=false; }
+  HELP.busy=false; HELP.asked=''; HELP.replied=true; paintHelp();
+  setTimeout(()=>{ if(HELP.open) paintHelp(); },600);   // a repaint of the page underneath may have hidden the sheet
+}
+/* Which photograph does she mean? Her words against what we know of each
+   one — description, subject, notable, filename. Only a clear, single best
+   match is acted on; anything less is said so, not guessed. */
+const STOP=new Set(['the','a','an','of','one','ones','photo','photos','photograph','picture','pic','image','that','this','with','and','in','on','at','to','it','is','was','my','our','us','me','two','both','from','into','where']);
+const toks=t=>String(t||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(w=>w.length>2&&!STOP.has(w));
+function findAsset(assets,desc){
+  const q=toks(desc); if(!q.length) return {asset:null,why:'nothing to go on'};
+  const scored=assets.map(a=>{ const text=toks([a.description,a.subject,a.notable,a.original_filename,(a.who||[]).join(' ')].join(' ')).join(' ');
+    return {a,n:q.filter(w=>text.includes(w)).length}; }).sort((x,y)=>y.n-x.n);
+  const best=scored[0], second=scored[1];
+  if(!best||best.n===0) return {asset:null,why:'no match'};
+  if(second&&second.n===best.n) return {asset:null,why:'more than one match'};
+  return {asset:best.a,why:''};
+}
+/* help's `details` keys are not fixed: one call says {description, from, to}, the next
+   {photo_description, from_memory, to_memory}. Read them by shape, not by name. */
+const pickKey=(d,re)=>{ for(const k of Object.keys(d||{})){ if(re.test(k)&&typeof d[k]==='string'&&d[k].trim()) return d[k]; } return ''; };
+const descOf=d=>pickKey(d,/desc|photo|which|asset|move|image|pic/i)||'';
+const toOf=d=>pickKey(d,/^to|target|into|new_memory|new_group/i)||'';
+const findChapter=(chapters,name)=>{ const n=String(name||'').trim().toLowerCase(); return chapters.find(c=>(c.title||'').trim().toLowerCase()===n)||chapters.find(c=>(c.title||'').toLowerCase().includes(n)&&n.length>2)||null; };
+/* The grouping as the server has it, whole — save_groups replaces the lot,
+   so it must be built from every chapter, never from a page's partial list. */
+async function groupsNow(){
+  const d=await api('load',{});
+  const chapters=d.chapters.map(c=>({id:c.id,title:c.title||'',register:c.register||'warm',story:c.story||'',
+    photos:d.assets.filter(a=>a.chapter_id===c.id&&!a.excluded).sort((x,y)=>(x.sort_index??0)-(y.sort_index??0))}));
+  return {d,chapters,assets:d.assets};
+}
+async function saveGroupsNow(g){
+  const payload={groups:g.chapters.map(m=>({title:m.title,register:m.register,story:m.story||'',
+      assets:m.photos.filter(p=>!p.excluded).map(p=>p.id), hero:(m.photos.find(p=>p.is_hero)||{}).id||null})),
+    excluded:g.assets.filter(p=>p.excluded).map(p=>p.id)};
+  const r=await api('save_groups',payload);
+  if(!r.ids||r.ids.length!==g.chapters.length) throw new Error('save_groups: no ids back');
+}
+const VOICE_WORDS=[['female',/woman|female|her voice|girl|lady/],['male',/\bman\b|male|his voice|bloke/],['duet',/both|together|duet|two voices/]];
+async function applyHelp(action,d){
+  try{
+    if(action==='fix_pronunciation'){
+      const nm=pickKey(d,/^name|person|who/i), snd=pickKey(d,/sound|said|pronounc|say/i); if(!nm||!snd) return {ok:false,why:"We couldn\u2019t tell which name, or how it should sound."};
+      const people=await rpc('get_people',{p_token:TOKEN});
+      const who=(Array.isArray(people)?people:[]).find(x=>x.name.toLowerCase()===nm.toLowerCase());
+      if(!who) return {ok:false,why:`We don\u2019t have anyone called ${nm} on this film yet \u2014 add them on the first screen and we\u2019ll say it right.`};
+      const r=await rpc('confirm_person_sound',{p_token:TOKEN,p_name:who.name,p_corrected_said_as:snd});
+      if(!r||r.error) throw new Error((r&&r.error)||'confirm_person_sound failed');
+      return {ok:true};
+    }
+    if(action==='wrong_photo'){
+      /* Only the question in front of her can be flagged with certainty. */
+      const bad=toks(d.incorrect_description), q=toks(TURN&&!TURN.done?TURN.question:'');
+      if(screen==='answer'&&TURN&&!TURN.done&&bad.some(w=>q.includes(w))&&d.correct_description){
+        const r=await rpc('flag_wrong_premise',{p_token:TOKEN,p_turn:TURN.turn_id,p_what_it_really_is:String(d.correct_description)});
+        if(!r||r.error) throw new Error((r&&r.error)||'flag_wrong_premise failed');
+        const nt=await rpc('next_turn',{p_token:TOKEN,p_chapter:M[cur].id}); if(nt&&!nt.error){ M[cur].turn=nt; TURN=nt; draft=''; if(!nt.done) paintTurn(); }
+        return {ok:true};
+      }
+      return {ok:false,why:"Thank you \u2014 to fix that one, go to the question it belongs to and press \u201cthat\u2019s not what\u2019s in that photo\u201d under it."};
+    }
+    if(action==='rename_memory'){
+      const oldN=pickKey(d,/old|from|current/i), newN=pickKey(d,/new|rename/i); const g=await groupsNow(); const c=findChapter(g.chapters,oldN);
+      if(!c||!newN) return {ok:false,why:`We couldn\u2019t find a group called \u201c${oldN}\u201d.`};
+      c.title=String(newN).trim(); await saveGroupsNow(g); await afterGroupsChanged(); return {ok:true};
+    }
+    if(action==='move_photo'||action==='remove_photo'||action==='reorder'){
+      const g=await groupsNow();
+      const mem=pickKey(d,/^memory|^group|^in_/i); const pool=action==='reorder'&&mem?((findChapter(g.chapters,mem)||{}).photos||[]):g.assets.filter(a=>!a.excluded);
+      const {asset,why}=findAsset(pool,descOf(d));
+      if(!asset) return {ok:false,why:why==='more than one match'?"A few photos match that \u2014 on the grouping screen, tap the one you mean.":"We couldn\u2019t tell which photo you mean \u2014 on the grouping screen, tap it and choose what to do."};
+      const from=g.chapters.find(c=>c.photos.some(p=>p.id===asset.id));
+      if(action==='remove_photo'){ if(from) from.photos=from.photos.filter(p=>p.id!==asset.id); asset.excluded=true; }
+      if(action==='move_photo'){ const to=findChapter(g.chapters,toOf(d)); if(!to) return {ok:false,why:`We couldn\u2019t find a group called \u201c${toOf(d)}\u201d.`};
+        if(from) from.photos=from.photos.filter(p=>p.id!==asset.id); to.photos.push(asset); }
+      if(action==='reorder'){ const ch=from; if(!ch) return {ok:false,why:"We couldn\u2019t tell which group that\u2019s in."};
+        const before=pickKey(d,/before|ahead|earlier/i), after=pickKey(d,/after|behind|later/i); const ref=findAsset(ch.photos.filter(p=>p.id!==asset.id),before||after).asset; if(!ref) return {ok:false,why:"We couldn\u2019t tell which photo it should go next to."};
+        ch.photos=ch.photos.filter(p=>p.id!==asset.id); const i=ch.photos.indexOf(ref); ch.photos.splice(after&&!before?i+1:i,0,asset); }
+      await saveGroupsNow(g); await afterGroupsChanged(); return {ok:true};
+    }
+    if(action==='change_sound'){
+      await loadMusic();
+      const want0=toOf(d)||pickKey(d,/genre|sound|voice|style/i); if(/voice/i.test(d.change||'')||/voice/i.test(pickKey(d,/change|what|kind/i))){ const want=String(want0).toLowerCase(); const v=(VOICE_WORDS.find(([slug,re])=>re.test(want))||[])[0]||G.voices.find(x=>x.slug===want||x.label.toLowerCase()===want)?.slug;
+        if(!v) return {ok:false,why:"We couldn\u2019t tell which voice you mean \u2014 the choices are on the music screen."};
+        const r=await rpc('set_voice',{p_token:TOKEN,p_slug:v}); if(!r||r.error) throw new Error((r&&r.error)||'set_voice failed'); G.voice=v; }
+      else{ const want=String(want0).toLowerCase(); const gn=G.genres.find(x=>x.slug===want||x.label.toLowerCase()===want)||G.genres.find(x=>x.label.toLowerCase().includes(want)&&want.length>2);
+        if(!gn) return {ok:false,why:`We don\u2019t have a sound called \u201c${want0}\u201d \u2014 the choices are on the music screen.`};
+        const r=await rpc('set_genre',{p_token:TOKEN,p_slug:gn.slug,p_plain:null}); if(!r||r.error) throw new Error((r&&r.error)||'set_genre failed'); }
+      if(screen==='describing'||screen==='genre'){ try{ await loadMusic(); paintMusic(); }catch(_){} }
+      return {ok:true};
+    }
+    if(action==='add_person'){
+      const nm=pickKey(d,/^name|person|who/i), rel=pickKey(d,/relation|role|relationship/i); if(!nm) return {ok:false,why:"We couldn\u2019t tell the name."};
+      const r=await rpc('set_person',{p_token:TOKEN,p_name:nm.trim(),p_relation:rel||null,p_is_subject:!!d.is_subject,p_is_you:false});
+      if(!r||r.error) throw new Error((r&&r.error)||'set_person failed');
+      P.people.push({name:r.name||nm,relation:rel||null,is_subject:!!d.is_subject,said_as:r.said_as||null,sound_ok:false});
+      if(page==='upload'&&P.mode==='list') paintWho();
+      return {ok:true};
+    }
+    return {ok:false,why:"That\u2019s not something we can change from here yet."};
+  }catch(e){ report('help apply',e,{action,details:d}); return {ok:false,why:"We tried to make that change and it didn\u2019t go through. Nothing has been altered."}; }
+}
+/* the screen she is on shows the change */
+async function afterGroupsChanged(){
+  if(page==='sort'){ dirty=false; await showSort(); }
+  else if(page==='answer'&&screen==='answer'){ await showAnswer(); }
+}
+
 /* ═══ 5 · THANK YOU ══════════════════════════════════════════════ */
 function showThanks(){
   page='thanks';
@@ -1738,6 +1889,10 @@ document.addEventListener('click',async e=>{
   if(t.id==='dretry'){ scan.stalled=false; paintScan(); describeLoop(++describeRun); return; }
   if(t.id==='tosort'){ toSort(); return; }
 
+  /* help */
+  if(t.id==='helpOpen'){ HELP.open=true; HELP.reply=''; HELP.bad=false; HELP.replied=false; HELP.asked=''; paintHelp(); return; }
+  if(t.id==='helpClose'){ HELP.open=false; paintHelp(); return; }
+  if(t.id==='helpSend'){ sendHelp(); return; }
   /* before they start */
   if(t.id==='welcomeGo'){ P.welcomed=true; P.mode='list'; paintWho(); scrollTo(0,0); return; }
   if(t.id==='printsGo'||t.id==='printsSkip'){ showUploadPage(); scrollTo(0,0); return; }
@@ -1859,6 +2014,7 @@ document.addEventListener('input',e=>{
   if(e.target.id==='nm'){ M[cur].title=e.target.value; queueSave(); if(screen==='organise') orgNav(); }
   if(e.target.id==='ans'){ draft=e.target.value; countUp(); }
   if(e.target.id==='what'){ whatDraft=e.target.value; const b=$('awrongsend'); if(b) b.disabled=!whatDraft.trim(); }
+  if(e.target.id==='helpAsk'){ HELP.asked=e.target.value; }
 });
 window.addEventListener('beforeunload',e=>{
   if(dirty||failed){ e.preventDefault(); e.returnValue=''; }
