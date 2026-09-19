@@ -1462,14 +1462,6 @@ async function showAnswer(){
   plain('<p class="load">Loading your photos…</p>');
   try{
     let d=await api('load',{});
-    /* A group that was still waiting for its questions when she pressed Done
-       may have them now. Ask once per visit, and take anything new. */
-    if(!askedAgain&&d.chapters.some(c=>!(Array.isArray(c.questions)&&c.questions.length))){
-      askedAgain=true;
-      try{ const {ok,j}=await post('questions',{}); if(ok&&+j.written>0) d=await api('load',{}); }
-      catch(e){ report('questions on answer page',e); }
-      if(page!=='answer') return;
-    }
     A=d.assets.filter(a=>a.url);
     name=d.collection.owner_name||'';
     try{ const cs=await rpc('clip_state',{p_token:TOKEN}); CLIPS={}; (cs&&cs.clips||[]).forEach(c=>{ CLIPS[c.id]=c; }); }catch(_){}
@@ -1479,11 +1471,20 @@ async function showAnswer(){
       plain(`<h1>One moment</h1><p class="do">We can't find your groups. Please try the link again in a little while.</p>`); return; }
     /* Where each group is up to. ⚠ Only groups with something to ask are
        shown — a group with no turns is never put in front of her. */
-    for(const m of all){
+    const readTurns=async()=>{ for(const m of all){
       try{ const t=await rpc('next_turn',{p_token:TOKEN,p_chapter:m.id}); m.turn=(t&&!t.error)?t:{done:true,total:0,answered:0}; }
-      catch(e){ report('next_turn',e,{group:m.title}); m.turn={done:true,total:0,answered:0}; }
-    }
+      catch(e){ report('next_turn',e,{group:m.title}); m.turn={done:true,total:0,answered:0}; } } };
+    await readTurns();
     if(page!=='answer') return;
+    /* A group with no turns at all may have been waiting for its questions
+       when she pressed Done. Ask once per visit, then read the turns again.
+       ⚠ The turns are the truth here, not the old chapters.questions array. */
+    if(!askedAgain&&all.some(m=>!(+m.turn.total))){
+      askedAgain=true;
+      try{ const {ok,j}=await post('questions',{}); if(ok&&+j.written>0) await readTurns(); }
+      catch(e){ report('questions on answer page',e); }
+      if(page!=='answer') return;
+    }
     M=all.filter(m=>(+m.turn.total||0)>0);
     if(all.length>M.length) report('answer: groups without questions',new Error('waiting'),{without:all.length-M.length,of:all.length});
     if(!M.length){
@@ -1509,7 +1510,7 @@ async function showAnswer(){
 function photosStrip(m){
   let h=`<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(112px,1fr));margin-bottom:18px">`;
   m.photos.forEach((p,i)=>{ h+=`<div class="c" data-zoom="${i}">${tile(p)}<div class="n">${i+1}</div></div>`; });
-  return h+`</div><p class="lede" style="margin-top:-10px;font-size:14.5px">Tap a photo to see it properly.</p>`;
+  return h+`</div>`+(m.photos.length?`<p class="lede" style="margin-top:-10px;font-size:14.5px">Tap a photo to see it properly.</p>`:'');
 }
 function paintTurn(){
   atEnd=false;
