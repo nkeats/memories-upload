@@ -378,7 +378,7 @@ function paintWho(){
   let h=`<div class="step">First · the people</div><h1>${esc(w.h)}</h1><p class="do">${esc(w.do)}</p>`;
   if(P.people.length){
     h+='<div class="people">';
-    P.people.forEach((x,i)=>{ h+=`<div class="person"><b>${esc(x.name)}</b>${x.relation?` <span class="rel">· ${esc(x.relation)}</span>`:''}${x.is_you?' <span class="rel">· that's you</span>':''}${x.is_subject?' <span class="sug">the film is about them</span>':''}
+    P.people.forEach((x,i)=>{ h+=`<div class="person"><b>${esc(x.name)}</b>${x.relation?` <span class="rel">· ${esc(x.relation)}</span>`:''}${x.is_you?' <span class="rel">· that’s you</span>':''}${x.is_subject?' <span class="sug">the film is about them</span>':''}
       <button class="close" data-premove="${i}" type="button" style="float:right;padding:0" aria-label="Remove ${esc(x.name)}">remove</button></div>`; });
     h+='</div>';
   }
