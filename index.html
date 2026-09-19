@@ -149,6 +149,10 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 .sug{font-family:"Public Sans",sans-serif;font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
   color:#20180A;background:var(--brass);border-radius:4px;padding:2px 7px;margin-left:8px;vertical-align:middle}
 .sug.on{background:var(--green);color:#fff}
+.ph.clip{flex-direction:column;gap:6px;padding:10px;font-size:12.5px;color:var(--fg2);line-height:1.35}
+.ph.clip b{color:var(--fg);font-size:13px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ph.clip small{color:var(--fg3);font-size:11px}
+.ph.clip .play{margin:0;padding:6px 12px;font-size:13px}
 .genre .play{margin-top:10px;background:var(--p2);border:1px solid var(--l2);border-radius:6px;color:var(--fg);
   font:inherit;font-size:15px;padding:9px 14px;cursor:pointer}
 .genre .play.playing{border-color:var(--brass);color:var(--brass)}
@@ -722,7 +726,7 @@ function paintQueue(){
   $('rows').innerHTML=queue.map(q=>`<div class="row"><span class="nm">${esc(q.file.name)}</span>
     <span class="st ${q.status==='done'||q.status==='dup'?'ok':q.status==='failed'?'bad':'wait'}">
       ${q.status==='done'?'in':q.status==='dup'?(q.err?esc(q.err):"you've already added this one"):q.status==='failed'?(esc(q.err)||"didn't go in"):(word[q.status]||esc(q.status))}
-      ${q.video?`<span class="tagd">video${q.duration?' · '+Math.round(q.duration)+' s':''}${q.has_speech?' · someone talking':''}</span>`:''}
+      ${q.video?`<span class="tagd">video${q.duration?' · '+Math.round(q.duration)+' s':''}${q.has_speech?' · someone talking':''}${q.noFrame?' · no still — it’ll still be in your film':''}</span>`:''}
       ${q.src&&q.status!=='dup'?`<span class="tagd ${CLS[q.src]}">${LABEL[q.src]}</span>`:''}</span></div>`).join('');
 }
 async function send(){
@@ -744,7 +748,7 @@ async function send(){
       if(!q.signed_url){
         const {ok,status,j}=await post('upload',{action:'sign',filename:q.file.name,mime:mimeOf(q.file),
           size:q.file.size,taken_at:q.at,date_source:q.src,uploaded_by:who,phash:q.phash,device:q.device,
-          ...(q.video?{duration_s:q.duration,has_speech:q.has_speech}:{})});
+          ...(q.video?{duration_s:q.duration,has_speech:q.has_speech,frame_ok:!!q.thumb}:{})});
         /* The server is the authority on "already in": it answers
            {duplicate:true, of:<filename>, message} instead of a signed URL. It
            knows about every device; the page's own list only knows this one. */
@@ -772,7 +776,7 @@ async function send(){
         throw e; }
       if(q.video&&q.thumb) await sendThumb(q);
       const c=await post('upload',{action:'confirm',asset_id:q.asset_id,phash:q.phash,device:q.device,
-        ...(q.video?{duration_s:q.duration,has_speech:q.has_speech,thumb_path:q.thumb_path||null}:{})});
+        ...(q.video?{duration_s:q.duration,has_speech:q.has_speech,frame_ok:!!q.thumb,thumb_path:q.thumb_path||null}:{})});
       if(!c.ok) throw new Error(c.j.error||'confirm failed');
       q.status='done';
       remember(q.phash);
@@ -1017,12 +1021,21 @@ function propose(){
   on.forEach((p,i)=>{ if(cuts.has(i)){ c={title:'',register:'warm',story:'',photos:[]}; M.push(c); } c.photos.push(p); });
 }
 
-/* A photo shows itself; a clip shows its frame, or a plain "video" tile
-   when there is none — never a broken image. */
+/* A photo shows itself. A clip shows its frame; a clip with NO frame (an
+   iPhone HEVC .MOV on a machine that can't draw it) gets a proper card — the
+   name, the length, a play button and a sentence — because a blank tile is a
+   mystery and a labelled one is fine. Never a broken image. */
+let CLIPS={};
 const isClip=p=>/\.(mp4|mov|m4v|3gp|webm|avi|mkv)$/i.test(p.storage_path||'');
+const clipOf=p=>CLIPS[p.id]||{};
 function tile(p){
-  if(isClip(p)) return p.thumb_url?`<img src="${p.thumb_url}" loading="lazy" decoding="async"><div class="tag">VIDEO</div>`:`<div class="ph">video</div>`;
-  return `<img src="${p.thumb_url||p.url}" loading="lazy" decoding="async">`;
+  if(!isClip(p)) return `<img src="${p.thumb_url||p.url}" loading="lazy" decoding="async">`;
+  const c=clipOf(p), secs=c.seconds_in_film||c.duration_s||null, talk=c.has_speech?(c.voice_wanted===false?'voice kept quiet':'someone talking'):'';
+  if(p.thumb_url&&c.frame_ok!==false) return `<img src="${p.thumb_url}" loading="lazy" decoding="async"><div class="tag">VIDEO${secs?' · '+Math.round(secs)+' s':''}</div>`;
+  return `<div class="ph clip"><b>${esc(p.original_filename||'video')}</b>
+    <span>${secs?Math.round(secs)+' seconds':'video'}${talk?' · '+talk:''}</span>
+    <button class="play" type="button" data-playclip="${esc(p.url||'')}" aria-label="Play ${esc(p.original_filename||'this clip')}">▶ Play</button>
+    ${c.frame_ok===false?`<small>We couldn’t get a still from this one — it’ll still be in your film.</small>`:''}</div>`;
 }
 async function showSort(){
   page='sort';
@@ -1036,6 +1049,10 @@ async function showSort(){
     A.sort((a,b)=>new Date(a.taken_at)-new Date(b.taken_at));
     name=d.collection.owner_name||'';
     skew=detectSkew();
+    /* Everything about this film's clips in one call: length, seconds in the
+       film, whether a still exists, whether anybody is talking, what they say. */
+    try{ const cs=await rpc('clip_state',{p_token:TOKEN}); CLIPS={}; (cs&&cs.clips||[]).forEach(c=>{ CLIPS[c.id]=c; }); }
+    catch(e){ report('clip_state',e); }
     /* Clips with a voice that nobody has decided about, before anything else
        on this page. One tap each; only where it matters. */
     try{ const c=await rpc('clips_to_ask',{p_token:TOKEN}); V.clips=Array.isArray(c)?c.map(x=>({...x,asset:A.find(a=>a.id===(x.asset_id||x.id||x.asset))})).filter(x=>x.asset):[]; }
@@ -1602,6 +1619,9 @@ document.addEventListener('click',async e=>{
   if(back){ const p=A.find(x=>x.id===back.dataset.back); p.excluded=false; queueSave(); paint(); return; }
 
   /* zoom (sort and answer) */
+  const pc=t.closest('[data-playclip]');
+  if(pc){ const inn=(M[cur]||{photos:[]}).photos.filter(x=>!x.excluded); const i=inn.findIndex(x=>x.url===pc.dataset.playclip);
+    if(i>=0){ zoom=i; drawZoom(); const v=document.querySelector('#lb video'); if(v) v.play().catch(()=>{}); } return; }
   const z=t.closest('[data-zoom]');
   if(z){ zoom=+z.dataset.zoom; drawZoom(); return; }
   if(t.dataset.z){ const inn=M[cur].photos.filter(p=>!p.excluded);
