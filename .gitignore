@@ -1,0 +1,10 @@
+# ⚠ Never publish — these hold live collection tokens (the credential itself),
+# internal notes and a customer's film plan. GitHub Pages serves the whole repo.
+STATE.md
+occasion-packs.md
+composition-plan-cambodia-vietnam.md
+*.md
+!README.md
+# working scratch
+peek/
+photos*/

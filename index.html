@@ -2,302 +2,1266 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<title>Add your photos</title>
+<title>Your film</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{
-  --paper:#E7E9E4; --print:#FDFDFC; --ink:#1F2D2B; --ink-soft:#54635F;
-  --ink-faint:#8B9793; --rule:#CDD2CB; --viridian:#12564C; --viridian-lift:#1A6F62;
-  --tungsten:#C8912F; --warn:#8A4B2A;
-}
-*{box-sizing:border-box}
-body{margin:0;background:var(--paper);color:var(--ink);
-  font-family:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
-.wrap{max-width:720px;margin:0 auto;padding:28px 20px 90px}
-h1{font-family:"Newsreader",Georgia,serif;font-weight:400;
-  font-size:clamp(27px,5.2vw,36px);line-height:1.15;margin:0 0 8px}
-.sub{color:var(--ink-soft);margin:0 0 26px;font-size:16px}
-.tabs{display:flex;gap:4px;border-bottom:1px solid var(--rule);margin-bottom:26px}
-.tab{background:none;border:none;border-bottom:2px solid transparent;padding:9px 14px;
-  font:inherit;font-size:15px;color:var(--ink-faint);cursor:pointer;margin-bottom:-1px}
-.tab[aria-selected=true]{color:var(--ink);border-bottom-color:var(--viridian);font-weight:600}
-.card{background:var(--print);border:1px solid var(--rule);border-radius:3px;padding:20px 22px;margin-bottom:18px}
-label.fl{display:block;font-weight:600;font-size:15px;margin-bottom:4px}
-.hint{color:var(--ink-faint);font-size:14px;margin:0 0 10px}
-input[type=text]{width:100%;background:var(--print);border:1px solid var(--rule);
-  border-radius:3px;padding:11px 13px;font:inherit;color:var(--ink)}
-input[type=text]:focus{outline:none;border-color:var(--viridian);box-shadow:0 0 0 3px rgba(18,86,76,.14)}
-.drop{border:2px dashed var(--rule);border-radius:4px;background:var(--print);
-  padding:38px 22px;text-align:center;cursor:pointer;transition:all .15s}
-.drop:hover,.drop.over{border-color:var(--viridian);background:#F4F7F3}
-.drop b{display:block;font-family:"Newsreader",Georgia,serif;font-size:21px;font-weight:500;margin-bottom:5px}
-.drop span{color:var(--ink-faint);font-size:14.5px}
-button.go{background:var(--viridian);color:#fff;border:1px solid var(--viridian);border-radius:3px;
-  padding:12px 26px;font:inherit;font-weight:600;font-size:15.5px;cursor:pointer;width:100%}
-button.go:hover:not(:disabled){background:var(--viridian-lift)}
-button.go:disabled{background:#B9C1BC;border-color:#B9C1BC;cursor:not-allowed}
-.ghost{background:none;border:1px solid var(--rule);color:var(--ink);border-radius:3px;
-  padding:9px 16px;font:inherit;font-size:14.5px;cursor:pointer}
-.ghost:hover{border-color:var(--viridian);color:var(--viridian)}
-.bar{height:5px;background:var(--rule);border-radius:3px;overflow:hidden;margin:14px 0 6px}
-.bar i{display:block;height:100%;background:var(--viridian);width:0;transition:width .25s}
-.rows{margin-top:14px;max-height:320px;overflow-y:auto;font-size:14px}
-.row{display:flex;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid #EFF1ED}
+:root{--ink:#0C0D10;--panel:#15171C;--p2:#1D1F26;--line:#2A2E37;--l2:#3C414C;
+  --fg:#F4F1EA;--fg2:#9BA0AB;--fg3:#6B707A;--brass:#D4A24C;--green:#5E8C6A;--red:#B4543A}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--ink);color:var(--fg);font-family:"Public Sans",sans-serif;
+  font-size:17px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:980px;margin:0 auto;padding:20px 18px calc(190px + env(safe-area-inset-bottom))}
+h1{font-family:"Newsreader",serif;font-weight:300;font-size:clamp(28px,7vw,38px);margin:10px 0 8px;line-height:1.18}
+h2{font-family:"Newsreader",serif;font-weight:300;font-size:clamp(22px,5.5vw,30px);
+  line-height:1.3;margin:0 0 10px}
+/* The one sentence that says what to do. Above the fold on every page, set large. */
+p.do{font-size:clamp(19px,4.6vw,23px);line-height:1.5;margin:0 0 20px;max-width:56ch;color:var(--fg)}
+p.lede{color:var(--fg2);font-size:16.5px;line-height:1.6;margin:0 0 22px;max-width:56ch}
+.step{font-size:13px;color:var(--fg3);letter-spacing:.06em;text-transform:uppercase}
+.step b{color:var(--brass)}
+
+input[type=text],textarea{width:100%;background:var(--panel);border:1px solid var(--l2);
+  border-radius:8px;color:var(--fg);font:inherit;font-size:18px;padding:16px 17px}
+input[type=text]:focus,textarea:focus{outline:none;border-color:var(--brass)}
+textarea{min-height:170px;line-height:1.65;resize:vertical}
+::placeholder{color:var(--fg3)}
+.count{text-align:right;font-size:13.5px;color:var(--fg3);margin-top:7px}
+.count.good{color:var(--green)}
+
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 24px}
+.chips .lab{width:100%;font-size:15px;color:var(--fg2);margin-bottom:3px}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;
+  padding:12px 20px;font:inherit;font-size:16px;color:var(--fg2);cursor:pointer}
+.chip[aria-pressed=true]{background:var(--brass);border-color:var(--brass);color:#20180A;font-weight:600}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:9px}
+.c{background:var(--panel);border:3px solid var(--line);border-radius:7px;overflow:hidden;
+  cursor:pointer;position:relative}
+.c.sel{border-color:var(--brass)} .c.best{border-color:var(--green)}
+.c img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:var(--p2)}
+.c .n{position:absolute;top:6px;left:6px;background:rgba(12,13,16,.82);font-size:12.5px;
+  font-weight:600;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.c .tag{position:absolute;top:6px;right:6px;font-size:10.5px;font-weight:600;padding:3px 8px;
+  border-radius:4px;background:var(--green);color:#fff}
+.c .ph{width:100%;aspect-ratio:4/3;background:var(--p2);display:flex;align-items:center;
+  justify-content:center;color:var(--fg3);font-size:12px;text-align:center;padding:6px}
+
+.dup{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:26px}
+.dup .side{background:var(--panel);border:3px solid var(--line);border-radius:7px;
+  overflow:hidden;cursor:pointer;text-align:center}
+.dup .side.keep{border-color:var(--green)}
+.dup .side img{width:100%;aspect-ratio:1;object-fit:cover;display:block}
+.dup .side .t{padding:11px;font-size:14.5px;color:var(--fg2)}
+.dup .side.keep .t{color:var(--green);font-weight:600}
+
+.leftout{margin-top:26px;padding-top:18px;border-top:1px solid var(--line)}
+.leftout h4{font-family:"Newsreader",serif;font-weight:300;font-size:19px;margin:0 0 4px}
+.leftout p{color:var(--fg3);font-size:14px;margin:0 0 11px}
+.lostrip{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:7px}
+.lo{border:2px solid var(--line);border-radius:5px;overflow:hidden;cursor:pointer;opacity:.45;position:relative}
+.lo img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}
+.lo .put{position:absolute;inset:auto 0 0 0;background:rgba(12,13,16,.86);font-size:11px;
+  text-align:center;padding:4px;color:var(--fg2)}
+
+/* upload */
+.drop{border:2px dashed var(--l2);border-radius:10px;background:var(--panel);
+  padding:40px 22px;text-align:center;cursor:pointer;transition:all .15s;margin-bottom:18px}
+.drop:hover,.drop.over{border-color:var(--brass);background:var(--p2)}
+.drop b{display:block;font-family:"Newsreader",serif;font-size:24px;font-weight:400;margin-bottom:6px}
+.drop span{color:var(--fg2);font-size:15px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px 20px;margin-bottom:18px}
+.card label{display:block;font-size:15px;color:var(--fg2);margin-bottom:8px}
+.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:14px 0 8px}
+.bar i{display:block;height:100%;background:var(--brass);width:0;transition:width .3s}
+.bar.big{height:14px;border-radius:7px;margin:26px 0 12px}
+.rows{margin-top:12px;max-height:300px;overflow-y:auto;font-size:14px}
+.row{display:flex;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:none}
-.row .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg2)}
 .row .st{font-size:12.5px;white-space:nowrap}
-.ok{color:var(--viridian)} .bad{color:var(--warn)} .wait{color:var(--ink-faint)}
-.tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:2px;
-  background:#DFE3DD;color:var(--ink-soft);margin-left:6px}
-.tag.exif{background:#DCE9E2;color:var(--viridian)}
-.tag.none{background:#F0E2D6;color:var(--warn)}
-.stats{display:flex;gap:22px;flex-wrap:wrap;margin-bottom:16px}
-.stat b{display:block;font-family:"Newsreader",Georgia,serif;font-size:29px;font-weight:400;line-height:1.1}
-.stat span{font-size:13px;color:var(--ink-faint)}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:7px}
-.cell{background:var(--print);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
-.cell img{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:#DFE3DD}
-.cell .ph{width:100%;aspect-ratio:1;background:#DFE3DD;display:flex;align-items:center;
-  justify-content:center;color:var(--ink-faint);font-size:11px;text-align:center;padding:6px}
-.cell p{margin:0;padding:5px 7px;font-size:11.5px;color:var(--ink-faint);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.msg{padding:13px 16px;border-radius:3px;font-size:14.5px;margin-bottom:16px}
-.msg.err{background:#F5E6DC;border:1px solid #E0C4AC;color:var(--warn)}
-.msg.inf{background:#DCE9E2;border:1px solid #B8D3C7;color:var(--viridian)}
-.note{font-size:13.5px;color:var(--ink-faint);margin-top:12px}
+.ok{color:var(--green)} .bad{color:var(--red)} .wait{color:var(--fg3)}
+.tagd{display:inline-block;font-size:11px;padding:1px 6px;border-radius:2px;
+  background:var(--p2);color:var(--fg3);margin-left:6px}
+.tagd.exif{color:var(--green)} .tagd.none{color:var(--red)}
+.big{background:var(--brass);border:none;border-radius:8px;color:#20180A;font:inherit;font-weight:600;
+  font-size:18px;padding:17px 30px;cursor:pointer}
+.big:disabled{opacity:.4;cursor:not-allowed}
+.sofar{margin-top:30px;padding-top:20px;border-top:1px solid var(--line)}
+.sofar h4{font-family:"Newsreader",serif;font-weight:300;font-size:20px;margin:0 0 4px}
+.sofar p{color:var(--fg3);font-size:14px;margin:0 0 12px}
+.stamp{margin:0;padding:5px 7px;font-size:11.5px;color:var(--fg3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* the plain statement before a one-way button */
+.before{font-size:16px;line-height:1.5;color:var(--fg);margin:0 0 12px}
+.before b{color:var(--brass)}
+
+.sheet{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--l2);
+  padding:15px 18px calc(16px + env(safe-area-inset-bottom));z-index:40}
+.sheet .in{max-width:980px;margin:0 auto}
+.sheet h3{font-family:"Newsreader",serif;font-weight:300;font-size:20px;margin:0 0 11px}
+.sheet p{color:var(--fg2);font-size:15.5px;line-height:1.5;margin:0 0 14px}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.acts button,.picker button{flex:1;min-width:145px;background:var(--p2);border:1px solid var(--line);
+  border-radius:7px;color:var(--fg);font:inherit;font-size:16px;padding:15px;cursor:pointer}
+.acts button:disabled{opacity:.3}
+.acts button.warn{color:var(--fg2)}
+.acts button.yes{background:var(--brass);border-color:var(--brass);color:#20180A;font-weight:600}
+.picker{display:flex;gap:8px;flex-wrap:wrap}
+.close{background:none;border:none;color:var(--fg3);font:inherit;font-size:15px;cursor:pointer;padding:13px 0 0}
+
+.nav{position:fixed;left:0;right:0;bottom:0;background:rgba(12,13,16,.97);backdrop-filter:blur(12px);
+  border-top:1px solid var(--line);padding:13px 18px calc(14px + env(safe-area-inset-bottom));z-index:30}
+.nin{max-width:980px;margin:0 auto;display:flex;align-items:center;gap:14px}
+.nav .before{max-width:980px;margin:0 auto 12px}
+.nav button{background:none;border:1px solid var(--line);color:var(--fg);border-radius:7px;
+  padding:15px 20px;font:inherit;font-size:17px;cursor:pointer}
+.nav button:disabled{opacity:.3}
+.nav button.go{background:var(--brass);border-color:var(--brass);color:#20180A;font-weight:600;flex:1;max-width:260px}
+.tally{font-size:13px;color:var(--fg3);line-height:1.4}
+.tally b{color:var(--fg);font-size:17px;font-family:"Newsreader",serif;font-weight:400}
+.sp{flex:1}
+.saved{font-size:13px;color:var(--green);opacity:0;transition:opacity .3s}
+.saved.on{opacity:1}
+
+.clock{background:#241F18;border:1px solid var(--brass);border-radius:8px;padding:16px;
+  margin-bottom:22px;font-size:16px;line-height:1.55}
+.clock b{color:var(--brass)}
+.clock .row{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;border:none;padding:0}
+.clock button{background:var(--brass);border:none;border-radius:6px;color:#20180A;font:inherit;
+  font-weight:600;font-size:15px;padding:12px 18px;cursor:pointer}
+.clock button.no{background:none;border:1px solid var(--l2);color:var(--fg2);font-weight:400}
+
+.lb{position:fixed;inset:0;background:rgba(6,7,9,.97);z-index:60;display:flex;align-items:center;
+  justify-content:center;flex-direction:column}
+.lb img{max-width:94vw;max-height:80vh;object-fit:contain}
+.lb .cap{color:var(--fg2);font-size:14.5px;margin-top:14px;display:flex;gap:14px;align-items:center}
+.lb .cap button{background:none;border:1px solid var(--l2);color:var(--fg);border-radius:6px;
+  font:inherit;font-size:15px;padding:10px 16px;cursor:pointer}
+.genres{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin:6px 0 10px}
+.genre{background:var(--panel);border:2px solid var(--line);border-radius:8px;padding:14px 16px;cursor:pointer}
+.genre.on{border-color:var(--brass)}
+.genre .gt{font-family:"Newsreader",serif;font-size:21px;font-weight:400;margin-bottom:4px}
+.genre .gp{color:var(--fg2);font-size:15px;line-height:1.45}
+.genre .sug{font-family:"Public Sans",sans-serif;font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+  color:#20180A;background:var(--brass);border-radius:4px;padding:2px 7px;margin-left:8px;vertical-align:middle}
+.genre .play{margin-top:10px;background:var(--p2);border:1px solid var(--l2);border-radius:6px;color:var(--fg);
+  font:inherit;font-size:15px;padding:9px 14px;cursor:pointer}
+.genre .play.playing{border-color:var(--brass);color:var(--brass)}
+.anchor{margin-bottom:4px}
+.load{padding:70px 0;color:var(--fg2);line-height:1.8;text-align:center}
 .hide{display:none}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1 id="title">Add your photos</h1>
-  <p class="sub" id="sub">Loading…</p>
-
-  <div class="tabs" role="tablist">
-    <button class="tab" id="tabAdd" role="tab" aria-selected="true">Add photos</button>
-    <button class="tab" id="tabSee" role="tab" aria-selected="false">What's in so far</button>
-  </div>
-
-  <div id="paneAdd">
-    <div id="gate" class="msg err hide"></div>
-
-    <div class="card">
-      <label class="fl" for="who">Who's uploading?</label>
-      <p class="hint">So we know whose camera each photo came from.</p>
-      <input type="text" id="who" placeholder="Leisa" autocomplete="name">
-    </div>
-
-    <div class="drop" id="drop">
-      <b>Choose photos</b>
-      <span>Or drag them here. Photos and short video clips.</span>
-      <input type="file" id="file" multiple accept="image/*,video/*,.heic,.heif" class="hide">
-    </div>
-
-    <div id="picked" class="card hide">
-      <div id="summary"></div>
-      <div class="bar"><i id="prog"></i></div>
-      <div class="rows" id="rows"></div>
-      <div style="margin-top:16px"><button class="go" id="send">Upload</button></div>
-    </div>
-
-    <p class="note">Photos go straight to private storage. Nothing is public, and nothing is shared
-    outside this collection. The date each photo was taken is read on your own device before it
-    uploads, so it can't be lost along the way.</p>
-  </div>
-
-  <div id="paneSee" class="hide">
-    <div id="seeMsg" class="msg inf hide"></div>
-    <div class="stats" id="stats"></div>
-    <div style="margin-bottom:14px"><button class="ghost" id="refresh">Refresh</button></div>
-    <div class="grid" id="grid"></div>
-  </div>
-</div>
+<div class="wrap"><div id="stage" class="load">Opening your film…</div></div>
+<div class="sheet hide" id="sheet"></div>
+<div class="nav hide" id="nav"></div>
 
 <script type="module">
-import exifr from 'https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.esm.mjs';
+/* ═══════════════════════════════════════════════════════════════════
+   ONE LINK.  /?t=TOKEN  is the only address the customer ever has.
+   On load we ask the server where she is (journey) and show that page.
+   She never sees a stage name and is never sent a second link.
 
-const FN  = 'https://wkgkkxeooldeyzjfzmhu.supabase.co/functions/v1';
-const KEY = 'sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
-const TOKEN = new URLSearchParams(location.search).get('t') || '';
+     upload      → add your photos            → set_stage('describing')
+     describing  → we look at every photo     → set_stage('sort')  (automatic)
+     sort        → group and name them        → questions, then set_stage('answer')
+     answer      → tell us about each group   → set_stage('submitted')
+     submitted   → thank you
+   ═══════════════════════════════════════════════════════════════════ */
+const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
+const FN=SB+'/functions/v1';
+const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
+const TOKEN=new URLSearchParams(location.search).get('t')||'';
+const HDR={'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY};
 
-const $ = id => document.getElementById(id);
-let queue = [];
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const mmss=s=>`${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}`;
+const words=s=>s&&s.trim()?s.trim().split(/\s+/).length:0;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 
-const api = (fn, body) => fetch(`${FN}/${fn}`, {
-  method:'POST',
-  headers:{ 'Content-Type':'application/json', apikey:KEY, Authorization:`Bearer ${KEY}` },
-  body: JSON.stringify({ token: TOKEN, ...body })
-});
-
-/* ---------- date detection: EXIF, then filename, then file date ---------- */
-async function dateOf(file){
-  try{
-    const x = await exifr.parse(file, ['DateTimeOriginal','CreateDate','ModifyDate']);
-    const d = x?.DateTimeOriginal || x?.CreateDate || x?.ModifyDate;
-    if (d instanceof Date && !isNaN(d)){
-      // A photo's timestamp carries NO timezone — the camera just wrote
-      // "19 Oct, 04:17". The browser assumes that means local time and shifts
-      // it by wherever the uploader happens to be sitting, which drags a
-      // sunrise in Cambodia back into the previous evening in Auckland.
-      // Undo that shift so what we store is the camera's own reading.
-      const wall = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-      return { at: wall.toISOString(), src:'exif' };
-    }
-  }catch(e){ /* no EXIF, or a format exifr can't read — fall through */ }
-
-  const m = file.name.match(/(20\d{2})[-_]?(\d{2})[-_]?(\d{2})/);
-  if (m){
-    const d = new Date(`${m[1]}-${m[2]}-${m[3]}T12:00:00Z`);
-    if (!isNaN(d)) return { at:d.toISOString(), src:'filename' };
-  }
-
-  if (file.lastModified){
-    const d = new Date(file.lastModified);
-    if (!isNaN(d) && d.getFullYear() > 1980) return { at:d.toISOString(), src:'modified' };
-  }
-  return { at:null, src:'none' };
+/* Postgres functions (journey, set_stage). ⚠ These answer HTTP 200 with
+   {"error":"unknown token"} on a bad token — the body must be checked. */
+async function rpc(name,args){
+  const r=await fetch(`${SB}/rest/v1/rpc/${name}`,{method:'POST',headers:HDR,body:JSON.stringify(args)});
+  if(!r.ok) throw new Error(`${name}: HTTP ${r.status}`);
+  const t=await r.text();
+  return t?JSON.parse(t):null;
+}
+/* Edge functions (flow, upload, gallery, describe, questions). */
+async function post(fn,body){
+  const r=await fetch(`${FN}/${fn}`,{method:'POST',headers:HDR,body:JSON.stringify({token:TOKEN,...body})});
+  let j={}; try{ j=await r.json(); }catch(_){}
+  return {ok:r.ok, status:r.status, j};
+}
+async function api(action,extra){                       // the flow function, throws on failure
+  const {ok,j}=await post('flow',{action,...extra});
+  if(!ok) throw new Error(j.error||'save failed');
+  return j;
+}
+async function setStage(stage){
+  const r=await rpc('set_stage',{p_token:TOKEN,p_stage:stage});
+  if(r&&r.error) throw new Error(r.error);
+  J.stage=stage;
+  return r;
 }
 
-const LABEL = { exif:'date from camera', filename:'date from filename', modified:'file date only', none:'no date' };
-const CLS   = { exif:'exif', filename:'', modified:'', none:'none' };
+/* ⚠ A caught error that is not reported is a silent failure. On 15 Sep a save
+   failed for an hour and the customer lost everything, because the catch block
+   swallowed it. Every catch in this page reports. Never throws. */
+function report(what,e,detail){
+  try{
+    fetch(FN+'/flow',{method:'POST',keepalive:true,headers:HDR,
+      body:JSON.stringify({token:TOKEN,action:'report_error',page:'index.html',
+        what, message:(e&&e.message)||String(e||''), detail:detail||null,
+        url:location.href, user_agent:navigator.userAgent})}).catch(()=>{});
+  }catch(_){}
+}
+window.addEventListener('error', ev => report('uncaught', ev.error||ev.message));
+window.addEventListener('unhandledrejection', ev => report('unhandled promise', ev.reason));
+const prog=o=>api('save_progress',{progress:o}).catch(e=>report('save progress',e));
 
-/* ---------- picking ---------- */
-async function pick(files){
-  queue = [...files].map(f => ({ file:f, status:'reading' }));
-  $('picked').classList.remove('hide');
-  paint();
-  for (const item of queue){
-    const d = await dateOf(item.file);
-    item.at = d.at; item.src = d.src; item.status = 'ready';
-    paint();
+let J={};            // what journey told us: name, stage, photos, described, owner_name …
+let page='';         // which page is showing
+
+function plain(html){ $('stage').innerHTML=html; $('stage').className='';
+  $('nav').classList.add('hide'); $('sheet').classList.add('hide'); }
+
+/* ═══ ROUTER ═════════════════════════════════════════════════════ */
+async function route(){
+  if(!TOKEN){
+    plain(`<h1>This link is missing its code</h1>
+      <p class="do">Please open the full link you were sent — the long one, with everything after <b>?t=</b>.</p>`);
+    return;
   }
+  let j;
+  try{ j=await rpc('journey',{p_token:TOKEN}); }
+  catch(e){ report('journey',e);
+    plain(`<h1>Couldn't open your film</h1>
+      <p class="do">Something didn't connect. Please try the link again in a moment.</p>
+      <button class="big" id="retryRoute">Try again</button>`);
+    return; }
+  if(!j||j.error){
+    plain(`<h1>This link isn't right</h1>
+      <p class="do">Please open the full link you were sent, exactly as it came.</p>`);
+    return;
+  }
+  J=j;
+  switch(j.stage){
+    case 'upload':      return showUpload();
+    case 'describing':  return showDescribing();
+    case 'sort':        return showSort();
+    case 'answer':      return showAnswer();
+    case 'submitted':   return showThanks();
+    default:
+      report('unknown stage',new Error(String(j.stage)));
+      plain(`<h1>One moment</h1>
+        <p class="do">Something on our side isn't right. Please try the link again in a little while.</p>`);
+  }
+}
+
+/* ═══ 1 · UPLOAD ═════════════════════════════════════════════════ */
+let exifr=null, queue=[], inSoFar=0;
+/* Every hash already in this collection — what came from the server, what
+   went in during this visit, and what this device remembers sending on an
+   earlier visit — so the same photo is never added twice. This is the fast
+   pre-check, so she is told before pressing Add; ⚠ the server is the
+   authority (sign refuses a duplicate itself, and it knows every device). */
+let inHashes=[];
+const HKEY='memories.phash.'+TOKEN.slice(0,16);
+function remember(h){
+  if(!h) return;
+  if(!inHashes.includes(h)) inHashes.push(h);
+  try{ localStorage.setItem(HKEY,JSON.stringify(inHashes.slice(-2000))); }catch(_){}
+}
+function remembered(){ try{ const a=JSON.parse(localStorage.getItem(HKEY)||'[]'); return Array.isArray(a)?a:[]; }catch(_){ return []; } }
+
+/* Perceptual hash, in the browser, at upload. The browser has already decoded
+   the image, so this is nearly free. 8×8 greyscale average hash: shrink to
+   8×8, take the mean luminance, one bit per cell above/below the mean → 64
+   bits as 16 hex characters. ⚠ Two server-side attempts failed (no
+   OffscreenCanvas in Deno; ImageScript blew the memory limit) — this is the
+   only place it runs. Returns null for anything the browser can't decode
+   (HEIC on Chrome, most video), and that photo still goes in, just unhashed. */
+async function phashOf(file){
+  let bmp=null;
+  try{
+    if(!/^image\//.test(file.type)&&!/\.(jpe?g|png|gif|webp|bmp|heic|heif)$/i.test(file.name)) return null;
+    /* Let the decoder do the shrink: a 4000px photo never becomes a full-size bitmap. */
+    bmp=await createImageBitmap(file,{resizeWidth:64,resizeHeight:64,resizeQuality:'high',imageOrientation:'from-image'});
+  }catch(_){
+    /* Fallback for decoders that refuse the resize options. */
+    try{
+      const url=URL.createObjectURL(file);
+      try{ bmp=await new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=rej; im.src=url; }); }
+      finally{ setTimeout(()=>URL.revokeObjectURL(url),1000); }
+    }catch(_2){ return null; }
+  }
+  try{
+    const cv=document.createElement('canvas'); cv.width=8; cv.height=8;
+    const cx=cv.getContext('2d',{willReadFrequently:true});
+    cx.imageSmoothingEnabled=true; cx.imageSmoothingQuality='high';
+    cx.drawImage(bmp,0,0,8,8);
+    const d=cx.getImageData(0,0,8,8).data, g=new Array(64);
+    let sum=0;
+    for(let i=0;i<64;i++){ g[i]=0.299*d[i*4]+0.587*d[i*4+1]+0.114*d[i*4+2]; sum+=g[i]; }
+    const mean=sum/64;
+    let hex='';
+    for(let b=0;b<64;b+=4){
+      let nib=0;
+      for(let k=0;k<4;k++) nib=(nib<<1)|(g[b+k]>mean?1:0);
+      hex+=nib.toString(16);
+    }
+    return hex;
+  }catch(e){ report('phash',e,{file:file.name}); return null; }
+  finally{ if(bmp&&bmp.close) bmp.close(); }
+}
+/* "Already in" means the same picture: the same file twice, or the same photo
+   after a messaging app has re-saved it (measured: 0 bits moved). ⚠ Two
+   different pictures with the same composition can sit 1–2 bits apart, and
+   refusing one of those loses her a photo. The server refuses an exact match
+   only (measured 19 Sep), and this pre-check must never be stricter than the
+   authority — near-misses are the sort page's "same photo twice?" to decide. */
+const SAME=0;
+const alreadyIn=h=>!!h&&inHashes.some(x=>hamming(x,h)<=SAME);
+
+async function showUpload(){
+  page='upload';
+  plain(`<h1>Add your photos</h1>
+    <p class="do">Choose the photos you'd like in your film, and we'll bring them in.</p>
+    <div class="card"><label for="who">Your name, so we know whose camera each photo came from</label>
+      <input type="text" id="who" value="${esc(J.owner_name||'')}" placeholder="Your name" autocomplete="name"></div>
+    <div class="drop" id="drop"><b>Choose photos</b>
+      <span>Or drag them here. Photos and short video clips are both fine.</span>
+      <input type="file" id="file" multiple accept="image/*,video/*,.heic,.heif" class="hide"></div>
+    <div id="picked" class="card hide">
+      <div id="summary"></div><div class="bar"><i id="prog"></i></div>
+      <div class="rows" id="rows"></div>
+      <div style="margin-top:16px"><button class="big" id="send">Add these</button></div>
+    </div>
+    <p class="lede">Pick them from your camera roll rather than from a message — photos sent through a
+      messaging app lose their date, and the date is how we put your film in order.
+      Your photos go straight to private storage and nobody else can see them.</p>
+    <div class="sofar"><h4 id="sofarH">In so far</h4><p id="sofarP">Loading…</p><div class="grid" id="sofarGrid"></div></div>`);
+  $('drop').onclick=()=>$('file').click();
+  $('file').onchange=e=>pick(e.target.files);
+  $('drop').ondragover=e=>{e.preventDefault();$('drop').classList.add('over');};
+  $('drop').ondragleave=()=>$('drop').classList.remove('over');
+  $('drop').ondrop=e=>{e.preventDefault();$('drop').classList.remove('over');pick(e.dataTransfer.files);};
+  $('send').onclick=send;
+  uploadNav();
+  look();
+  if(!exifr){ try{ exifr=(await import('https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.esm.mjs')).default; }
+    catch(e){ report('load exifr',e); } }   // without it, dates come from the filename or file date
+}
+function uploadNav(){
+  nav(`<button class="go" id="allin" ${inSoFar?'':'disabled'}>That's all my photos →</button>`,
+      inSoFar?`<b>${inSoFar}</b><br>photo${inSoFar===1?'':'s'} in`:`nothing in yet`);
+}
+
+/* date detection: EXIF, then filename, then file date.
+   Also the camera's make and model (`device`), so the server can tell one
+   camera from another when it looks for a clock that is set wrong. */
+async function dateOf(file){
+  let device=null;
+  try{
+    if(exifr){
+      const x=await exifr.parse(file,['DateTimeOriginal','CreateDate','ModifyDate','Make','Model']);
+      const mk=(x?.Make||'').toString().trim(), md=(x?.Model||'').toString().trim();
+      device=[mk,md.startsWith(mk)&&mk?md.slice(mk.length).trim():md].filter(Boolean).join(' ').slice(0,80)||null;
+      const d=x?.DateTimeOriginal||x?.CreateDate||x?.ModifyDate;
+      if(d instanceof Date&&!isNaN(d)){
+        // A photo's timestamp carries NO timezone — the camera just wrote
+        // "19 Oct, 04:17". The browser assumes that means local time and shifts
+        // it by wherever the uploader happens to be sitting. Undo that shift so
+        // what we store is the camera's own reading.
+        const wall=new Date(d.getTime()-d.getTimezoneOffset()*60000);
+        return {at:wall.toISOString(),src:'exif',device};
+      }
+    }
+  }catch(e){ /* no EXIF, or a format exifr can't read — fall through */ }
+  const m=file.name.match(/(20\d{2})[-_]?(\d{2})[-_]?(\d{2})/);
+  if(m){ const d=new Date(`${m[1]}-${m[2]}-${m[3]}T12:00:00Z`); if(!isNaN(d)) return {at:d.toISOString(),src:'filename',device}; }
+  if(file.lastModified){ const d=new Date(file.lastModified);
+    if(!isNaN(d)&&d.getFullYear()>1980) return {at:d.toISOString(),src:'modified',device}; }
+  return {at:null,src:'none',device};
+}
+const LABEL={exif:'date from camera',filename:'date from filename',modified:'file date only',none:'no date'};
+const CLS={exif:'exif',filename:'',modified:'',none:'none'};
+
+let pickRun=0;
+async function pick(files){
+  const run=++pickRun;
+  queue=[...files].map(f=>({file:f,status:'reading'}));
+  if(!queue.length) return;
+  $('picked').classList.remove('hide'); $('send').textContent='Add these'; $('prog').style.width='0';
+  $('send').disabled=true;                                 // until every file is read and hashed
+  paintQueue();
+  const batch=[];                                          // hashes seen in this pick, so the same photo chosen twice is caught too
+  for(const item of queue){
+    if(run!==pickRun) return;                              // she picked again — the new pick owns the queue
+    const d=await dateOf(item.file); item.at=d.at; item.src=d.src; item.device=d.device;
+    item.phash=await phashOf(item.file);
+    if(item.phash&&(alreadyIn(item.phash)||batch.some(x=>hamming(x,item.phash)<=SAME))) item.status='dup';
+    else { item.status='ready'; if(item.phash) batch.push(item.phash); }
+    paintQueue();
+  }
+  if(run!==pickRun) return;
+  $('send').disabled=!queue.some(q=>q.status==='ready');
+}
+function paintQueue(){
+  const dups=queue.filter(q=>q.status==='dup'), rest=queue.filter(q=>q.status!=='dup');
+  const n=rest.length, undated=rest.filter(q=>q.src==='none').length;
+  const reading=queue.some(q=>q.status==='reading');
+  $('summary').innerHTML=(n?`<strong>${plural(n,'photo')}</strong>`:'<strong>Nothing new</strong>')+
+    (reading?' — having a look…':
+     (n?(undated?` — <span class="bad">${undated} with no date</span>, which you'll place by hand later.`:' — all dated.'):'')+
+     (dups.length?`<br><span class="ok">You've already added ${dups.length===1?'one of these':dups.length+' of these'}</span> — we'll skip ${dups.length===1?'it':'them'}.`:''));
+  $('rows').innerHTML=queue.map(q=>`<div class="row"><span class="nm">${esc(q.file.name)}</span>
+    <span class="st ${q.status==='done'||q.status==='dup'?'ok':q.status==='failed'?'bad':'wait'}">
+      ${q.status==='done'?'in':q.status==='dup'?(q.err?esc(q.err):"you've already added this one"):q.status==='failed'?(esc(q.err)||'failed'):q.status}
+      ${q.src&&q.status!=='dup'?`<span class="tagd ${CLS[q.src]}">${LABEL[q.src]}</span>`:''}</span></div>`).join('');
+}
+async function send(){
+  const who=($('who').value||'').trim()||'unknown';
+  $('send').disabled=true; if($('allin')) $('allin').disabled=true;
+  const todo=queue.filter(q=>q.status!=='dup');
+  let done=0;
+  for(const q of todo){
+    if(q.status==='done'){done++;continue;}
+    /* Last look before it goes: something with the same hash may have gone in
+       moments ago from this very batch, or from another device on the same link. */
+    if(alreadyIn(q.phash)){ q.status='dup'; paintQueue(); continue; }
+    q.status='adding'; paintQueue();
+    try{
+      /* A retry after a dropped connection reuses the signed URL it already
+         has rather than asking for another: one reservation per photo. (The
+         server also ignores unconfirmed rows when it looks for duplicates and
+         clears abandoned ones, so a retry after a reload works too.) */
+      if(!q.signed_url){
+        const {ok,status,j}=await post('upload',{action:'sign',filename:q.file.name,mime:q.file.type||'image/jpeg',
+          size:q.file.size,taken_at:q.at,date_source:q.src,uploaded_by:who,phash:q.phash,device:q.device});
+        /* The server is the authority on "already in": it answers
+           {duplicate:true, of:<filename>, message} instead of a signed URL. It
+           knows about every device; the page's own list only knows this one. */
+        if(j.duplicate){ q.status='dup'; q.err=j.message||''; q.of=j.of||''; remember(q.phash); paintQueue(); continue; }
+        /* ⚠ 409 "This one is finished": she has already said that's everything
+           and the server keeps that promise, whatever tab or back button got
+           her here. Stop the batch, say so in the server's words, and take her
+           to where she actually is. */
+        if(status===409){ finished(j.detail||j.error||"You've already told us that's everything, so we can't add more photos to this film."); return; }
+        if(!ok) throw new Error(j.error||'rejected');
+        q.signed_url=j.signed_url; q.asset_id=j.asset_id;
+      }
+      const put=await fetch(q.signed_url,{method:'PUT',headers:{'Content-Type':q.file.type||'application/octet-stream'},body:q.file});
+      if(!put.ok){ if(put.status>=400&&put.status<500) q.signed_url=null;   // expired or refused — sign afresh next time
+        throw new Error('upload failed'); }
+      const c=await post('upload',{action:'confirm',asset_id:q.asset_id,phash:q.phash,device:q.device});
+      if(!c.ok) throw new Error(c.j.error||'confirm failed');
+      q.status='done';
+      remember(q.phash);
+    }catch(e){ q.status='failed'; q.err=e.message; report('upload',e,{file:q.file.name,size:q.file.size}); }
+    done++; $('prog').style.width=Math.round(done/Math.max(1,todo.length)*100)+'%'; paintQueue();
+  }
+  const failed=queue.filter(q=>q.status==='failed').length;
+  $('send').disabled=!failed;
+  $('send').textContent=failed?`Try the ${failed} that didn't go in`:'All in';
+  if(!failed){ queue=[]; setTimeout(()=>{ if(page!=='upload') return; $('picked').classList.add('hide');
+    $('send').textContent='Add these'; $('prog').style.width='0'; $('file').value=''; },2200); }
+  await look();
+}
+function finished(sentence){
+  queue.forEach(q=>{ if(q.status==='adding'||q.status==='ready') q.status='not added'; });
+  paintQueue();
+  const s=$('sheet');
+  s.innerHTML=`<div class="in"><h3>This one is finished</h3><p>${esc(sentence)}</p>
+    <div class="acts"><button class="yes" id="retryRoute">Carry on</button></div></div>`;
+  s.classList.remove('hide');
+  report('upload after submitted',new Error('409'),{queued:queue.length});
+}
+async function look(){
+  const {ok,j}=await post('gallery',{});
+  if(page!=='upload') return;
+  if(!ok){ $('sofarP').textContent="Couldn't check what's in. It will show once you add some."; report('gallery',new Error(j.error||'gallery failed')); return; }
+  inSoFar=j.stats.total;
+  /* The hashes of everything already in, so a second copy is caught before it
+     is sent. gallery may not carry phash; flow load always does. */
+  let hs=j.assets.map(a=>a.phash).filter(Boolean);
+  if(!hs.length&&inSoFar){
+    try{ const d=await api('load',{}); hs=d.assets.map(a=>a.phash).filter(Boolean); }
+    catch(e){ report('load hashes',e); }
+    if(page!=='upload') return;
+  }
+  /* Merge in what this device remembers; if the collection is empty the memory is stale (a fresh collection on the same link is impossible, but a cleared one is not). */
+  inHashes=inSoFar?[...new Set([...hs,...remembered()])]:[];
+  if(!inSoFar){ try{ localStorage.removeItem(HKEY); }catch(_){} }
+  $('sofarH').textContent=inSoFar?`${plural(inSoFar,'photo')} in so far`:'Nothing in yet';
+  $('sofarP').textContent=inSoFar
+    ?(j.stats.undated?`${j.stats.undated} with no date — you'll place those by hand later.`:'All of them have a date.')
+    :'They will appear here as they go in.';
+  $('sofarGrid').innerHTML=j.assets.map(a=>{
+    const when=a.taken_at?new Date(a.taken_at).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}):'no date';
+    const heic=/hei[cf]/i.test(a.mime_type), vid=/^video/.test(a.mime_type);
+    const top=(heic||vid||!a.url)?`<div class="ph">${vid?'video':heic?'HEIC<br>no preview':'no preview'}</div>`
+      :`<img loading="lazy" src="${a.url}" alt="">`;
+    return `<div class="c" style="cursor:default">${top}<p class="stamp">${when}${a.uploaded_by?' · '+esc(a.uploaded_by):''}</p></div>`;
+  }).join('');
+  uploadNav();
+}
+function askAllIn(){
+  const s=$('sheet');
+  s.innerHTML=`<div class="in"><h3>Are they all in?</h3>
+    <p>You have ${plural(inSoFar,'photo')} in. After this we get them ready for you, and you won't be able to add more.</p>
+    <div class="acts"><button class="yes" id="allinYes">Yes, that's all of them</button>
+    <button id="allinNo">Not yet</button></div></div>`;
+  s.classList.remove('hide');
+}
+async function finishUpload(){
+  const b=$('allinYes'); b.disabled=true; b.textContent='One moment…';
+  try{ await setStage('describing'); }
+  catch(e){ report('set_stage describing',e); b.disabled=false; b.textContent='Yes, that’s all of them';
+    $('sheet').querySelector('p').textContent="That didn't go through. Please try again."; return; }
+  J.photos=inSoFar; J.progress_n=0; J.progress_of=inSoFar; J.progress='';   // journey's words are for the upload stage; the loop fetches fresh ones
+  prog({screen:'describing'});
+  showDescribing();
+}
+
+/* ═══ 2 · DESCRIBING ═════════════════════════════════════════════
+   We look at every photograph so the questions can come from what is in
+   them. ⚠ It must survive her closing the tab: nothing here is kept in the
+   page. Each call to describe does a bit more and reports where the whole
+   collection is up to, so a reload simply lands back here and carries on. */
+let describeRun=0;
+const DNOTE='We look at each photo so we can ask you about the right things.';
+function showDescribing(){
+  page='describing';
+  plain(`<h1>Getting your photos ready</h1>
+    <p class="do">There's nothing for you to do here. You can wait, or close this and come back later.</p>
+    <div class="bar big"><i id="dbar"></i></div>
+    <p class="lede" id="dcount">Starting…</p>
+    <p class="lede" id="dnote">${DNOTE}</p>
+    <div id="dstall" class="hide"></div>`);
+  paintDescribe(+J.progress_n||+J.described||0, +J.progress_of||+J.photos||0);
+  describeLoop(++describeRun);
+}
+/* The bar is described / total for the WHOLE collection (describe reports
+   those directly; `this_call` is the batch). The words are journey's own
+   `progress` line, so the page and the server say the same thing. */
+function paintDescribe(described,total){
+  if($('dbar')) $('dbar').style.width=(total?Math.round(described/total*100):0)+'%';
+  if($('dcount')) $('dcount').textContent=
+    (J.progress||'Looking at your photos')+(total?` — ${described} of ${total}`:'');
+}
+async function describeLoop(run){
+  let wait=3000;
+  /* journey's words for this stage, once — the numbers come from describe */
+  if(!J.progress||J.stage!=='describing'){
+    try{ const jj=await rpc('journey',{p_token:TOKEN}); if(jj&&!jj.error) J={...J,...jj}; }catch(_){}
+    if(page!=='describing'||run!==describeRun) return;
+  }
+  while(page==='describing'&&run===describeRun){
+    try{
+      const {ok,status,j}=await post('describe',{});
+      if(!ok||j.error) throw new Error(j.error||('describe: HTTP '+status));
+      if(page!=='describing'||run!==describeRun) return;
+      const described=+j.described||0, total=+j.total||(described+(+j.remaining||0));
+      paintDescribe(described,total);
+      if($('dnote')) $('dnote').textContent=DNOTE;
+      if(j.done){
+        await setStage('sort');
+        prog({screen:'sort'});
+        showSort();
+        return;
+      }
+      /* ⚠ stalled: a call did nothing and work remains. Looping would spin
+         forever. Say so, and let her try again or come back later. */
+      if(j.stalled){
+        report('describe stalled',new Error('stalled'),{described,total});
+        if($('dnote')) $('dnote').textContent="We've hit a snag getting your photos ready.";
+        const d=$('dstall'); if(d){ d.className='';
+          d.innerHTML=`<p class="lede">It isn't anything you've done. You can try again now, or close this and come back later — nothing is lost.</p>
+            <button class="big" id="dretry">Try again</button>`; }
+        return;
+      }
+      wait=3000;
+      await sleep(400);
+    }catch(e){
+      report('describe',e);
+      if($('dnote')) $('dnote').textContent=
+        "This is taking longer than usual. We'll keep trying — you can close this and come back later, and it will carry on.";
+      await sleep(wait); wait=Math.min(wait*2,30000);
+    }
+  }
+}
+
+/* ═══ 3 · SORT — group and name ══════════════════════════════════ */
+const REG={ lively:3.5, wry:3.5, warm:4.0, awe:4.5, tender:5.0, grief:6.5 };
+const LAB={ lively:'Busy, fun', wry:'Funny', warm:'Warm', awe:'Big scenery',
+            tender:'Quiet, tender', grief:'Sad' };
+let A=[], M=[], dups=[], screen='welcome', cur=0, sel=null, picking=false,
+    zoom=null, skew=null, skewDone=false, name='';
+
+const secs=m=>m.photos.filter(p=>!p.excluded)
+  .reduce((t,p)=>t+REG[m.register]+(p.faces==null?0:p.faces>=4?1.5:p.faces>=2?0.5:p.faces?0:-0.5),0);
+const total=()=>M.reduce((t,m)=>t+secs(m),0);
+const onCount=()=>A.filter(p=>!p.excluded).length;
+
+let saveTimer=null, dirty=false, failed=false, editN=0;
+function flash(ok){ const s=$('saved'); if(!s) return;
+  s.textContent=ok?'saved':"couldn't save — trying again";
+  s.style.color=ok?'var(--green)':'var(--red)';
+  s.classList.add('on'); if(ok) setTimeout(()=>s.classList.remove('on'),1400); }
+function queueSave(){ dirty=true; editN++; clearTimeout(saveTimer); saveTimer=setTimeout(saveGroups,1200); }
+async function saveGroups(){
+  if(!dirty) return;
+  /* ⚠ A save already in flight must not clear `dirty` for edits made after its
+     payload was built — that lost the last group's name once. Remember which
+     edit this save carries, and only call it clean if nothing came after. */
+  const n=editN, snap=M.slice();
+  const payload={ groups:snap.map(m=>({title:m.title,register:m.register,story:m.story||'',
+      assets:m.photos.filter(p=>!p.excluded).map(p=>p.id),
+      hero:(m.photos.find(p=>p.is_hero)||{}).id||null})),
+    excluded:A.filter(p=>p.excluded).map(p=>p.id) };
+  try{
+    const r=await api('save_groups',payload);
+    if(!r.ids||r.ids.length!==snap.length) throw new Error('no ids back');
+    snap.forEach((m,i)=>{ m.id=r.ids[i]; });   // ⚠ answers save against these
+    failed=false; flash(true);
+    if(editN===n) dirty=false;
+    else { clearTimeout(saveTimer); saveTimer=setTimeout(saveGroups,300); }   // newer edits — go again
+  }catch(e){ dirty=true; failed=true; flash(false); report('save groups',e,{memories:M.length,photos:onCount()});
+    setTimeout(saveGroups,4000); }
+}
+
+/* clock skew between two cameras */
+function detectSkew(){
+  const byCam={};
+  A.forEach(p=>{ const k=/^DSC/i.test(p.original_filename)?'B':'A'; (byCam[k]=byCam[k]||[]).push(p); });
+  if(!byCam.A||!byCam.B||byCam.A.length<5||byCam.B.length<5) return null;
+  const g=byCam.B.map(b=>{let best=0,bd=1e15;
+    byCam.A.forEach(a=>{const d=new Date(b.taken_at)-new Date(a.taken_at);
+      if(Math.abs(d)<bd){bd=Math.abs(d);best=d;}}); return best/3600000;}).sort((x,y)=>x-y);
+  const med=g[Math.floor(g.length/2)], r=Math.round(med);
+  return (Math.abs(med-r)<0.4&&Math.abs(r)>=1)?r:null;
+}
+/* duplicate pairs: near-identical hash, not the same moment */
+function findDups(){
+  const out=[]; const seen=new Set();
+  for(let i=0;i<A.length;i++) for(let j=i+1;j<A.length;j++){
+    const a=A[i],b=A[j];
+    if(!a.phash||!b.phash||seen.has(b.id)) continue;
+    if(hamming(a.phash,b.phash)<=6){ out.push([a,b]); seen.add(b.id); }
+  }
+  return out;
+}
+function hamming(x,y){ let n=0;
+  for(let i=0;i<Math.min(x.length,y.length);i++){ let v=parseInt(x[i],16)^parseInt(y[i],16); while(v){n+=v&1;v>>=1;} }
+  return n; }
+
+/* the one grouping proposal
+   ⚠ A fixed gap threshold produces far too many groups — the first real user
+   spent most of her time merging them back together. Instead: aim for a
+   sensible NUMBER of groups and split at the biggest gaps. */
+function propose(){
+  const on=A.filter(p=>!p.excluded);
+  M=[];
+  if(!on.length) return;
+  const want=Math.max(4,Math.min(10,Math.round(on.length/8)));
+  const gaps=[];
+  for(let i=1;i<on.length;i++) gaps.push({i,d:new Date(on[i].taken_at)-new Date(on[i-1].taken_at)});
+  /* ⚠ Aiming for a number alone can still leave one enormous group — the first
+     run put 47 photographs from three days into one. Take the biggest gaps,
+     then keep splitting anything oversized. Bounded: every pass must add a cut. */
+  const MAXG=18;
+  const sorted=gaps.slice().sort((a,b)=>b.d-a.d);
+  const cuts=new Set(sorted.slice(0,Math.max(0,want-1)).map(g=>g.i));
+  let passes=0;
+  while(passes++<60){
+    const bounds=[0,...[...cuts].sort((a,b)=>a-b),on.length];
+    let biggest=null;
+    for(let k=1;k<bounds.length;k++){ const size=bounds[k]-bounds[k-1];
+      if(size>MAXG&&(!biggest||size>biggest.size)) biggest={from:bounds[k-1],to:bounds[k],size}; }
+    if(!biggest) break;
+    const inner=sorted.find(g=>g.i>biggest.from&&g.i<biggest.to&&!cuts.has(g.i));
+    if(!inner) break;
+    const before=cuts.size; cuts.add(inner.i); if(cuts.size===before) break;
+  }
+  let c={title:'',register:'warm',story:'',photos:[]}; M.push(c);
+  on.forEach((p,i)=>{ if(cuts.has(i)){ c={title:'',register:'warm',story:'',photos:[]}; M.push(c); } c.photos.push(p); });
+}
+
+async function showSort(){
+  page='sort';
+  plain('<p class="load">Loading your photos…</p>');
+  try{
+    const d=await api('load',{});
+    A=d.assets.filter(a=>a.url);
+    if(!A.length){
+      plain(`<h1>No photos yet</h1><p class="do">We couldn't find any photos in your film. Please get in touch with whoever sent you this link.</p>`);
+      report('sort with no assets',new Error('no assets')); return; }
+    A.sort((a,b)=>new Date(a.taken_at)-new Date(b.taken_at));
+    name=d.collection.owner_name||'';
+    skew=detectSkew();
+    if(d.chapters.length){                       // resuming
+      M=d.chapters.map(c=>({id:c.id,title:c.title||'',register:c.register||'warm',story:c.story||'',
+        questions:c.questions||null,
+        photos:A.filter(a=>a.chapter_id===c.id).sort((x,y)=>(x.sort_index??0)-(y.sort_index??0))}));
+      /* Photographs added after the grouping was done: drop each one into
+         whichever group its time falls inside. Anything outside every group
+         becomes a new one at the end. */
+      const orphan=A.filter(a=>!a.chapter_id&&!a.excluded), loose=[];
+      orphan.forEach(a=>{ const t=new Date(a.taken_at);
+        const home=M.find(m=>m.photos.length&&t>=new Date(m.photos[0].taken_at).getTime()&&
+          t<=new Date(m.photos[m.photos.length-1].taken_at).getTime());
+        if(home){ home.photos.push(a); home.photos.sort((x,y)=>new Date(x.taken_at)-new Date(y.taken_at)); }
+        else loose.push(a); });
+      if(loose.length){ let c=null;
+        loose.sort((x,y)=>new Date(x.taken_at)-new Date(y.taken_at)).forEach(a=>{
+          const day=new Date(a.taken_at).toDateString();
+          if(!c||c.day!==day){ c={title:'',register:'warm',story:'',photos:[],day}; M.push(c); }
+          c.photos.push(a); }); }
+      /* ⚠ A group can legitimately hold nothing visible. photos[0] is then undefined. */
+      const firstAt=m=>m.photos.length?new Date(m.photos[0].taken_at).getTime():Infinity;
+      M.sort((a,b)=>firstAt(a)-firstAt(b));
+      if(orphan.length) dirty=true;
+      screen='organise';
+      const need=M.findIndex(m=>!(m.title||'').trim());   // ⚠ never drop someone at the end
+      cur=need>=0?need:0;
+    }else{ screen='welcome'; cur=0; }
+    paint();
+  }catch(e){ report('load the collection',e);
+    plain(`<h1>Couldn't load your photos</h1><p class="do">Please try the link again in a moment.</p>
+      <button class="big" id="retryRoute">Try again</button>`); }
 }
 
 function paint(){
-  const n = queue.length;
-  const undated = queue.filter(q => q.src === 'none').length;
-  $('summary').innerHTML =
-    `<strong>${n} file${n===1?'':'s'}</strong>` +
-    (undated ? ` — <span class="bad">${undated} with no date</span>, which you'll have to place by hand later.` : ' — all dated.');
-  $('rows').innerHTML = queue.map(q => `
-    <div class="row">
-      <span class="nm">${q.file.name.replace(/[<>&]/g,'')}</span>
-      <span class="st ${q.status==='done'?'ok':q.status==='failed'?'bad':'wait'}">
-        ${q.status==='done'?'uploaded':q.status==='failed'?(q.err||'failed'):q.status}
-        ${q.src?`<span class="tag ${CLS[q.src]}">${LABEL[q.src]}</span>`:''}
-      </span>
-    </div>`).join('');
+  const st=$('stage'); st.className='';
+  if(screen==='welcome'){
+    st.innerHTML=`<h1>Now group your photos</h1>
+      <p class="do">Put your photos into groups — the times that go together — and give each group a name.</p>
+      <p class="lede">We've made a first guess at the groups from the dates. You can move any photo, leave any out,
+      and change anything. It saves as you go, so stop whenever you like and pick it up later.
+      There's no wrong way to do it.</p>
+      <label class="lede" style="display:block">What should we call you?<br><br>
+      <input type="text" id="who" value="${esc(name)}" placeholder="Your name" autocomplete="name"></label>
+      <br><button class="big" id="start">Start</button>`;
+    $('nav').classList.add('hide'); $('sheet').classList.add('hide');
+    return;
+  }
+  if(screen==='dups'){ paintDups(); return; }
+  if(screen==='organise'){ paintOrg(); return; }
+  if(screen==='notready'){
+    st.innerHTML=`<h1>We're not ready for this kind of film yet</h1>
+      <p class="do">We're sorry — we can't make a film like this one at the moment.</p>
+      <p class="lede">We've kept your photos and everything you've done, so nothing is lost.</p>`;
+    $('nav').classList.add('hide'); $('sheet').classList.add('hide');
+  }
+}
+function paintDups(){
+  const d=dups[cur];
+  if(!d){ screen='organise'; cur=0; propose(); paint(); return; }
+  $('stage').innerHTML=`
+    <div class="step">Same photo twice? <b>${cur+1}</b> of ${dups.length}</div>
+    <h2>These two look like the same photo.</h2>
+    <p class="do">Tap the one you'd rather keep. If they're really different, keep both.</p>
+    <div class="dup">
+      <div class="side ${d.keep===0?'keep':''}" data-keep="0"><img src="${d[0].thumb_url||d[0].url}" decoding="async"><div class="t">${d.keep===0?'Keeping this one':'Keep this one'}</div></div>
+      <div class="side ${d.keep===1?'keep':''}" data-keep="1"><img src="${d[1].thumb_url||d[1].url}" decoding="async"><div class="t">${d.keep===1?'Keeping this one':'Keep this one'}</div></div>
+    </div>
+    <button class="big" id="bothd">They're different — keep both</button>`;
+  nav(`<button id="dnext" class="go">${cur<dups.length-1?'Next':'Done'}</button>`,`${dups.length} to look at`);
+}
+function paintOrg(){
+  const m=M[cur]; if(!m) return;
+  const inn=m.photos.filter(p=>!p.excluded), gone=m.photos.filter(p=>p.excluded);
+  let h='';
+  if(skew&&!skewDone&&cur===0)
+    h+=`<div class="clock"><b>One camera has the wrong time on it.</b><br>
+      It looks about ${Math.abs(skew)} hours ${skew>0?'ahead of':'behind'} the other,
+      so some photos are out of order. Shall we put that right?
+      <div class="row"><button id="fixclock">Yes, fix it</button><button class="no" id="skipclock">Leave it</button></div></div>`;
+  h+=`<div class="step">Group <b>${cur+1}</b> of ${M.length}</div>
+    <h2>What do you call this group?</h2>
+    <input type="text" id="nm" value="${esc(m.title)}" placeholder="Anything you like" autocomplete="off">
+    <p class="do" style="font-size:16.5px;margin:9px 0 22px;color:var(--fg2)">
+      ${plural(inn.length,'photo')} · about ${mmss(secs(m))} of film · tap a photo to move it, or leave it out</p>
+    <div class="chips"><span class="lab">How did this time feel?</span>
+      ${Object.keys(REG).map(r=>`<button class="chip" data-reg="${r}" aria-pressed="${m.register===r}">${LAB[r]}</button>`).join('')}</div>
+    <div class="grid">`;
+  inn.forEach((p,i)=>{ h+=`<div class="c ${sel===p.id?'sel':''} ${p.is_hero?'best':''}" data-p="${p.id}">
+    <img src="${p.thumb_url||p.url}" loading="lazy" decoding="async"><div class="n">${i+1}</div>
+    ${p.is_hero?'<div class="tag">BEST</div>':''}</div>`; });
+  h+='</div>';
+  if(!inn.length) h+=`<p class="lede">Nothing left in this group.</p>`;
+  if(gone.length){ h+=`<div class="leftout"><h4>Left out</h4><p>Tap one to put it back.</p><div class="lostrip">`;
+    gone.forEach(p=>{h+=`<div class="lo" data-back="${p.id}"><img src="${p.thumb_url||p.url}" loading="lazy" decoding="async"><div class="put">put back</div></div>`;});
+    h+='</div></div>'; }
+  $('stage').innerHTML=h;
+  orgNav();
+  sheet();
+}
+/* The bottom bar of the grouping page. Called again as she types a name, so
+   the last group's Done appears the moment everything is named. */
+function orgNav(){
+  /* ⚠ Never offer Done while groups are still unnamed — and never make it the
+     only button. Moving on by accident used to be a one-way door. */
+  const unnamed=M.filter(x=>!(x.title||'').trim()).length;
+  const last=cur>=M.length-1;
+  const rightBtn=!last?'<button class="go" id="onext">Next group →</button>'
+    :(unnamed?`<button id="tofirst">Go to the ${unnamed} still to name</button>`
+             :'<button class="go" id="sortDone">Done</button>');
+  /* ⚠ The plain statement goes BEFORE the button, on the page, not after it. */
+  const before=(last&&!unnamed)?`<b>Once you press Done, this is the order your film will use.</b>`:'';
+  nav(rightBtn,`<b>${mmss(total())}</b><br>${plural(onCount(),'photo')} · ${plural(M.length,'group')}`,cur>0,before);
+}
+function nav(right,tally,back,before){
+  const n=$('nav'); n.classList.remove('hide');
+  n.innerHTML=`${before?`<p class="before">${before}</p>`:''}<div class="nin">
+    ${back?'<button id="back">←</button>':''}
+    <div class="tally">${tally||''}</div><span class="saved" id="saved">saved</span>
+    <span class="sp"></span>${right}</div>`;
+}
+function sheet(){
+  const s=$('sheet');
+  if(!sel||screen!=='organise'){ s.classList.add('hide'); return; }
+  const m=M[cur], inn=m.photos.filter(p=>!p.excluded);
+  const p=inn.find(x=>x.id===sel); if(!p){ s.classList.add('hide'); return; }
+  const i=inn.indexOf(p);
+  s.innerHTML=picking
+   ?`<div class="in"><h3>Move it to which group?</h3><div class="picker">
+      ${M.map((x,j)=>j===cur?'':`<button data-to="${j}">${esc(x.title||('Group '+(j+1)))}</button>`).join('')}
+      <button data-to="new">A new group of its own</button></div>
+      <button class="close" id="cancel">Cancel</button></div>`
+   :`<div class="in"><h3>Photo ${i+1}</h3><div class="acts">
+      <button data-a="up" ${i<=0?'disabled':''}>← Earlier</button>
+      <button data-a="down" ${i>=inn.length-1?'disabled':''}>Later →</button>
+      <button data-a="best">${p.is_hero?'Not the best':'This is the best one'}</button>
+      <button data-a="move">Different group</button>
+      <button data-a="out" class="warn">Leave it out</button>
+      <button data-a="see">See it bigger</button>
+      </div><button class="close" id="cancel">Done</button></div>`;
+  s.classList.remove('hide');
+}
+function drawZoom(){
+  let lb=$('lb');
+  if(zoom===null){ if(lb) lb.remove(); return; }
+  const inn=M[cur].photos.filter(p=>!p.excluded), p=inn[zoom];
+  if(!p){ zoom=null; if(lb) lb.remove(); return; }
+  if(!lb){ lb=document.createElement('div'); lb.id='lb'; lb.className='lb'; document.body.appendChild(lb); }
+  lb.innerHTML=`<img src="${p.url}">
+    <div class="cap"><button data-z="prev" ${zoom===0?'disabled':''}>←</button>
+    <span>${zoom+1} of ${inn.length}</span>
+    <button data-z="next" ${zoom===inn.length-1?'disabled':''}>→</button>
+    <button data-z="close">Close</button></div>`;
 }
 
-/* ---------- uploading ---------- */
-async function send(){
-  const who = $('who').value.trim() || 'unknown';
-  $('send').disabled = true;
-  let done = 0;
-
-  for (const q of queue){
-    if (q.status === 'done') { done++; continue; }
-    q.status = 'uploading'; paint();
-    try{
-      const r = await api('upload', {
-        action:'sign', filename:q.file.name,
-        mime:q.file.type || 'image/jpeg', size:q.file.size,
-        taken_at:q.at, date_source:q.src, uploaded_by:who
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || 'rejected');
-
-      const put = await fetch(j.signed_url, {
-        method:'PUT',
-        headers:{ 'Content-Type': q.file.type || 'application/octet-stream' },
-        body:q.file
-      });
-      if (!put.ok) throw new Error('upload failed');
-
-      await api('upload', { action:'confirm', asset_id:j.asset_id });
-      q.status = 'done';
-    }catch(e){
-      q.status = 'failed'; q.err = e.message;
+/* Done on the sort page: save, ask the server for the questions, move on.
+   ⚠ 422 means there is no question pack for this occasion. Say so and STOP —
+   never carry her into the questions page with nothing to ask. */
+async function finishSort(){
+  const b=$('sortDone'); if(!b) return;
+  b.disabled=true; b.textContent='One moment…';
+  clearTimeout(saveTimer);
+  /* She may press Done a second after typing the last name, while that save
+     is still queued or in flight. Wait for it — up to a few tries — rather
+     than bounce the button and leave her wondering. */
+  for(let i=0;i<6&&dirty;i++){ await saveGroups(); if(dirty) await sleep(400); }
+  if(dirty||failed||M.some(m=>!m.id)){ b.disabled=false; b.textContent='Done'; flash(false);
+    const before=$('nav').querySelector('.before'); if(before) before.textContent="Still saving — please press Done again in a moment.";
+    return; }
+  const tryAgain=msg=>{ b.disabled=false; b.textContent='Done';
+    const before=$('nav').querySelector('.before'); if(before) before.textContent=msg||"That didn't go through. Please press Done again."; };
+  /* questions answers {written, waiting, done}. Like describe it may do a
+     batch at a time, so go again while it is still writing. `waiting` names
+     groups it has nothing for yet — they simply don't appear on the next page. */
+  let written=0, waiting=[], done=false;
+  for(let i=0;i<8;i++){
+    const {ok,status,j}=await post('questions',{});
+    if(status===422){
+      report('questions: no pack',new Error(j.error||'422'),{occasion:J.occasion});
+      prog({screen:'notready'});
+      screen='notready'; paint(); scrollTo(0,0); return;
     }
-    done++;
-    $('prog').style.width = Math.round(done / queue.length * 100) + '%';
-    paint();
+    if(!ok){ report('questions',new Error(j.error||('HTTP '+status)),{status}); tryAgain(); return; }
+    written+=+j.written||0;
+    waiting=Array.isArray(j.waiting)?j.waiting:(j.waiting?[j.waiting]:[]);
+    done=!!j.done;
+    if(done||!(+j.written)) break;                          // finished, or another call would do no more
   }
-
-  const failed = queue.filter(q => q.status === 'failed').length;
-  $('send').disabled = false;
-  $('send').textContent = failed ? `Retry ${failed} that failed` : 'All uploaded — add more';
-  if (!failed) { queue = []; setTimeout(()=>{ $('picked').classList.add('hide');
-    $('send').textContent='Upload'; $('prog').style.width='0'; }, 2200); }
-}
-
-/* ---------- gallery ---------- */
-async function look(){
-  const r = await api('gallery', {});
-  const j = await r.json();
-  if (!r.ok){ $('seeMsg').textContent = j.error; $('seeMsg').className='msg err'; return; }
-  $('stats').innerHTML = `
-    <div class="stat"><b>${j.stats.total}</b><span>files in</span></div>
-    <div class="stat"><b>${j.stats.dated}</b><span>with a date</span></div>
-    <div class="stat"><b>${j.stats.undated}</b><span>to place by hand</span></div>`;
-  $('grid').innerHTML = j.assets.map(a => {
-    const when = a.taken_at ? new Date(a.taken_at).toLocaleDateString(undefined,
-      {day:'numeric',month:'short',year:'numeric'}) : 'no date';
-    const heic = /hei[cf]/i.test(a.mime_type);
-    const vid  = /^video/.test(a.mime_type);
-    const top  = (heic || vid || !a.url)
-      ? `<div class="ph">${vid?'video':heic?'HEIC<br>no preview':'no preview'}</div>`
-      : `<img loading="lazy" src="${a.url}" alt="">`;
-    return `<div class="cell">${top}<p>${when}${a.uploaded_by?' · '+a.uploaded_by.replace(/[<>&]/g,''):''}</p></div>`;
-  }).join('') || '<p class="note">Nothing uploaded yet.</p>';
-}
-
-/* ---------- wiring ---------- */
-$('drop').onclick = () => $('file').click();
-$('file').onchange = e => pick(e.target.files);
-$('drop').ondragover = e => { e.preventDefault(); $('drop').classList.add('over'); };
-$('drop').ondragleave = () => $('drop').classList.remove('over');
-$('drop').ondrop = e => { e.preventDefault(); $('drop').classList.remove('over'); pick(e.dataTransfer.files); };
-$('send').onclick = send;
-$('refresh').onclick = look;
-
-$('tabAdd').onclick = () => {
-  $('tabAdd').setAttribute('aria-selected','true'); $('tabSee').setAttribute('aria-selected','false');
-  $('paneAdd').classList.remove('hide'); $('paneSee').classList.add('hide');
-};
-$('tabSee').onclick = () => {
-  $('tabSee').setAttribute('aria-selected','true'); $('tabAdd').setAttribute('aria-selected','false');
-  $('paneSee').classList.remove('hide'); $('paneAdd').classList.add('hide'); look();
-};
-
-/* ---------- open ---------- */
-(async () => {
-  if (!TOKEN){
-    $('sub').textContent = 'This link is missing its code.';
-    $('gate').textContent = 'Use the full link you were sent — it needs the part after ?t=';
-    $('gate').classList.remove('hide');
-    $('drop').style.display='none';
+  if(waiting.length) report('questions: some groups waiting',new Error('waiting'),{written,waiting,done});
+  /* ⚠ Never carry her on with nothing to ask. */
+  let have=0;
+  try{ const jj=await rpc('journey',{p_token:TOKEN}); if(jj&&!jj.error){ J={...J,...jj}; have=+jj.with_questions||0; } }
+  catch(e){ report('journey after questions',e); }
+  if(!have&&!written){
+    tryAgain("We're still getting your questions ready. Please press Done again in a moment.");
     return;
   }
-  const r = await api('gallery', {});
-  const j = await r.json();
-  if (!r.ok){
-    $('sub').textContent = 'This link isn\u2019t valid.';
-    $('gate').textContent = j.error || 'Not authorised.';
-    $('gate').classList.remove('hide');
-    $('drop').style.display='none';
+  try{ await setStage('answer'); }
+  catch(e){ report('set_stage answer',e); b.disabled=false; b.textContent='Done';
+    const before=$('nav').querySelector('.before'); if(before) before.textContent="That didn't go through. Please press Done again.";
+    return; }
+  prog({screen:'answer'});
+  showAnswer();
+}
+
+/* ═══ 4 · ANSWER — tell us about each group ═══════════════════════ */
+let askedAgain=false;
+async function showAnswer(){
+  page='answer'; screen='answer';
+  plain('<p class="load">Loading your photos…</p>');
+  try{
+    let d=await api('load',{});
+    /* A group that was still waiting for its questions when she pressed Done
+       may have them now. Ask once per visit, and take anything new. */
+    if(!askedAgain&&d.chapters.some(c=>!(Array.isArray(c.questions)&&c.questions.length))){
+      askedAgain=true;
+      try{ const {ok,j}=await post('questions',{}); if(ok&&+j.written>0) d=await api('load',{}); }
+      catch(e){ report('questions on answer page',e); }
+      if(page!=='answer') return;
+    }
+    A=d.assets.filter(a=>a.url);
+    name=d.collection.owner_name||'';
+    const all=d.chapters.map(c=>({id:c.id,title:c.title||'',register:c.register||'warm',story:c.story||'',
+      questions:Array.isArray(c.questions)&&c.questions.length?c.questions:null,
+      photos:A.filter(a=>a.chapter_id===c.id&&!a.excluded).sort((x,y)=>(x.sort_index??0)-(y.sort_index??0))}));
+    if(!all.length){ report('answer with no chapters',new Error('no chapters'));
+      plain(`<h1>One moment</h1><p class="do">We can't find your groups. Please try the link again in a little while.</p>`); return; }
+    /* ⚠ Only the groups that have their questions. A group still waiting for
+       its questions is not shown — never ask her about a group with nothing to ask. */
+    M=all.filter(m=>m.questions);
+    if(all.length>M.length) report('answer: groups without questions',new Error('waiting'),{without:all.length-M.length,of:all.length});
+    if(!M.length){
+      plain(`<h1>Nearly there</h1>
+        <p class="do">We're still getting your questions ready. Please try the link again in a little while.</p>
+        <button class="big" id="retryRoute">Try again</button>`);
+      return; }
+    const need=M.findIndex(m=>!(m.story||'').trim());   // first one still to answer
+    cur=need>=0?need:0;
+    /* She had reached the music step and closed the tab: land there again,
+       as long as every group is still answered. */
+    const pr=(d.collection&&d.collection.progress)||{};
+    if(pr.screen==='genre'&&need<0){ cur=M.length-1; showGenre(); return; }
+    paintAsk(); scrollTo(0,0);
+  }catch(e){ report('load for answers',e);
+    plain(`<h1>Couldn't load your photos</h1><p class="do">Please try the link again in a moment.</p>
+      <button class="big" id="retryRoute">Try again</button>`); }
+}
+function paintAsk(){
+  const m=M[cur]; if(!m) return;
+  const qs=m.questions||[];
+  let h=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')}</div>
+    <p class="do">Look at these photos and tell us about them — write it however it comes out.</p>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(112px,1fr));margin-bottom:24px">`;
+  m.photos.forEach((p,i)=>{ h+=`<div class="c" data-zoom="${i}"><img src="${p.thumb_url||p.url}" loading="lazy" decoding="async"><div class="n">${i+1}</div></div>`; });
+  h+=`</div><p class="lede" style="margin-top:-14px;font-size:14.5px">Tap a photo to see it properly.</p>`;
+  qs.forEach((q,i)=>{ h+=`<h2 style="margin-top:${i?28:10}px">${esc(q)}</h2>`; });
+  h+=`<textarea id="ans" placeholder="A sentence is fine; more is better.">${esc(m.story||'')}</textarea>
+      <div class="count" id="cnt"></div>`;
+  $('stage').innerHTML=h; $('stage').className='';
+  countUp();
+  const last=cur>=M.length-1;
+  nav(last?'<button class="go" id="tomusic">Next: the music →</button>':'<button class="go" id="anext">Next →</button>',
+      `${M.filter(x=>words(x.story)>=12).length} of ${M.length} answered`, cur>0, '');
+  $('sheet').classList.add('hide');
+}
+function countUp(){ const c=$('cnt'); if(!c) return;
+  const w=words(M[cur].story);
+  c.textContent=w?`${w} words`:'a few sentences is plenty';
+  c.className='count'+(w>=25?' good':''); }
+async function saveStory(){
+  const m=M[cur]; if(!m) return false;
+  if(!m.id){ report('answer has no group to save against',new Error('no chapter id'),{group:cur+1}); flash(false); return false; }
+  try{ await api('save_story',{chapter_id:m.id,story:m.story||''}); flash(true); return true; }
+  catch(e){ flash(false); report('save answer',e,{group:cur+1,words:words(m.story)});
+    setTimeout(saveStory,4000); return false; }
+}
+async function toMusic(){
+  const b=$('tomusic'); if(!b) return;
+  b.disabled=true; b.textContent='One moment…';
+  clearTimeout(saveTimer);
+  const saved=await saveStory();
+  if(!saved){ b.disabled=false; b.textContent='Next: the music →'; return; }
+  prog({screen:'genre'});
+  showGenre();
+}
+
+/* ═══ 4b · THE MUSIC — after the answers, before Finished ═════════
+   A few plain questions about the music in their life (genre_anchors),
+   translated by the server into a style. ⚠ Whatever it understood is shown
+   back in plain words — that is the only way she can check we got it. If
+   the server isn't confident it asks one more question and we do not move
+   on. The nine named styles are always there to pick from instead. */
+let G={anchors:[],genres:[],suggested:null,why:null,chosen:null,answers:{},plain:'',styles:'',notice:'',guess:'',pick:null,mode:'ask'};
+/* suggest_genre's `chosen` is the effective sound, or null for none yet:
+   {slug, plain, styles, source:'chosen'|'their_words', confirmed}. A slug is
+   one of the nine; their_words is a translation of what she typed. ⚠
+   `confirmed` is what separates "she read it and agreed" from "she never got
+   here". ⚠⚠ `plain` is the sentence she agreed to and the only one of these
+   she is ever shown; `styles` is for the composition plan, never for her. */
+function takeChosen(c){
+  G.chosen=(c&&typeof c==='object')?c:null;
+  if(!G.chosen) return;
+  if(G.chosen.slug){ if(!G.pick) G.pick=G.chosen.slug; }
+  else if(G.chosen.styles||G.chosen.plain){ if(!G.pick&&G.chosen.confirmed) G.pick='heard'; }
+}
+/* The sentence for what she chose or we heard. `plain` is stored server-side
+   now; a row saved before it existed has none, so build one from the nine's
+   own words, and only for a wordless translation fall back to the styles. */
+function heardSentence(){
+  if(G.plain) return G.plain;
+  const c=G.chosen; if(!c) return '';
+  if(c.plain) return c.plain;
+  if(c.slug){ const g=G.genres.find(x=>x.slug===c.slug); if(g) return `${g.label} — ${g.plain}.`; }
+  return c.styles||'';
+}
+async function showGenre(){
+  page='answer'; screen='genre';
+  plain('<p class="load">One moment…</p>');
+  try{
+    const [anchors,sg]=await Promise.all([rpc('genre_anchors',{p_token:TOKEN}),rpc('suggest_genre',{p_token:TOKEN})]);
+    if(!Array.isArray(anchors)||!sg||sg.error) throw new Error((sg&&sg.error)||'genre lookup failed');
+    G.anchors=anchors; G.genres=sg.genres||[]; G.suggested=sg.suggested||null; G.why=sg.why||null;
+    takeChosen(sg.chosen);
+    G.mode=G.plain?'check':'ask';
+    paintGenre(); scrollTo(0,0);
+  }catch(e){ report('genre lookup',e);
+    plain(`<h1>Couldn't load this part</h1><p class="do">Please try the link again in a moment.</p>
+      <button class="big" id="retryRoute">Try again</button>`); }
+}
+function paintGenre(){
+  const st=$('stage'); st.className=''; $('sheet').classList.add('hide');
+  let h='';
+  if(G.mode==='ask'){
+    h+=`<div class="step">Nearly done · the music</div>
+      <h1>Now, the music</h1>
+      <p class="do">Tell us about the music in your life, and we'll write your song to suit.</p>`;
+    G.anchors.forEach((a,i)=>{ h+=`<h2 style="margin-top:${i?26:8}px">${esc(a.ask)}</h2>
+      <input type="text" class="anchor" data-key="${esc(a.key)}" value="${esc(G.answers[a.key]||'')}" placeholder="Anything you like" autocomplete="off">`; });
+    h+=`<p class="lede" style="margin-top:22px">Or, if you'd rather, <button class="chip" id="pickList" type="button">choose from a list</button></p>`;
+    st.innerHTML=h;
+    nav('<button class="go" id="gnext">Next →</button>','',true,'');
     return;
   }
-  $('title').textContent = j.collection.name;
-  $('sub').textContent = j.stats.total
-    ? `${j.stats.total} file${j.stats.total===1?'':'s'} in so far. Add more below.`
-    : 'Nothing here yet. Add the first photos below.';
-})();
+  if(G.mode==='check'){
+    h+=`<div class="step">Nearly done · the music</div>
+      <h1>Here's what we heard</h1>
+      <p class="do">${esc(G.plain)}</p>
+      <p class="lede">Is that right? If not, tell us more or choose from a list.</p>
+      <div class="acts" style="margin-bottom:22px"><button class="yes" id="gyes">Yes, that's right</button>
+        <button id="gmore">Tell you more</button><button id="pickList">Choose from a list</button></div>`;
+    st.innerHTML=h;
+    nav('','',true,'');
+    return;
+  }
+  /* mode 'list': the nine named styles */
+  h+=`<div class="step">Nearly done · the music</div>
+    <h1>Choose the sound</h1>
+    <p class="do">Tap the one that feels most like the two of you.</p>`;
+  if(G.notice) h+=`<div class="clock">${esc(G.notice)}${G.guess?`<br><span style="color:var(--fg2)">Our guess: ${esc(G.guess)}</span>`:''}</div>`;
+  if(G.suggested&&G.why){ const sug=G.genres.find(g=>g.slug===G.suggested);
+    h+=`<div class="clock"><b>We'd suggest ${esc(sug?sug.label:G.suggested)}.</b><br>${esc(G.why)}</div>`; }
+  h+='<div class="genres">';
+  G.genres.forEach(g=>{ const on=G.pick===g.slug;
+    h+=`<div class="genre ${on?'on':''}" data-genre="${esc(g.slug)}">
+      <div class="gt"><b>${esc(g.label)}</b>${g.slug===G.suggested?' <span class="sug">our suggestion</span>':''}</div>
+      <div class="gp">${esc(g.plain)}</div>
+      ${g.sample?`<button class="play" type="button" data-play="${esc(g.sample)}" aria-label="Hear a little of ${esc(g.label)}">▶ Hear it</button>`:''}
+    </div>`; });
+  h+='</div>';
+  const heard=(G.chosen&&G.chosen.slug&&!G.plain)?'':heardSentence();   // a picked card speaks for itself
+  if(heard) h+=`<p class="lede" style="margin-top:22px">Or keep what we heard — <i>${esc(heard)}</i>
+    <button class="chip" id="keepHeard" type="button" ${G.pick==='heard'?'aria-pressed="true"':''}>Keep that</button></p>`;
+  st.innerHTML=h;
+  nav(`<button class="go" id="gdone" ${G.pick?'':'disabled'}>Finished</button>`,'',true,
+      G.pick?'When you press Finished, that’s everything — your film is made from your photos, your words and this music.':'');
+}
+/* Each answer is recorded with set_anchor, which reads the year loosely
+   ("about 1978", "78") and hands back `music_note` — every music answer so
+   far, joined. ⚠ That joined note is what gets translated, so the second
+   music answer adds to the first instead of replacing it. */
+async function translateGenre(){
+  const b=$('gnext'); if(!b) return;
+  const given=G.anchors.filter(a=>(G.answers[a.key]||'').trim());
+  if(!given.length){ G.mode='list'; paintGenre(); scrollTo(0,0); return; }   // nothing typed — offer the list
+  b.disabled=true; b.textContent='One moment…';
+  const tryAgain=()=>{ b.disabled=false; b.textContent='Next →';
+    const before=$('nav').querySelector('.before'); if(before) before.textContent="That didn't go through. Please press Next again."; };
+  let note='';
+  for(const a of given){
+    try{
+      const r=await rpc('set_anchor',{p_token:TOKEN,p_key:a.key,p_answer:G.answers[a.key].trim()});
+      if(!r||r.error) throw new Error((r&&r.error)||'set_anchor failed');
+      if(r.music_note) note=r.music_note;
+    }catch(e){ report('set_anchor',e,{key:a.key}); tryAgain(); return; }
+  }
+  /* The year may have changed the suggestion — ask again before showing the list. */
+  try{ const sg=await rpc('suggest_genre',{p_token:TOKEN});
+    if(sg&&!sg.error){ G.genres=sg.genres||G.genres; G.suggested=sg.suggested||null; G.why=sg.why||null; takeChosen(sg.chosen); } }
+  catch(e){ report('suggest_genre',e); }
+  if(!note){ G.notice=''; G.guess=''; G.mode='list'; paintGenre(); scrollTo(0,0); return; }   // only the year — straight to the list
+  const {ok,status,j}=await post('translate-genre',{note});
+  if(!ok||j.error){ report('translate-genre',new Error(j.error||('HTTP '+status))); tryAgain(); return; }
+  if(j.confident===false||!j.plain||j.saved===false){
+    /* ⚠ Not confident: nothing was saved. `ask` is the server's own sentence
+       about that and `plain` is its safe guess. Show both, offer the nine,
+       and do not move on until she has picked one. */
+    G.plain=''; G.styles=''; G.pick=null;
+    G.notice=j.ask||"We couldn't tell from that what you like. Please pick one of the sounds below.";
+    G.guess=j.plain||'';
+    G.mode='list'; paintGenre(); scrollTo(0,0);
+    return;
+  }
+  G.notice=''; G.guess=''; G.plain=j.plain; G.styles=j.styles||'';
+  G.mode='check'; paintGenre(); scrollTo(0,0);
+}
+let audio=null;
+function playSample(url,btn){
+  document.querySelectorAll('.play.playing').forEach(x=>{ x.classList.remove('playing'); x.textContent='▶ Hear it'; });
+  if(audio){ audio.pause(); const was=audio; audio=null; if(was._url===url) return; }
+  audio=new Audio(url); audio._url=url; btn.classList.add('playing'); btn.textContent='■ Stop';
+  audio.onended=audio.onerror=()=>{ btn.classList.remove('playing'); btn.textContent='▶ Hear it'; };
+  audio.play().catch(e=>{ report('play sample',e,{url}); btn.classList.remove('playing'); btn.textContent='▶ Hear it'; });
+}
+async function finishGenre(){
+  const b=$('gdone')||$('gyes'); if(!b) return;
+  b.disabled=true; b.textContent='One moment…';
+  const fail=msg=>{ b.disabled=false; b.textContent=b.id==='gyes'?"Yes, that's right":'Finished';
+    const before=$('nav').querySelector('.before'); if(before) before.textContent=msg||"That didn't go through. Please try again."; };
+  try{
+    if(G.pick==='heard'){
+      /* "Yes, that's right" / "Keep that": she read the translation and agreed. */
+      const r=await rpc('confirm_genre',{p_token:TOKEN}); if(!r||r.error) throw new Error((r&&r.error)||'confirm_genre failed');
+    }else if(G.pick){
+      /* One of the nine. Picking is agreeing — set_genre confirms as it saves. */
+      const r=await rpc('set_genre',{p_token:TOKEN,p_slug:G.pick}); if(!r||r.error) throw new Error((r&&r.error)||'set_genre failed');
+    }else{ fail('Please choose a sound first.'); return; }
+  }catch(e){ report(G.pick==='heard'?'confirm_genre':'set_genre',e,{pick:G.pick}); fail(); return; }
+  try{ await setStage('submitted'); }
+  catch(e){ report('set_stage submitted',e); fail(); return; }
+  if(audio){ audio.pause(); audio=null; }
+  prog({screen:'submitted'});
+  showThanks();
+}
+
+/* ═══ 5 · THANK YOU ══════════════════════════════════════════════ */
+function showThanks(){
+  page='thanks';
+  const photos=J.photos||onCount(), groups=J.chapters||M.length, who=name||J.owner_name||'';
+  plain(`<h1>Thank you${who?', '+esc(who):''}</h1>
+    <p class="do">That's everything we need. We'll make your film from your photos and your words.</p>
+    ${photos?`<p class="lede">${plural(photos,'photo')}${groups?` · ${plural(groups,'group')}`:''}</p>`:''}
+    <p class="lede">You can close this now. Keep the link — it will always bring you back here.</p>`);
+}
+
+/* ═══ interaction ════════════════════════════════════════════════ */
+document.addEventListener('click',async e=>{
+  const t=e.target;
+  if(t.id==='retryRoute'){ route(); return; }
+  if(t.id==='dretry'){ showDescribing(); return; }
+
+  /* upload */
+  if(t.id==='allin'){ askAllIn(); return; }
+  if(t.id==='allinNo'){ $('sheet').classList.add('hide'); return; }
+  if(t.id==='allinYes'){ finishUpload(); return; }
+
+  /* sort */
+  if(t.id==='start'){ name=($('who')||{}).value||'';
+    api('set_owner',{name}).catch(e=>report('save name',e));
+    dups=findDups().map(d=>{ d.keep=(d[0].sharpness||0)>=(d[1].sharpness||0)?0:1; return d; });
+    screen=dups.length?'dups':'organise'; cur=0;
+    if(screen==='organise') propose();
+    prog({screen,name_given:!!name}); paint(); scrollTo(0,0); return; }
+  if(t.dataset.keep!==undefined){ dups[cur].keep=+t.dataset.keep; paint(); return; }
+  if(t.id==='bothd'){ dups[cur].keep=-1; if(cur<dups.length-1){cur++;}else{screen='organise';cur=0;propose();}
+    paint(); scrollTo(0,0); return; }
+  if(t.id==='dnext'){ const d=dups[cur];
+    if(d.keep>=0){ const drop=d[1-d.keep], keep=d[d.keep];
+      drop.excluded=true; api('mark_dup',{keep:keep.id,drop:drop.id}).catch(e=>report('mark duplicate',e)); }
+    if(cur<dups.length-1) cur++; else { screen='organise'; cur=0; propose(); prog({screen:'organise'}); }
+    paint(); scrollTo(0,0); return; }
+  if(t.id==='fixclock'){ A.forEach(p=>{ if(/^DSC/i.test(p.original_filename))
+      p.taken_at=new Date(new Date(p.taken_at).getTime()-skew*3600000).toISOString(); });
+    A.sort((a,b)=>new Date(a.taken_at)-new Date(b.taken_at));
+    skewDone=true; propose(); cur=0; queueSave(); paint(); return; }
+  if(t.id==='skipclock'){ skewDone=true; paint(); return; }
+  if(t.dataset.reg){ M[cur].register=t.dataset.reg; queueSave(); paint(); return; }
+  if(t.id==='onext'){ cur++; sel=null; picking=false; saveGroups(); prog({screen:'organise',part:cur+1}); paint(); scrollTo(0,0); return; }
+  if(t.id==='back'){
+    if(screen==='genre'){ if(G.mode!=='ask'){ G.mode='ask'; paintGenre(); } else { cur=M.length-1; screen='answer'; paintAsk(); } scrollTo(0,0); return; }
+    if(screen==='answer'){ saveStory(); }
+    if(cur>0){cur--;} sel=null; picking=false;
+    if(screen==='answer') paintAsk(); else paint();
+    scrollTo(0,0); return; }
+  if(t.id==='tofirst'){ const i=M.findIndex(x=>!(x.title||'').trim());
+    if(i>=0){ cur=i; sel=null; picking=false; paint(); scrollTo(0,0); } return; }
+  if(t.id==='sortDone'){ finishSort(); return; }
+  if(t.id==='cancel'){ sel=null; picking=false; sheet(); paint(); return; }
+  if(t.dataset.to!==undefined){
+    const m=M[cur], p=m.photos.find(x=>x.id===sel);
+    m.photos.splice(m.photos.indexOf(p),1);
+    if(t.dataset.to==='new') M.splice(cur+1,0,{title:'',register:'warm',story:'',photos:[p]});
+    else M[+t.dataset.to].photos.push(p);
+    if(!m.photos.length){ M.splice(M.indexOf(m),1); cur=Math.min(cur,M.length-1); }
+    sel=null; picking=false; queueSave(); paint(); return; }
+  if(t.dataset.a){
+    const m=M[cur], inn=m.photos.filter(x=>!x.excluded), p=inn.find(x=>x.id===sel);
+    const a=t.dataset.a, i=m.photos.indexOf(p);
+    if(a==='move'){ picking=true; sheet(); return; }
+    if(a==='see'){ zoom=inn.indexOf(p); sel=null; drawZoom(); paint(); return; }
+    if(a==='up'&&i>0){ m.photos.splice(i,1); m.photos.splice(i-1,0,p); }
+    if(a==='down'&&i<m.photos.length-1){ m.photos.splice(i,1); m.photos.splice(i+1,0,p); }
+    if(a==='best'){ m.photos.forEach(x=>x.is_hero=false); p.is_hero=!p.is_hero; sel=null; }
+    if(a==='out'){ p.excluded=true; sel=null; }
+    queueSave(); paint(); return; }
+  const back=t.closest('[data-back]');
+  if(back){ const p=A.find(x=>x.id===back.dataset.back); p.excluded=false; queueSave(); paint(); return; }
+
+  /* zoom (sort and answer) */
+  const z=t.closest('[data-zoom]');
+  if(z){ zoom=+z.dataset.zoom; drawZoom(); return; }
+  if(t.dataset.z){ const inn=M[cur].photos.filter(p=>!p.excluded);
+    if(t.dataset.z==='close') zoom=null;
+    if(t.dataset.z==='prev'&&zoom>0) zoom--;
+    if(t.dataset.z==='next'&&zoom<inn.length-1) zoom++;
+    drawZoom(); return; }
+  if(t.id==='lb'||t.tagName==='IMG'&&t.closest('#lb')){ zoom=null; drawZoom(); return; }
+  const c=t.closest('[data-p]');
+  if(c&&screen==='organise'){ sel=sel===c.dataset.p?null:c.dataset.p; picking=false; paint(); return; }
+
+  /* answer */
+  if(t.id==='anext'){ saveStory(); cur++; prog({screen:'answer',part:cur+1}); paintAsk(); scrollTo(0,0); return; }
+  if(t.id==='tomusic'){ toMusic(); return; }
+  /* the music */
+  if(t.id==='gnext'){ translateGenre(); return; }
+  if(t.id==='gyes'){ G.pick='heard'; finishGenre(); return; }
+  if(t.id==='gmore'){ G.mode='ask'; paintGenre(); scrollTo(0,0); return; }
+  if(t.id==='pickList'){ G.mode='list'; paintGenre(); scrollTo(0,0); return; }
+  if(t.id==='keepHeard'){ G.pick='heard'; paintGenre(); return; }
+  if(t.id==='gdone'){ finishGenre(); return; }
+  const gp=t.closest('[data-play]');
+  if(gp){ playSample(gp.dataset.play,gp); return; }
+  const gc=t.closest('[data-genre]');
+  if(gc){ G.pick=gc.dataset.genre; paintGenre(); return; }
+});
+document.addEventListener('input',e=>{
+  if(e.target.classList&&e.target.classList.contains('anchor')){ G.answers[e.target.dataset.key]=e.target.value; return; }
+  if(e.target.id==='nm'){ M[cur].title=e.target.value; queueSave(); if(screen==='organise') orgNav(); }
+  if(e.target.id==='ans'){ M[cur].story=e.target.value; countUp();
+    const t=document.querySelector('#nav .tally'); if(t) t.textContent=`${M.filter(x=>words(x.story)>=12).length} of ${M.length} answered`;
+    clearTimeout(saveTimer); saveTimer=setTimeout(saveStory,1400); }
+});
+window.addEventListener('beforeunload',e=>{
+  if(dirty||failed){ e.preventDefault(); e.returnValue=''; }
+});
+
+route();
 </script>
 </body>
 </html>
