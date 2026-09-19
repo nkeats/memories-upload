@@ -1035,6 +1035,10 @@ async function finishSort(){
     written+=+j.written||0;
     waiting=Array.isArray(j.waiting)?j.waiting:(j.waiting?[j.waiting]:[]);
     done=!!j.done;
+    /* ⚠ spine_short: the interview produced details and no spine — every
+       question anchored to a photograph, none about the marriage itself.
+       Not hers to fix; reported so it is seen. */
+    if(j.spine_short) report('questions: spine short',new Error('spine_short'),{broad_used:j.broad_used,broad_needed:j.broad_needed});
     if(done||!(+j.written)) break;                          // finished, or another call would do no more
   }
   if(waiting.length) report('questions: some groups waiting',new Error('waiting'),{written,waiting,done});
@@ -1227,7 +1231,7 @@ function paintGenre(){
     h+=`<div class="genre ${on?'on':''}" data-genre="${esc(g.slug)}">
       <div class="gt"><b>${esc(g.label)}</b>${g.slug===G.suggested?' <span class="sug">our suggestion</span>':''}</div>
       <div class="gp">${esc(g.plain)}</div>
-      ${g.sample?`<button class="play" type="button" data-play="${esc(g.sample)}" aria-label="Hear a little of ${esc(g.label)}">▶ Hear it</button>`:''}
+      ${g.sample?`<button class="play" type="button" data-play="${esc(sampleUrl(g.sample))}" aria-label="Hear a little of ${esc(g.label)}">▶ Hear it</button>`:''}
     </div>`; });
   h+='</div>';
   const heard=(G.chosen&&G.chosen.slug&&!G.plain)?'':heardSentence();   // a picked card speaks for itself
@@ -1276,6 +1280,11 @@ async function translateGenre(){
   G.notice=''; G.guess=''; G.plain=j.plain; G.styles=j.styles||'';
   G.mode='check'; paintGenre(); scrollTo(0,0);
 }
+/* `sample` is the storage path from the genre's own row (e.g.
+   samples/folk-7f07a8bcb9.mp3) — ⚠ never built from the slug. The filename
+   carries a content hash, so every regeneration is a new URL and nothing
+   stale can be served from a cache. */
+const sampleUrl=p=>/^https?:\/\//.test(p)?p:`${SB}/storage/v1/object/public/${String(p).replace(/^\/+/,'')}`;
 let audio=null;
 function playSample(url,btn){
   document.querySelectorAll('.play.playing').forEach(x=>{ x.classList.remove('playing'); x.textContent='▶ Hear it'; });
