@@ -146,12 +146,19 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 .genre.on{border-color:var(--brass)}
 .genre .gt{font-family:"Newsreader",serif;font-size:21px;font-weight:400;margin-bottom:4px}
 .genre .gp{color:var(--fg2);font-size:15px;line-height:1.45}
-.genre .sug{font-family:"Public Sans",sans-serif;font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+.sug{font-family:"Public Sans",sans-serif;font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
   color:#20180A;background:var(--brass);border-radius:4px;padding:2px 7px;margin-left:8px;vertical-align:middle}
 .genre .play{margin-top:10px;background:var(--p2);border:1px solid var(--l2);border-radius:6px;color:var(--fg);
   font:inherit;font-size:15px;padding:9px 14px;cursor:pointer}
 .genre .play.playing{border-color:var(--brass);color:var(--brass)}
 .anchor{margin-bottom:4px}
+.people{display:flex;flex-direction:column;gap:8px;margin:6px 0 20px}
+.person{background:var(--panel);border:2px solid var(--line);border-radius:8px;padding:13px 16px;font-size:17px}
+.person.ask{border-color:var(--brass)}
+.person .rel{color:var(--fg2)}
+.person .acts{margin-top:10px}
+.tick{display:flex;align-items:center;gap:10px;font-size:16px;color:var(--fg2);cursor:pointer}
+.tick input{width:22px;height:22px;accent-color:var(--brass)}
 .load{padding:70px 0;color:var(--fg2);line-height:1.8;text-align:center}
 .hide{display:none}
 </style>
@@ -331,7 +338,139 @@ async function phashOf(file){
 const SAME=0;
 const alreadyIn=h=>!!h&&inHashes.some(x=>hamming(x,h)<=SAME);
 
+/* ═══ 0 · WHO — before anything else ═══════════════════════════
+   Names first: the song has to say them properly, the questions can use
+   them, and the vision pass can be told who to look for. None of that can
+   be harvested later from answers that don't exist yet. Lives at the front
+   of the upload stage; get_people is how a reload knows where she was. */
+let P={people:[],say:[],asking:0,mode:'list',adding:false};
+const WHO={
+  anniversary:{h:'The two of you',do:'Tell us your names — the two of you — so the song can say them properly.',add:'Anyone else the film should notice? Add them too.'},
+  wedding:{h:'The couple',do:'Tell us the couple, and anyone else the film should notice.',add:'Add anyone else the film should notice.'},
+  life:{h:'Who is this film for?',do:'Tell us who this film is for, and the people who should be in it.',add:'Add the people who should be in it.'},
+  baby:{h:'The new arrival',do:'Tell us the baby\'s name, and the family around them.',add:'Add the family around them.'},
+  birthday:{h:'Who is this film about?',do:'Tell us who this film is about, and the people who matter in it.',add:'Add the people who matter in it.'},
+  other:{h:'Who is this film about?',do:'Tell us who this film is about, and the people who should be in it.',add:'Add the people who should be in it.'}
+};
+function whoWords(){
+  const o=(J.occasion||'').toLowerCase();
+  if(/anniv/.test(o)) return WHO.anniversary;
+  if(/wed/.test(o)) return WHO.wedding;
+  if(/life|tribute|memorial|funeral|celebrat/.test(o)) return WHO.life;
+  if(/baby|birth$|newborn/.test(o)) return WHO.baby;
+  if(/birthday|milestone/.test(o)) return WHO.birthday;
+  return WHO.other;
+}
 async function showUpload(){
+  page='upload';
+  plain('<p class="load">One moment…</p>');
+  let people=[];
+  try{ const r=await rpc('get_people',{p_token:TOKEN}); if(Array.isArray(r)) people=r; else if(r&&r.error) throw new Error(r.error); }
+  catch(e){ report('get_people',e); }
+  if(page!=='upload') return;
+  P.people=people;
+  if(!people.length){ P.mode='list'; paintWho(); return; }
+  if(people.some(x=>!x.sound_ok)){ await sayNames(); return; }   // she added them but never settled how they're said
+  showUploadPage();
+}
+function paintWho(){
+  const w=whoWords(); const st=$('stage'); st.className=''; $('sheet').classList.add('hide');
+  let h=`<div class="step">First · the people</div><h1>${esc(w.h)}</h1><p class="do">${esc(w.do)}</p>`;
+  if(P.people.length){
+    h+='<div class="people">';
+    P.people.forEach((x,i)=>{ h+=`<div class="person"><b>${esc(x.name)}</b>${x.relation?` <span class="rel">· ${esc(x.relation)}</span>`:''}${x.is_subject?' <span class="sug">the film is about them</span>':''}
+      <button class="close" data-premove="${i}" type="button" style="float:right;padding:0" aria-label="Remove ${esc(x.name)}">remove</button></div>`; });
+    h+='</div>';
+  }
+  h+=`<div class="card" id="addcard">
+      <label for="pname">Their name</label>
+      <input type="text" id="pname" placeholder="First name is fine" autocomplete="off" autocapitalize="words">
+      <label for="prel" style="margin-top:14px">Who they are to you</label>
+      <input type="text" id="prel" placeholder="wife, husband, daughter, best friend…" autocomplete="off">
+      <label class="tick" style="margin-top:14px"><input type="checkbox" id="psub" ${P.people.length<2?'checked':''}> This film is about them</label>
+      <div style="margin-top:16px"><button class="big" id="padd" ${P.adding?'disabled':''}>${P.adding?'One moment…':'Add them'}</button></div>
+    </div>
+    <p class="lede">${esc(P.people.length?w.add:'Add one person at a time. You can add more later.')}</p>`;
+  st.innerHTML=h;
+  nav(`<button class="go" id="pdone" ${P.people.length?'':'disabled'}>That's everyone →</button>`,
+      P.people.length?`<b>${P.people.length}</b><br>${P.people.length===1?'person':'people'}`:'nobody yet');
+  if(!P.people.length){ const n=$('pname'); if(n) n.focus(); }
+}
+async function addPerson(){
+  const name=($('pname').value||'').trim(), rel=($('prel').value||'').trim(), sub=$('psub').checked;
+  if(!name){ $('pname').focus(); return; }
+  P.adding=true; paintWho();
+  try{
+    const r=await rpc('set_person',{p_token:TOKEN,p_name:name,p_relation:rel||null,p_is_subject:sub});
+    if(!r||r.error) throw new Error((r&&r.error)||'set_person failed');
+    const i=P.people.findIndex(x=>x.name.toLowerCase()===name.toLowerCase());
+    const row={name:r.name||name,relation:rel||null,is_subject:sub,said_as:r.said_as||null,sound_ok:false};
+    if(i>=0) P.people[i]=row; else P.people.push(row);
+  }catch(e){ report('set_person',e,{name}); P.adding=false; paintWho(); $('pname').value=name; $('prel').value=rel;
+    const b=$('padd'); if(b) b.textContent="That didn't go through — try again"; return; }
+  P.adding=false; paintWho(); scrollTo(0,0); $('pname').focus();
+}
+async function removePerson(i){
+  const x=P.people[i]; if(!x) return;
+  try{ const r=await rpc('remove_person',{p_token:TOKEN,p_name:x.name}); if(!r||r.error) throw new Error((r&&r.error)||'remove_person failed'); }
+  catch(e){ report('remove_person',e,{name:x.name}); flash(false); return; }
+  P.people.splice(i,1); paintWho();
+}
+/* say-name: how we'll say each one. `asking` is how many genuinely need her —
+   usually small. All are shown on one screen; only those are required. ⚠ The
+   sung form is never shown; that's for the generator. */
+async function sayNames(){
+  plain('<p class="load">One moment…</p>');
+  const names=P.people.map(x=>x.name);
+  const {ok,status,j}=await post('say-name',{names});
+  if(page!=='upload') return;
+  if(!ok||j.error||!Array.isArray(j.people)){
+    report('say-name',new Error(j.error||('HTTP '+status)));
+    plain(`<h1>One moment</h1><p class="do">We couldn't work out how to say the names just now. Please try again.</p>
+      <button class="big" id="psayagain">Try again</button>`); return; }
+  P.say=j.people.map(x=>({name:x.name,said_as:x.said_as||'',needs:!!x.needs_asking,answer:null,typed:''}));
+  P.asking=+j.asking||P.say.filter(x=>x.needs).length;
+  P.mode='say'; paintSay(); scrollTo(0,0);
+}
+function paintSay(){
+  const st=$('stage'); st.className=''; $('sheet').classList.add('hide');
+  let h=`<div class="step">First · the people</div><h1>Here's how we'll say these</h1>
+    <p class="do">${P.asking?`Check the ${P.asking===1?'one':P.asking} we're not sure of. The rest you can change if we've got them wrong.`:'Tap any that we\'ve got wrong. Otherwise you\'re done here.'}</p>
+    <div class="people">`;
+  P.say.forEach((x,i)=>{
+    const open=x.answer==='no';
+    h+=`<div class="person ${x.needs&&x.answer===null?'ask':''}" data-say="${i}">
+      <b>${esc(x.name)}</b> <span class="rel">— said <i>${esc(x.said_as||'…')}</i></span>
+      ${x.needs?`<div class="acts" style="margin-top:10px">
+          <button class="${x.answer==='yes'?'yes':''}" data-sayok="${i}">${x.answer==='yes'?'Yes — that\'s it':'Yes, that\'s it'}</button>
+          <button class="${open?'yes':''}" data-sayno="${i}">No, it's said…</button></div>`
+        :`<button class="chip" data-sayno="${i}" style="margin-top:8px">${open?'Cancel':'Change it'}</button>`}
+      ${open?`<input type="text" class="saytype" data-saytype="${i}" value="${esc(x.typed)}" placeholder="Write it how it sounds, like LAY-sa or shiv-AWN" autocomplete="off" style="margin-top:10px">`:''}
+    </div>`; });
+  h+='</div>';
+  st.innerHTML=h;
+  const ready=P.say.every(x=>!x.needs||x.answer==='yes'||(x.answer==='no'&&x.typed.trim()));
+  nav(`<button class="go" id="sayDone" ${ready?'':'disabled'}>That's right →</button>`,'',true,'');
+  const t=document.querySelector('.saytype'); if(t&&document.activeElement!==t&&!t.value) t.focus();
+}
+/* Her correction is typed the way it sounds. The sung form the generator
+   needs is derived from it on the server (sung_from_said), in one place. */
+async function finishSay(){
+  const b=$('sayDone'); if(!b) return;
+  b.disabled=true; b.textContent='One moment…';
+  for(const x of P.say){
+    const args={p_token:TOKEN,p_name:x.name};
+    if(x.answer==='no'&&x.typed.trim()) args.p_corrected_said_as=x.typed.trim();
+    try{ const r=await rpc('confirm_person_sound',args); if(!r||r.error) throw new Error((r&&r.error)||'confirm failed'); }
+    catch(e){ report('confirm_person_sound',e,{name:x.name}); b.disabled=false; b.textContent="That's right →";
+      const before=$('nav').querySelector('.before'); if(before) before.textContent="That didn't go through. Please try again."; return; }
+  }
+  P.people.forEach(x=>{ x.sound_ok=true; const y=P.say.find(z=>z.name===x.name); if(y) x.said_as=y.answer==='no'?y.typed.trim():y.said_as; });
+  prog({screen:'upload',people:P.people.length});
+  showUploadPage();
+}
+
+async function showUploadPage(){
   page='upload';
   plain(`<h1>Add your photos</h1>
     <p class="do">Choose the photos you'd like in your film, and we'll bring them in.</p>
@@ -348,7 +487,9 @@ async function showUpload(){
     <p class="lede">Pick them from your camera roll rather than from a message — photos sent through a
       messaging app lose their date, and the date is how we put your film in order.
       Your photos go straight to private storage and nobody else can see them.</p>
-    <div class="sofar"><h4 id="sofarH">In so far</h4><p id="sofarP">Loading…</p><div class="grid" id="sofarGrid"></div></div>`);
+    <div class="sofar"><h4 id="sofarH">In so far</h4><p id="sofarP">Loading…</p><div class="grid" id="sofarGrid"></div></div>
+    <p class="lede" style="margin-top:26px">${P.people.length?`The film is about ${esc(P.people.filter(x=>x.is_subject).map(x=>x.name).join(' and ')||P.people.map(x=>x.name).join(', '))}.`:''}
+      <button class="chip" id="pmore" type="button">Add someone</button></p>`);
   $('drop').onclick=()=>$('file').click();
   $('file').onchange=e=>pick(e.target.files);
   $('drop').ondragover=e=>{e.preventDefault();$('drop').classList.add('over');};
@@ -1025,10 +1166,16 @@ async function showGenre(){
   page='answer'; screen='genre';
   plain('<p class="load">One moment…</p>');
   try{
-    const [anchors,sg]=await Promise.all([rpc('genre_anchors',{p_token:TOKEN}),rpc('suggest_genre',{p_token:TOKEN})]);
-    if(!Array.isArray(anchors)||!sg||sg.error) throw new Error((sg&&sg.error)||'genre lookup failed');
-    G.anchors=anchors; G.genres=sg.genres||[]; G.suggested=sg.suggested||null; G.why=sg.why||null;
-    takeChosen(sg.chosen);
+    /* The anchors are what this screen needs. The nine are only needed on the
+       list screen, which asks again after the anchors — so a failure here is
+       reported, not fatal. (⚠ 19 Sep: suggest_genre 500'd whenever no year was
+       recorded yet, i.e. for every customer at this exact moment.) */
+    const [anchors,sg]=await Promise.all([rpc('genre_anchors',{p_token:TOKEN}),
+      rpc('suggest_genre',{p_token:TOKEN}).catch(e=>({error:e.message}))]);
+    if(!Array.isArray(anchors)) throw new Error('genre_anchors failed');
+    G.anchors=anchors;
+    if(sg&&!sg.error){ G.genres=sg.genres||[]; G.suggested=sg.suggested||null; G.why=sg.why||null; takeChosen(sg.chosen); }
+    else report('suggest_genre on entry',new Error((sg&&sg.error)||'failed'));
     G.mode=G.plain?'check':'ask';
     paintGenre(); scrollTo(0,0);
   }catch(e){ report('genre lookup',e);
@@ -1061,6 +1208,12 @@ function paintGenre(){
     return;
   }
   /* mode 'list': the nine named styles */
+  if(!G.genres.length){
+    st.innerHTML=`<div class="step">Nearly done · the music</div><h1>One moment</h1>
+      <p class="do">We couldn't fetch the sounds to choose from. Please try again.</p>
+      <button class="big" id="glist">Try again</button>`;
+    nav('','',true,''); return;
+  }
   h+=`<div class="step">Nearly done · the music</div>
     <h1>Choose the sound</h1>
     <p class="do">Tap the one that feels most like the two of you.</p>`;
@@ -1166,6 +1319,15 @@ document.addEventListener('click',async e=>{
   if(t.id==='retryRoute'){ route(); return; }
   if(t.id==='dretry'){ showDescribing(); return; }
 
+  /* who */
+  if(t.id==='padd'){ addPerson(); return; }
+  if(t.id==='pdone'){ sayNames(); return; }
+  if(t.dataset.premove!==undefined){ removePerson(+t.dataset.premove); return; }
+  if(t.id==='psayagain'){ sayNames(); return; }
+  if(t.id==='pmore'){ P.mode='list'; paintWho(); scrollTo(0,0); return; }
+  if(t.dataset.sayok!==undefined){ const x=P.say[+t.dataset.sayok]; x.answer='yes'; x.typed=''; paintSay(); return; }
+  if(t.dataset.sayno!==undefined){ const x=P.say[+t.dataset.sayno]; x.answer=x.answer==='no'?null:'no'; paintSay(); return; }
+  if(t.id==='sayDone'){ finishSay(); return; }
   /* upload */
   if(t.id==='allin'){ askAllIn(); return; }
   if(t.id==='allinNo'){ $('sheet').classList.add('hide'); return; }
@@ -1194,6 +1356,7 @@ document.addEventListener('click',async e=>{
   if(t.dataset.reg){ M[cur].register=t.dataset.reg; queueSave(); paint(); return; }
   if(t.id==='onext'){ cur++; sel=null; picking=false; saveGroups(); prog({screen:'organise',part:cur+1}); paint(); scrollTo(0,0); return; }
   if(t.id==='back'){
+    if(page==='upload'&&P.mode==='say'){ P.mode='list'; paintWho(); scrollTo(0,0); return; }
     if(screen==='genre'){ if(G.mode!=='ask'){ G.mode='ask'; paintGenre(); } else { cur=M.length-1; screen='answer'; paintAsk(); } scrollTo(0,0); return; }
     if(screen==='answer'){ saveStory(); }
     if(cur>0){cur--;} sel=null; picking=false;
@@ -1243,6 +1406,9 @@ document.addEventListener('click',async e=>{
   if(t.id==='gyes'){ G.pick='heard'; finishGenre(); return; }
   if(t.id==='gmore'){ G.mode='ask'; paintGenre(); scrollTo(0,0); return; }
   if(t.id==='pickList'){ G.mode='list'; paintGenre(); scrollTo(0,0); return; }
+  if(t.id==='glist'){ (async()=>{ try{ const sg=await rpc('suggest_genre',{p_token:TOKEN});
+      if(sg&&!sg.error){ G.genres=sg.genres||[]; G.suggested=sg.suggested||null; G.why=sg.why||null; takeChosen(sg.chosen); } }
+      catch(e){ report('suggest_genre',e); } paintGenre(); })(); return; }
   if(t.id==='keepHeard'){ G.pick='heard'; paintGenre(); return; }
   if(t.id==='gdone'){ finishGenre(); return; }
   const gp=t.closest('[data-play]');
@@ -1250,8 +1416,13 @@ document.addEventListener('click',async e=>{
   const gc=t.closest('[data-genre]');
   if(gc){ G.pick=gc.dataset.genre; paintGenre(); return; }
 });
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&(e.target.id==='pname'||e.target.id==='prel')){ e.preventDefault(); addPerson(); }
+});
 document.addEventListener('input',e=>{
   if(e.target.classList&&e.target.classList.contains('anchor')){ G.answers[e.target.dataset.key]=e.target.value; return; }
+  if(e.target.dataset&&e.target.dataset.saytype!==undefined){ const x=P.say[+e.target.dataset.saytype]; x.typed=e.target.value;
+    const b=$('sayDone'); if(b) b.disabled=!P.say.every(y=>!y.needs||y.answer==='yes'||(y.answer==='no'&&y.typed.trim())); return; }
   if(e.target.id==='nm'){ M[cur].title=e.target.value; queueSave(); if(screen==='organise') orgNav(); }
   if(e.target.id==='ans'){ M[cur].story=e.target.value; countUp();
     const t=document.querySelector('#nav .tally'); if(t) t.textContent=`${M.filter(x=>words(x.story)>=12).length} of ${M.length} answered`;
