@@ -148,6 +148,7 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 .genre .gp{color:var(--fg2);font-size:15px;line-height:1.45}
 .sug{font-family:"Public Sans",sans-serif;font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
   color:#20180A;background:var(--brass);border-radius:4px;padding:2px 7px;margin-left:8px;vertical-align:middle}
+.sug.on{background:var(--green);color:#fff}
 .genre .play{margin-top:10px;background:var(--p2);border:1px solid var(--l2);border-radius:6px;color:var(--fg);
   font:inherit;font-size:15px;padding:9px 14px;cursor:pointer}
 .genre .play.playing{border-color:var(--brass);color:var(--brass)}
@@ -745,72 +746,65 @@ async function finishUpload(){
   showDescribing();
 }
 
-/* ═══ 2 · DESCRIBING ═════════════════════════════════════════════
-   We look at every photograph so the questions can come from what is in
-   them. ⚠ It must survive her closing the tab: nothing here is kept in the
-   page. Each call to describe does a bit more and reports where the whole
-   collection is up to, so a reload simply lands back here and carries on. */
-let describeRun=0;
-const DNOTE='We look at each photo so we can ask you about the right things.';
+/* ═══ 2 · WHILE WE LOOK — the music page ══════════════════════════
+   Looking at every photograph takes about four seconds each (measured 19 Sep:
+   80 photographs ≈ 5 minutes). Listening to the twelve samples takes about
+   as long. So they are the same screen: the scan runs quietly in the corner
+   while she tells us about the music and has a listen. Everything is on the
+   page — no "choose from a list" link, nothing to click to reveal. ⚠ Nothing
+   here invites her to leave; a reload lands back here and carries on. When
+   the scan is finished the page says so and the button to sorting appears. */
+let describeRun=0, scan={described:0,total:0,done:false,stalled:false};
 function showDescribing(){
-  page='describing';
-  plain(`<h1>Getting your photos ready</h1>
-    <p class="do">There's nothing for you to do here. You can wait, or close this and come back later.</p>
-    <div class="bar big"><i id="dbar"></i></div>
-    <p class="lede" id="dcount">Starting…</p>
-    <p class="lede" id="dnote">${DNOTE}</p>
-    <div id="dstall" class="hide"></div>`);
-  paintDescribe(+J.progress_n||+J.described||0, +J.progress_of||+J.photos||0);
-  describeLoop(++describeRun);
-}
-/* The bar is described / total for the WHOLE collection (describe reports
-   those directly; `this_call` is the batch). The words are journey's own
-   `progress` line, so the page and the server say the same thing. */
-function paintDescribe(described,total){
-  if($('dbar')) $('dbar').style.width=(total?Math.round(described/total*100):0)+'%';
-  if($('dcount')) $('dcount').textContent=
-    (J.progress||'Looking at your photos')+(total?` — ${described} of ${total}`:'');
+  page='describing'; screen='describing';
+  scan={described:+J.progress_n||+J.described||0,total:+J.progress_of||+J.photos||0,done:false,stalled:false};
+  plain('<p class="load">One moment…</p>');
+  G.finishMode=false;
+  loadMusic().then(()=>{ if(page!=='describing') return; paintMusic(); scrollTo(0,0); describeLoop(++describeRun); });
 }
 async function describeLoop(run){
   let wait=3000;
-  /* journey's words for this stage, once — the numbers come from describe */
-  if(!J.progress||J.stage!=='describing'){
-    try{ const jj=await rpc('journey',{p_token:TOKEN}); if(jj&&!jj.error) J={...J,...jj}; }catch(_){}
-    if(page!=='describing'||run!==describeRun) return;
-  }
   while(page==='describing'&&run===describeRun){
     try{
       const {ok,status,j}=await post('describe',{});
       if(!ok||j.error) throw new Error(j.error||('describe: HTTP '+status));
       if(page!=='describing'||run!==describeRun) return;
-      const described=+j.described||0, total=+j.total||(described+(+j.remaining||0));
-      paintDescribe(described,total);
-      if($('dnote')) $('dnote').textContent=DNOTE;
-      if(j.done){
-        await setStage('sort');
-        prog({screen:'sort'});
-        showSort();
-        return;
-      }
-      /* ⚠ stalled: a call did nothing and work remains. Looping would spin
-         forever. Say so, and let her try again or come back later. */
-      if(j.stalled){
-        report('describe stalled',new Error('stalled'),{described,total});
-        if($('dnote')) $('dnote').textContent="We've hit a snag getting your photos ready.";
-        const d=$('dstall'); if(d){ d.className='';
-          d.innerHTML=`<p class="lede">It isn't anything you've done. You can try again now, or close this and come back later — nothing is lost.</p>
-            <button class="big" id="dretry">Try again</button>`; }
-        return;
-      }
-      wait=3000;
-      await sleep(400);
+      scan.described=+j.described||0; scan.total=+j.total||(scan.described+(+j.remaining||0));
+      scan.stalled=!!j.stalled&&!j.done; scan.done=!!j.done; scan.trouble=false;
+      paintScan();
+      if(j.done){ prog({screen:'describing',done:true}); return; }
+      if(j.stalled){ report('describe stalled',new Error('stalled'),{described:scan.described,total:scan.total}); return; }
+      wait=3000; await sleep(+j.this_call>0?400:3000);   // a call that did nothing: don't hammer
     }catch(e){
-      report('describe',e);
-      if($('dnote')) $('dnote').textContent=
-        "This is taking longer than usual. We'll keep trying — you can close this and come back later, and it will carry on.";
+      report('describe',e); scan.trouble=true; paintScan();
       await sleep(wait); wait=Math.min(wait*2,30000);
     }
   }
+}
+/* The count, quietly — "Looking at your photos — 34 of 55". No bar, no
+   percentage, no estimate: a count is what people tolerate waiting for, and a
+   bar that stalls is worse than none. */
+function scanLine(){
+  if(scan.done) return `All ${plural(scan.total,'photo')} looked at.`;
+  if(scan.stalled) return `We've hit a snag looking at your photos.`;
+  if(scan.trouble) return `Looking at your photos — taking a little longer than usual.`;
+  return scan.total?`Looking at your photos — ${scan.described} of ${scan.total}`:`Looking at your photos…`;
+}
+function paintScan(){
+  const el=$('scan'); if(el) el.textContent=scanLine();
+  const t=document.querySelector('#nav .tally'); if(t) t.innerHTML=scanLine();
+  const b=$('tosort'); if(b){ b.disabled=!scan.done; b.textContent=scan.done?'Next: put them in order →':'Looking at your photos…'; }
+  const r=$('dretry'); if(r) r.classList.toggle('hide',!scan.stalled);
+}
+async function toSort(){
+  const b=$('tosort'); if(!b||!scan.done) return;
+  b.disabled=true; b.textContent='One moment…';
+  if(audio){ audio.pause(); audio=null; }
+  try{ await setStage('sort'); }
+  catch(e){ report('set_stage sort',e); b.disabled=false; b.textContent='Next: put them in order →';
+    const before=$('nav').querySelector('.before'); if(before) before.textContent="That didn't go through. Please press it again."; return; }
+  prog({screen:'sort'});
+  showSort();
 }
 
 /* ═══ 3 · SORT — group and name ══════════════════════════════════ */
@@ -1184,8 +1178,9 @@ function paintAsk(){
   $('stage').innerHTML=h; $('stage').className='';
   countUp();
   const last=cur>=M.length-1;
-  nav(last?'<button class="go" id="tomusic">Next: the music →</button>':'<button class="go" id="anext">Next →</button>',
-      `${M.filter(x=>words(x.story)>=12).length} of ${M.length} answered`, cur>0, '');
+  nav(last?'<button class="go" id="tomusic">Finished</button>':'<button class="go" id="anext">Next →</button>',
+      `${M.filter(x=>words(x.story)>=12).length} of ${M.length} answered`, cur>0,
+      last?'When you press Finished, that’s everything — your film is made from your photos and your words.':'');
   $('sheet').classList.add('hide');
 }
 function countUp(){ const c=$('cnt'); if(!c) return;
@@ -1200,161 +1195,163 @@ async function saveStory(){
     setTimeout(saveStory,4000); return false; }
 }
 async function toMusic(){
+  /* Finished on the last group. If a sound is already chosen and confirmed —
+     usually, from the scan page — that's everything. Otherwise the music page
+     comes once more, on its own, before Finished. */
   const b=$('tomusic'); if(!b) return;
   b.disabled=true; b.textContent='One moment…';
   clearTimeout(saveTimer);
   const saved=await saveStory();
-  if(!saved){ b.disabled=false; b.textContent='Next: the music →'; return; }
-  prog({screen:'genre'});
-  showGenre();
+  if(!saved){ b.disabled=false; b.textContent='Finished'; return; }
+  await loadMusic();
+  if(page!=='answer') return;
+  if(G.chosen&&G.chosen.confirmed){ await finishFilm(b); return; }
+  prog({screen:'genre'}); showGenre();
+}
+async function finishFilm(b){
+  try{ await setStage('submitted'); }
+  catch(e){ report('set_stage submitted',e); if(b){ b.disabled=false; b.textContent='Finished'; }
+    const before=$('nav').querySelector('.before'); if(before) before.textContent="That didn't go through. Please press Finished again."; return; }
+  if(audio){ audio.pause(); audio=null; }
+  prog({screen:'submitted'});
+  showThanks();
 }
 
-/* ═══ 4b · THE MUSIC — after the answers, before Finished ═════════
-   A few plain questions about the music in their life (genre_anchors),
-   translated by the server into a style. ⚠ Whatever it understood is shown
-   back in plain words — that is the only way she can check we got it. If
-   the server isn't confident it asks one more question and we do not move
-   on. The nine named styles are always there to pick from instead. */
-let G={anchors:[],genres:[],suggested:null,why:null,chosen:null,answers:{},plain:'',styles:'',notice:'',guess:'',pick:null,mode:'ask'};
-/* suggest_genre's `chosen` is the effective sound, or null for none yet:
-   {slug, plain, styles, source:'chosen'|'their_words', confirmed}. A slug is
-   one of the nine; their_words is a translation of what she typed. ⚠
-   `confirmed` is what separates "she read it and agreed" from "she never got
-   here". ⚠⚠ `plain` is the sentence she agreed to and the only one of these
-   she is ever shown; `styles` is for the composition plan, never for her. */
-function takeChosen(c){
-  G.chosen=(c&&typeof c==='object')?c:null;
-  if(!G.chosen) return;
-  if(G.chosen.slug){ if(!G.pick) G.pick=G.chosen.slug; }
-  else if(G.chosen.styles||G.chosen.plain){ if(!G.pick&&G.chosen.confirmed) G.pick='heard'; }
-}
-/* The sentence for what she chose or we heard. `plain` is stored server-side
-   now; a row saved before it existed has none, so build one from the nine's
-   own words, and only for a wordless translation fall back to the styles. */
+/* ═══ 4b · THE MUSIC ══════════════════════════════════════════════
+   The three anchor questions (genre_anchors), what we heard (translate-genre),
+   the nine sounds and the three voices — all on one page, all with a play
+   button where a sample exists. ⚠ `plain` is the sentence she is shown and
+   the sentence she agrees to; `styles` is for the composition plan and is
+   never shown. ⚠ `sample` is the row's own path (a content hash in the name);
+   never built from the slug. Tapping a sound or a voice records it at once. */
+let G={anchors:[],genres:[],voices:[],suggested:null,why:null,vsuggested:null,vwhy:null,chosen:null,voice:null,
+       answers:{},plain:'',notice:'',guess:'',busy:false,finishMode:false};
+function takeChosen(c){ G.chosen=(c&&typeof c==='object')?c:null; }
 function heardSentence(){
   if(G.plain) return G.plain;
-  const c=G.chosen; if(!c) return '';
-  if(c.plain) return c.plain;
-  if(c.slug){ const g=G.genres.find(x=>x.slug===c.slug); if(g) return `${g.label} — ${g.plain}.`; }
-  return c.styles||'';
+  const c=G.chosen; if(!c||c.slug) return '';
+  return c.plain||c.styles||'';
+}
+async function loadMusic(){
+  const [anchors,sg,sv]=await Promise.all([
+    rpc('genre_anchors',{p_token:TOKEN}).catch(e=>({error:e.message})),
+    rpc('suggest_genre',{p_token:TOKEN}).catch(e=>({error:e.message})),
+    rpc('suggest_voice',{p_token:TOKEN}).catch(e=>({error:e.message}))]);
+  if(Array.isArray(anchors)) G.anchors=anchors; else report('genre_anchors',new Error((anchors&&anchors.error)||'failed'));
+  if(sg&&!sg.error){ G.genres=sg.genres||[]; G.suggested=sg.suggested||null; G.why=sg.why||null; takeChosen(sg.chosen); }
+  else report('suggest_genre',new Error((sg&&sg.error)||'failed'));
+  if(sv&&!sv.error){ G.voices=sv.voices||[]; G.vsuggested=sv.suggested||null; G.vwhy=sv.why||null; G.voice=sv.chosen||null; }
+  else report('suggest_voice',new Error((sv&&sv.error)||'failed'));
 }
 async function showGenre(){
-  page='answer'; screen='genre';
+  /* the fallback: Finished pressed with no sound chosen */
+  page='answer'; screen='genre'; G.finishMode=true;
   plain('<p class="load">One moment…</p>');
-  try{
-    /* The anchors are what this screen needs. The nine are only needed on the
-       list screen, which asks again after the anchors — so a failure here is
-       reported, not fatal. (⚠ 19 Sep: suggest_genre 500'd whenever no year was
-       recorded yet, i.e. for every customer at this exact moment.) */
-    const [anchors,sg]=await Promise.all([rpc('genre_anchors',{p_token:TOKEN}),
-      rpc('suggest_genre',{p_token:TOKEN}).catch(e=>({error:e.message}))]);
-    if(!Array.isArray(anchors)) throw new Error('genre_anchors failed');
-    G.anchors=anchors;
-    if(sg&&!sg.error){ G.genres=sg.genres||[]; G.suggested=sg.suggested||null; G.why=sg.why||null; takeChosen(sg.chosen); }
-    else report('suggest_genre on entry',new Error((sg&&sg.error)||'failed'));
-    G.mode=G.plain?'check':'ask';
-    paintGenre(); scrollTo(0,0);
-  }catch(e){ report('genre lookup',e);
-    plain(`<h1>Couldn't load this part</h1><p class="do">Please try the link again in a moment.</p>
-      <button class="big" id="retryRoute">Try again</button>`); }
+  await loadMusic(); if(page!=='answer') return;
+  paintMusic(); scrollTo(0,0);
 }
-function paintGenre(){
+const sampleUrl=p=>/^https?:\/\//.test(p)?p:`${SB}/storage/v1/object/public/${String(p).replace(/^\/+/,'')}`;
+function card(kind,g,on,sug){
+  return `<div class="genre ${on?'on':''}" data-${kind}="${esc(g.slug)}">
+    <div class="gt"><b>${esc(g.label)}</b>${sug?' <span class="sug">our suggestion</span>':''}${on?' <span class="sug on">chosen</span>':''}</div>
+    <div class="gp">${esc(g.plain)}</div>
+    ${g.sample?`<button class="play" type="button" data-play="${esc(sampleUrl(g.sample))}" aria-label="Hear a little of ${esc(g.label)}">▶ Hear it</button>`:''}
+  </div>`;
+}
+function paintMusic(){
   const st=$('stage'); st.className=''; $('sheet').classList.add('hide');
+  /* A sentence translated in this session is shown with its Yes button even if
+     the server already says confirmed (a fresh translation inherits the flag
+     from an earlier pick — she has not agreed to THIS sentence yet). */
+  const heard=heardSentence(), c=G.chosen, confirmedHeard=!!(c&&!c.slug&&c.confirmed)&&!G.fresh;
   let h='';
-  if(G.mode==='ask'){
-    h+=`<div class="step">Nearly done · the music</div>
-      <h1>Now, the music</h1>
-      <p class="do">Tell us about the music in your life, and we'll write your song to suit.</p>`;
-    G.anchors.forEach((a,i)=>{ h+=`<h2 style="margin-top:${i?26:8}px">${esc(a.ask)}</h2>
-      <input type="text" class="anchor" data-key="${esc(a.key)}" value="${esc(G.answers[a.key]||'')}" placeholder="Anything you like" autocomplete="off">`; });
-    h+=`<p class="lede" style="margin-top:22px">Or, if you'd rather, <button class="chip" id="pickList" type="button">choose from a list</button></p>`;
-    st.innerHTML=h;
-    nav('<button class="go" id="gnext">Next →</button>','',true,'');
-    return;
+  if(G.finishMode){
+    h+=`<div class="step">Nearly done · the music</div><h1>Now, the music</h1>
+      <p class="do">Tell us about the music in your life and choose the sound — then you're finished.</p>`;
+  }else{
+    h+=`<div class="step">Getting your photos ready</div><h1>While we look at your photos, choose the music</h1>
+      <p class="do">We're looking at each photo so we can ask you about the right things. While that happens, tell us about the music in your life — and have a listen.</p>
+      <p class="lede" id="scan">${scanLine()}</p>
+      <button class="chip ${scan.stalled?'':'hide'}" id="dretry" type="button">Try the photos again</button>`;
   }
-  if(G.mode==='check'){
-    h+=`<div class="step">Nearly done · the music</div>
-      <h1>Here's what we heard</h1>
-      <p class="do">${esc(G.plain)}</p>
-      <p class="lede">Is that right? If not, tell us more or choose from a list.</p>
-      <div class="acts" style="margin-bottom:22px"><button class="yes" id="gyes">Yes, that's right</button>
-        <button id="gmore">Tell you more</button><button id="pickList">Choose from a list</button></div>`;
-    st.innerHTML=h;
-    nav('','',true,'');
-    return;
-  }
-  /* mode 'list': the nine named styles */
-  if(!G.genres.length){
-    st.innerHTML=`<div class="step">Nearly done · the music</div><h1>One moment</h1>
-      <p class="do">We couldn't fetch the sounds to choose from. Please try again.</p>
-      <button class="big" id="glist">Try again</button>`;
-    nav('','',true,''); return;
-  }
-  h+=`<div class="step">Nearly done · the music</div>
-    <h1>Choose the sound</h1>
-    <p class="do">Tap the one that feels most like the two of you.</p>`;
+  /* the three questions */
+  h+=`<div class="card" style="margin-top:8px">`;
+  G.anchors.forEach((a,i)=>{ h+=`<label for="a_${esc(a.key)}" style="margin-top:${i?14:0}px">${esc(a.ask)}</label>
+    <input type="text" class="anchor" id="a_${esc(a.key)}" data-key="${esc(a.key)}" value="${esc(G.answers[a.key]||'')}" placeholder="Anything you like" autocomplete="off">`; });
+  h+=`<div style="margin-top:16px"><button class="big" id="gnext" ${G.busy?'disabled':''}>${G.busy?'One moment…':'That\u2019s us →'}</button></div></div>`;
+  /* what we heard */
   if(G.notice) h+=`<div class="clock">${esc(G.notice)}${G.guess?`<br><span style="color:var(--fg2)">Our guess: ${esc(G.guess)}</span>`:''}</div>`;
+  if(heard) h+=`<div class="card"><h2 style="margin:0 0 8px">Here\u2019s what we heard</h2><p class="do" style="margin-bottom:12px">${esc(heard)}</p>
+    ${confirmedHeard?`<p class="lede" style="margin:0"><span class="sug on">chosen</span> That\u2019s the sound we\u2019ll use. Tap one below if you\u2019d rather.</p>`
+      :`<div class="acts"><button class="yes" id="gyes">Yes, that\u2019s right</button></div>`}</div>`;
+  /* the nine */
+  h+=`<h2 style="margin-top:26px">${heard?'Or choose a sound':'Choose a sound'}</h2>
+    <p class="lede">Tap ▶ to hear a little of each. Tap the one that feels most like the two of you.</p>`;
   if(G.suggested&&G.why){ const sug=G.genres.find(g=>g.slug===G.suggested);
-    h+=`<div class="clock"><b>We'd suggest ${esc(sug?sug.label:G.suggested)}.</b><br>${esc(G.why)}</div>`; }
-  h+='<div class="genres">';
-  G.genres.forEach(g=>{ const on=G.pick===g.slug;
-    h+=`<div class="genre ${on?'on':''}" data-genre="${esc(g.slug)}">
-      <div class="gt"><b>${esc(g.label)}</b>${g.slug===G.suggested?' <span class="sug">our suggestion</span>':''}</div>
-      <div class="gp">${esc(g.plain)}</div>
-      ${g.sample?`<button class="play" type="button" data-play="${esc(sampleUrl(g.sample))}" aria-label="Hear a little of ${esc(g.label)}">▶ Hear it</button>`:''}
-    </div>`; });
-  h+='</div>';
-  const heard=(G.chosen&&G.chosen.slug&&!G.plain)?'':heardSentence();   // a picked card speaks for itself
-  if(heard) h+=`<p class="lede" style="margin-top:22px">Or keep what we heard — <i>${esc(heard)}</i>
-    <button class="chip" id="keepHeard" type="button" ${G.pick==='heard'?'aria-pressed="true"':''}>Keep that</button></p>`;
+    h+=`<div class="clock"><b>We\u2019d suggest ${esc(sug?sug.label:G.suggested)}.</b><br>${esc(G.why)}</div>`; }
+  if(G.genres.length){ h+='<div class="genres">'; G.genres.forEach(g=>{ h+=card('genre',g,!!(c&&c.slug===g.slug),g.slug===G.suggested); }); h+='</div>'; }
+  else h+=`<p class="lede">We couldn\u2019t fetch the sounds just now. <button class="chip" id="glist" type="button">Try again</button></p>`;
+  /* the voices */
+  h+=`<h2 style="margin-top:30px">Whose voice?</h2>`;
+  if(G.vwhy) h+=`<div class="clock">${esc(G.vwhy)}</div>`;
+  if(G.voices.length){ h+='<div class="genres">'; G.voices.forEach(v=>{ h+=card('voice',v,G.voice===v.slug,v.slug===G.vsuggested); }); h+='</div>'; }
   st.innerHTML=h;
-  nav(`<button class="go" id="gdone" ${G.pick?'':'disabled'}>Finished</button>`,'',true,
-      G.pick?'When you press Finished, that’s everything — your film is made from your photos, your words and this music.':'');
+  if(G.finishMode){
+    const ready=!!(c&&c.confirmed);
+    nav(`<button class="go" id="gdone" ${ready?'':'disabled'}>Finished</button>`,'',true,
+        ready?'When you press Finished, that\u2019s everything — your film is made from your photos, your words and this music.':'Choose a sound first — tap one above, or tell us what you love.');
+  }else{
+    nav(`<button class="go" id="tosort" ${scan.done?'':'disabled'}>${scan.done?'Next: put them in order →':'Looking at your photos…'}</button>`, scanLine(), false, '');
+  }
 }
-/* Each answer is recorded with set_anchor, which reads the year loosely
-   ("about 1978", "78") and hands back `music_note` — every music answer so
-   far, joined. ⚠ That joined note is what gets translated, so the second
-   music answer adds to the first instead of replacing it. */
+/* Her answers → set_anchor each; the joined music note → translate-genre;
+   then suggest_genre again so the recommendation reflects the year. */
 async function translateGenre(){
-  const b=$('gnext'); if(!b) return;
+  const b=$('gnext'); if(!b||G.busy) return;
   const given=G.anchors.filter(a=>(G.answers[a.key]||'').trim());
-  if(!given.length){ G.mode='list'; paintGenre(); scrollTo(0,0); return; }   // nothing typed — offer the list
-  b.disabled=true; b.textContent='One moment…';
-  const tryAgain=()=>{ b.disabled=false; b.textContent='Next →';
-    const before=$('nav').querySelector('.before'); if(before) before.textContent="That didn't go through. Please press Next again."; };
+  if(!given.length){ const f=document.querySelector('input.anchor'); if(f) f.focus(); return; }
+  G.busy=true; b.disabled=true; b.textContent='One moment…';
+  const fail=()=>{ G.busy=false; paintMusic(); const before=$('nav').querySelector('.before'); if(before) before.textContent="That didn't go through. Please try again."; };
   let note='';
   for(const a of given){
-    try{
-      const r=await rpc('set_anchor',{p_token:TOKEN,p_key:a.key,p_answer:G.answers[a.key].trim()});
-      if(!r||r.error) throw new Error((r&&r.error)||'set_anchor failed');
-      if(r.music_note) note=r.music_note;
-    }catch(e){ report('set_anchor',e,{key:a.key}); tryAgain(); return; }
+    try{ const r=await rpc('set_anchor',{p_token:TOKEN,p_key:a.key,p_answer:G.answers[a.key].trim()});
+      if(!r||r.error) throw new Error((r&&r.error)||'set_anchor failed'); if(r.music_note) note=r.music_note; }
+    catch(e){ report('set_anchor',e,{key:a.key}); fail(); return; }
   }
-  /* The year may have changed the suggestion — ask again before showing the list. */
-  try{ const sg=await rpc('suggest_genre',{p_token:TOKEN});
-    if(sg&&!sg.error){ G.genres=sg.genres||G.genres; G.suggested=sg.suggested||null; G.why=sg.why||null; takeChosen(sg.chosen); } }
+  try{ const sg=await rpc('suggest_genre',{p_token:TOKEN}); if(sg&&!sg.error){ G.genres=sg.genres||G.genres; G.suggested=sg.suggested||null; G.why=sg.why||null; takeChosen(sg.chosen); } }
   catch(e){ report('suggest_genre',e); }
-  if(!note){ G.notice=''; G.guess=''; G.mode='list'; paintGenre(); scrollTo(0,0); return; }   // only the year — straight to the list
-  const {ok,status,j}=await post('translate-genre',{note});
-  if(!ok||j.error){ report('translate-genre',new Error(j.error||('HTTP '+status))); tryAgain(); return; }
-  if(j.confident===false||!j.plain||j.saved===false){
-    /* ⚠ Not confident: nothing was saved. `ask` is the server's own sentence
-       about that and `plain` is its safe guess. Show both, offer the nine,
-       and do not move on until she has picked one. */
-    G.plain=''; G.styles=''; G.pick=null;
-    G.notice=j.ask||"We couldn't tell from that what you like. Please pick one of the sounds below.";
-    G.guess=j.plain||'';
-    G.mode='list'; paintGenre(); scrollTo(0,0);
-    return;
+  if(note){
+    const {ok,status,j}=await post('translate-genre',{note});
+    if(!ok||j.error){ report('translate-genre',new Error(j.error||('HTTP '+status))); fail(); return; }
+    if(j.confident===false||!j.plain||j.saved===false){
+      G.plain=''; G.notice=j.ask||"We couldn't tell from that what you like. Please pick one of the sounds below."; G.guess=j.plain||'';
+    }else{ G.plain=j.plain; G.notice=''; G.guess=''; G.fresh=true; try{ const sg=await rpc('suggest_genre',{p_token:TOKEN}); if(sg&&!sg.error) takeChosen(sg.chosen); }catch(_){} }
   }
-  G.notice=''; G.guess=''; G.plain=j.plain; G.styles=j.styles||'';
-  G.mode='check'; paintGenre(); scrollTo(0,0);
+  G.busy=false; paintMusic();
+  const el=document.querySelector('.card h2'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'});
 }
-/* `sample` is the storage path from the genre's own row (e.g.
-   samples/folk-7f07a8bcb9.mp3) — ⚠ never built from the slug. The filename
-   carries a content hash, so every regeneration is a new URL and nothing
-   stale can be served from a cache. */
-const sampleUrl=p=>/^https?:\/\//.test(p)?p:`${SB}/storage/v1/object/public/${String(p).replace(/^\/+/,'')}`;
+async function keepHeard(){
+  const b=$('gyes'); if(!b) return; b.disabled=true; b.textContent='One moment…';
+  try{ const r=await rpc('confirm_genre',{p_token:TOKEN}); if(!r||r.error) throw new Error((r&&r.error)||'confirm_genre failed'); }
+  catch(e){ report('confirm_genre',e); b.disabled=false; b.textContent='Yes, that\u2019s right'; return; }
+  G.fresh=false;
+  try{ const sg=await rpc('suggest_genre',{p_token:TOKEN}); if(sg&&!sg.error) takeChosen(sg.chosen); }catch(_){}
+  paintMusic();
+}
+async function pickGenre(slug){
+  /* p_plain named as well: set_genre has two overloads on the server (19 Sep)
+     and PostgREST cannot choose between them without it. */
+  try{ const r=await rpc('set_genre',{p_token:TOKEN,p_slug:slug,p_plain:null}); if(!r||r.error) throw new Error((r&&r.error)||'set_genre failed'); }
+  catch(e){ report('set_genre',e,{slug}); flash(false); return; }
+  G.plain=''; G.fresh=false;
+  try{ const sg=await rpc('suggest_genre',{p_token:TOKEN}); if(sg&&!sg.error) takeChosen(sg.chosen); }catch(_){}
+  paintMusic();
+}
+async function pickVoice(slug){
+  try{ const r=await rpc('set_voice',{p_token:TOKEN,p_slug:slug}); if(!r||r.error) throw new Error((r&&r.error)||'set_voice failed'); G.voice=r.voice||slug; }
+  catch(e){ report('set_voice',e,{slug}); flash(false); return; }
+  paintMusic();
+}
 let audio=null;
 function playSample(url,btn){
   document.querySelectorAll('.play.playing').forEach(x=>{ x.classList.remove('playing'); x.textContent='▶ Hear it'; });
@@ -1364,24 +1361,10 @@ function playSample(url,btn){
   audio.play().catch(e=>{ report('play sample',e,{url}); btn.classList.remove('playing'); btn.textContent='▶ Hear it'; });
 }
 async function finishGenre(){
-  const b=$('gdone')||$('gyes'); if(!b) return;
+  const b=$('gdone'); if(!b) return;
+  if(!(G.chosen&&G.chosen.confirmed)){ const before=$('nav').querySelector('.before'); if(before) before.textContent='Choose a sound first.'; return; }
   b.disabled=true; b.textContent='One moment…';
-  const fail=msg=>{ b.disabled=false; b.textContent=b.id==='gyes'?"Yes, that's right":'Finished';
-    const before=$('nav').querySelector('.before'); if(before) before.textContent=msg||"That didn't go through. Please try again."; };
-  try{
-    if(G.pick==='heard'){
-      /* "Yes, that's right" / "Keep that": she read the translation and agreed. */
-      const r=await rpc('confirm_genre',{p_token:TOKEN}); if(!r||r.error) throw new Error((r&&r.error)||'confirm_genre failed');
-    }else if(G.pick){
-      /* One of the nine. Picking is agreeing — set_genre confirms as it saves. */
-      const r=await rpc('set_genre',{p_token:TOKEN,p_slug:G.pick}); if(!r||r.error) throw new Error((r&&r.error)||'set_genre failed');
-    }else{ fail('Please choose a sound first.'); return; }
-  }catch(e){ report(G.pick==='heard'?'confirm_genre':'set_genre',e,{pick:G.pick}); fail(); return; }
-  try{ await setStage('submitted'); }
-  catch(e){ report('set_stage submitted',e); fail(); return; }
-  if(audio){ audio.pause(); audio=null; }
-  prog({screen:'submitted'});
-  showThanks();
+  await finishFilm(b);
 }
 
 /* ═══ 5 · THANK YOU ══════════════════════════════════════════════ */
@@ -1398,7 +1381,8 @@ function showThanks(){
 document.addEventListener('click',async e=>{
   const t=e.target;
   if(t.id==='retryRoute'){ route(); return; }
-  if(t.id==='dretry'){ showDescribing(); return; }
+  if(t.id==='dretry'){ scan.stalled=false; paintScan(); describeLoop(++describeRun); return; }
+  if(t.id==='tosort'){ toSort(); return; }
 
   /* who */
   if(t.id==='padd'){ addPerson(); return; }
@@ -1438,7 +1422,7 @@ document.addEventListener('click',async e=>{
   if(t.id==='onext'){ cur++; sel=null; picking=false; saveGroups(); prog({screen:'organise',part:cur+1}); paint(); scrollTo(0,0); return; }
   if(t.id==='back'){
     if(page==='upload'&&P.mode==='say'){ P.mode='list'; paintWho(); scrollTo(0,0); return; }
-    if(screen==='genre'){ if(G.mode!=='ask'){ G.mode='ask'; paintGenre(); } else { cur=M.length-1; screen='answer'; paintAsk(); } scrollTo(0,0); return; }
+    if(screen==='genre'){ cur=M.length-1; screen='answer'; paintAsk(); scrollTo(0,0); return; }
     if(screen==='answer'){ saveStory(); }
     if(cur>0){cur--;} sel=null; picking=false;
     if(screen==='answer') paintAsk(); else paint();
@@ -1484,21 +1468,19 @@ document.addEventListener('click',async e=>{
   if(t.id==='tomusic'){ toMusic(); return; }
   /* the music */
   if(t.id==='gnext'){ translateGenre(); return; }
-  if(t.id==='gyes'){ G.pick='heard'; finishGenre(); return; }
-  if(t.id==='gmore'){ G.mode='ask'; paintGenre(); scrollTo(0,0); return; }
-  if(t.id==='pickList'){ G.mode='list'; paintGenre(); scrollTo(0,0); return; }
-  if(t.id==='glist'){ (async()=>{ try{ const sg=await rpc('suggest_genre',{p_token:TOKEN});
-      if(sg&&!sg.error){ G.genres=sg.genres||[]; G.suggested=sg.suggested||null; G.why=sg.why||null; takeChosen(sg.chosen); } }
-      catch(e){ report('suggest_genre',e); } paintGenre(); })(); return; }
-  if(t.id==='keepHeard'){ G.pick='heard'; paintGenre(); return; }
+  if(t.id==='gyes'){ keepHeard(); return; }
+  if(t.id==='glist'){ loadMusic().then(paintMusic); return; }
   if(t.id==='gdone'){ finishGenre(); return; }
   const gp=t.closest('[data-play]');
   if(gp){ playSample(gp.dataset.play,gp); return; }
   const gc=t.closest('[data-genre]');
-  if(gc){ G.pick=gc.dataset.genre; paintGenre(); return; }
+  if(gc){ pickGenre(gc.dataset.genre); return; }
+  const gv=t.closest('[data-voice]');
+  if(gv){ pickVoice(gv.dataset.voice); return; }
 });
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&(e.target.id==='pname'||e.target.id==='prel')){ e.preventDefault(); addPerson(); }
+  if(e.key==='Enter'&&e.target.classList&&e.target.classList.contains('anchor')){ e.preventDefault(); translateGenre(); }
 });
 document.addEventListener('input',e=>{
   if(e.target.classList&&e.target.classList.contains('anchor')){ G.answers[e.target.dataset.key]=e.target.value; return; }
