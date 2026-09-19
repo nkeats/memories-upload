@@ -891,7 +891,14 @@ async function describeLoop(run){
       scan.stalled=!!j.stalled&&!j.done; scan.done=!!j.done; scan.trouble=false;
       paintScan();
       if(j.done){ prog({screen:'describing',done:true}); return; }
-      if(j.stalled){ report('describe stalled',new Error('stalled'),{described:scan.described,total:scan.total}); return; }
+      if(j.stalled){
+        /* ⚠ 19 Sep: describe fails on every clip and stalls with the photos all
+           done. If what's left is only clips, she may carry on — the clips are
+           still in the film — rather than sit at a dead end. */
+        report('describe stalled',new Error('stalled'),{described:scan.described,total:scan.total,remaining:+j.remaining||0,failed:+j.failed||0});
+        try{ const cs=await rpc('clip_state',{p_token:TOKEN}); const undone=(cs&&cs.clips||[]).filter(c=>!c.described).length;
+          scan.onlyClipsLeft=undone>0&&undone>=(+j.remaining||0); }catch(_){ scan.onlyClipsLeft=false; }
+        paintScan(); return; }
       wait=3000; await sleep(+j.this_call>0?400:3000);   // a call that did nothing: don't hammer
     }catch(e){
       report('describe',e); scan.trouble=true; paintScan();
@@ -904,6 +911,7 @@ async function describeLoop(run){
    bar that stalls is worse than none. */
 function scanLine(){
   if(scan.done) return `All ${plural(scan.total,'photo')} looked at.`;
+  if(scan.stalled&&scan.onlyClipsLeft) return `All your photos looked at. We couldn't look inside your video clips — they'll still be in your film.`;
   if(scan.stalled) return `We've hit a snag looking at your photos.`;
   if(scan.trouble) return `Looking at your photos — taking a little longer than usual.`;
   return scan.total?`Looking at your photos — ${scan.described} of ${scan.total}`:`Looking at your photos…`;
@@ -911,11 +919,12 @@ function scanLine(){
 function paintScan(){
   const el=$('scan'); if(el) el.textContent=scanLine();
   const t=document.querySelector('#nav .tally'); if(t) t.innerHTML=scanLine();
-  const b=$('tosort'); if(b){ b.disabled=!scan.done; b.textContent=scan.done?'Next: put them in order →':'Looking at your photos…'; }
-  const r=$('dretry'); if(r) r.classList.toggle('hide',!scan.stalled);
+  const go=scan.done||(scan.stalled&&scan.onlyClipsLeft);
+  const b=$('tosort'); if(b){ b.disabled=!go; b.textContent=go?'Next: put them in order →':'Looking at your photos…'; }
+  const r=$('dretry'); if(r) r.classList.toggle('hide',!(scan.stalled&&!scan.onlyClipsLeft));
 }
 async function toSort(){
-  const b=$('tosort'); if(!b||!scan.done) return;
+  const b=$('tosort'); if(!b||!(scan.done||(scan.stalled&&scan.onlyClipsLeft))) return;
   b.disabled=true; b.textContent='One moment…';
   if(audio){ audio.pause(); audio=null; }
   try{ await setStage('sort'); }
