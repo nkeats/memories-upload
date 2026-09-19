@@ -47,6 +47,7 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
   font-weight:600;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center}
 .c .tag{position:absolute;top:6px;right:6px;font-size:10.5px;font-weight:600;padding:3px 8px;
   border-radius:4px;background:var(--green);color:#fff}
+.c.one{max-width:420px;margin-bottom:14px;cursor:pointer}
 .c .ph{width:100%;aspect-ratio:4/3;background:var(--p2);display:flex;align-items:center;
   justify-content:center;color:var(--fg3);font-size:12px;text-align:center;padding:6px}
 
@@ -1507,7 +1508,31 @@ async function showAnswer(){
     plain(`<h1>Couldn't load your photos</h1><p class="do">Please try the link again in a moment.</p>
       <button class="big" id="retryRoute">Try again</button>`); }
 }
-function photosStrip(m){
+/* Which photographs a question shows. A question anchored to one photograph
+   names it (`asset_id`, or `assets`); a question with NONE attached — free
+   recall, "put yourself back there", "what would she say" — says so with
+   `asset_id: null` or a `kind`, and gets no photographs at all, because the
+   photographs are the cues and the point is what she says without them. A
+   turn that says nothing either way (the questions written before this)
+   gets the group as before. */
+const NO_PHOTO_KINDS=/free|recall|context|reinstat|perspective|unphotograph|nobody/i;
+function turnPhotos(m,t){
+  if(!t) return {photos:m.photos,cued:true};
+  const ids=Array.isArray(t.assets)?t.assets:(t.asset_id||t.asset||t.photo?[t.asset_id||t.asset||t.photo]:null);
+  if(ids&&ids.length){ const ph=m.photos.filter(p=>ids.includes(p.id)); return {photos:ph.length?ph:m.photos,cued:true,single:ph.length===1}; }
+  if(('asset_id' in t&&t.asset_id===null)||('assets' in t&&Array.isArray(t.assets)&&!t.assets.length)||NO_PHOTO_KINDS.test(String(t.kind||t.type||''))) return {photos:[],cued:false};
+  return {photos:m.photos,cued:true};
+}
+function photosStrip(m,t){
+  const {photos,cued,single}=turnPhotos(m,t);
+  if(!photos.length) return '';
+  if(single){ const p=photos[0], i=m.photos.indexOf(p);
+    return `<div class="c one" data-zoom="${i}">${tile(p)}</div><p class="lede" style="margin-top:-4px;font-size:14.5px">Tap it to see it properly.</p>`; }
+  let h=`<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(112px,1fr));margin-bottom:18px">`;
+  photos.forEach(p=>{ const i=m.photos.indexOf(p); h+=`<div class="c" data-zoom="${i}">${tile(p)}<div class="n">${i+1}</div></div>`; });
+  return h+`</div><p class="lede" style="margin-top:-10px;font-size:14.5px">Tap a photo to see it properly.</p>`;
+}
+function photosStripAll(m){
   let h=`<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(112px,1fr));margin-bottom:18px">`;
   m.photos.forEach((p,i)=>{ h+=`<div class="c" data-zoom="${i}">${tile(p)}<div class="n">${i+1}</div></div>`; });
   return h+`</div>`+(m.photos.length?`<p class="lede" style="margin-top:-10px;font-size:14.5px">Tap a photo to see it properly.</p>`:'');
@@ -1518,10 +1543,10 @@ function paintTurn(){
   const n=Math.min(+t.answered+1, +t.total)||1, of=+t.total||1;
   let h=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')} · question <b>${n}</b> of ${of}</div>`;
   h+=tips('answer');
-  h+=photosStrip(m);
+  h+=photosStrip(m,t);
   if(t.because_of) h+=`<p class="said">You said: <i>\u201c${esc(String(t.because_of).trim())}\u201d</i></p>`;
   h+=`<h2 style="margin-top:${t.because_of?8:14}px">${esc(t.question||'')}</h2>
-      <textarea id="ans" class="beside" placeholder="Tell us what happened, not how it felt. The feeling comes with it.">${esc(draft)}</textarea>
+      <textarea id="ans" class="beside" ${turnPhotos(m,t).cued?'':'style="min-height:240px"'} placeholder="Tell us what happened, not how it felt. The feeling comes with it.">${esc(draft)}</textarea>
       <div class="count" id="cnt"></div>
       <p class="lede" style="margin-top:6px"><button class="chip" id="askip" type="button" ${turnBusy?'disabled':''}>Skip this one</button>
         <button class="quiet" id="awrong" type="button" ${turnBusy?'disabled':''} aria-expanded="${wrongOpen?'true':'false'}">That’s not what’s in that photo</button></p>
@@ -1596,7 +1621,7 @@ function paintGroupDone(next){
   const m=M[cur];
   $('stage').innerHTML=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')}</div>
     <h1>That’s everything about “${esc(m.title||'this group')}”</h1>
-    <p class="do">Thank you. Next: “${esc(M[next].title||'the next group')}”.</p>${photosStrip(m)}`;
+    <p class="do">Thank you. Next: “${esc(M[next].title||'the next group')}”.</p>${photosStripAll(m)}`;
   $('stage').className='';
   nav(`<button class="go" id="agroupnext" data-next="${next}">On to “${esc(M[next].title||'the next group')}” →</button>`,`${M.filter(x=>x.turn&&x.turn.done).length} of ${M.length} groups done`,cur>0,'');
   $('sheet').classList.add('hide');
@@ -1629,7 +1654,7 @@ async function gotoGroup(i){
   if(TURN.done){
     /* nothing left to ask here: say so, with the way on */
     $('stage').innerHTML=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(M[cur].title||'')}</div>
-      <h2>You\u2019ve answered everything about this group.</h2>${photosStrip(M[cur])}`;
+      <h2>You\u2019ve answered everything about this group.</h2>${photosStripAll(M[cur])}`;
     $('stage').className='';
     nav('<button class="go" id="anext">Next →</button>',`${M.filter(x=>x.turn&&x.turn.done).length} of ${M.length} groups done`,cur>0,'');
     $('sheet').classList.add('hide'); return;
