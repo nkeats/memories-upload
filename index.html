@@ -149,6 +149,8 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 .sug{font-family:"Public Sans",sans-serif;font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
   color:#20180A;background:var(--brass);border-radius:4px;padding:2px 7px;margin-left:8px;vertical-align:middle}
 .sug.on{background:var(--green);color:#fff}
+.said{font-size:16.5px;line-height:1.5;color:var(--fg2);margin:8px 0 0;padding-left:14px;border-left:3px solid var(--brass)}
+.said i{color:var(--fg)}
 .ph.clip{flex-direction:column;gap:6px;padding:10px;font-size:12.5px;color:var(--fg2);line-height:1.35}
 .ph.clip b{color:var(--fg);font-size:13px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ph.clip small{color:var(--fg3);font-size:11px}
@@ -1309,7 +1311,19 @@ async function finishSort(){
 }
 
 /* ═══ 4 · ANSWER — tell us about each group ═══════════════════════ */
-let askedAgain=false;
+/* ═══ 4 · ANSWER — a conversation, one question at a time ═════════
+   "How can we get three levels deep when the answer space is one big box?"
+   — Nigel. So: one question, one box, then the next. Each group's questions
+   are TURNS (next_turn / answer_turn). After every answer the server is asked
+   whether that answer deserves a follow-up (probe); if so it is inserted as
+   the NEXT turn — right after the answer that prompted it, because a
+   follow-up asked three questions later isn't a follow-up. When a turn has
+   `because_of`, her own words are shown above the question: that is what
+   makes it read as listening rather than a form. Progress is a count,
+   "3 of 5", and it can grow as follow-ups arrive — never a bar. Every
+   question can be skipped. Resume is natural: next_turn is always the first
+   one not yet answered. */
+let askedAgain=false, TURN=null, draft='', turnBusy=false;
 async function showAnswer(){
   page='answer'; screen='answer';
   plain('<p class="load">Loading your photos…</p>');
@@ -1325,70 +1339,129 @@ async function showAnswer(){
     }
     A=d.assets.filter(a=>a.url);
     name=d.collection.owner_name||'';
+    try{ const cs=await rpc('clip_state',{p_token:TOKEN}); CLIPS={}; (cs&&cs.clips||[]).forEach(c=>{ CLIPS[c.id]=c; }); }catch(_){}
     const all=d.chapters.map(c=>({id:c.id,title:c.title||'',register:c.register||'warm',story:c.story||'',
-      questions:Array.isArray(c.questions)&&c.questions.length?c.questions:null,
       photos:A.filter(a=>a.chapter_id===c.id&&!a.excluded).sort((x,y)=>(x.sort_index??0)-(y.sort_index??0))}));
     if(!all.length){ report('answer with no chapters',new Error('no chapters'));
       plain(`<h1>One moment</h1><p class="do">We can't find your groups. Please try the link again in a little while.</p>`); return; }
-    /* ⚠ Only the groups that have their questions. A group still waiting for
-       its questions is not shown — never ask her about a group with nothing to ask. */
-    M=all.filter(m=>m.questions);
+    /* Where each group is up to. ⚠ Only groups with something to ask are
+       shown — a group with no turns is never put in front of her. */
+    for(const m of all){
+      try{ const t=await rpc('next_turn',{p_token:TOKEN,p_chapter:m.id}); m.turn=(t&&!t.error)?t:{done:true,total:0,answered:0}; }
+      catch(e){ report('next_turn',e,{group:m.title}); m.turn={done:true,total:0,answered:0}; }
+    }
+    if(page!=='answer') return;
+    M=all.filter(m=>(+m.turn.total||0)>0);
     if(all.length>M.length) report('answer: groups without questions',new Error('waiting'),{without:all.length-M.length,of:all.length});
     if(!M.length){
       plain(`<h1>Nearly there</h1>
         <p class="do">We're still getting your questions ready. Please try the link again in a little while.</p>
         <button class="big" id="retryRoute">Try again</button>`);
       return; }
-    const need=M.findIndex(m=>!(m.story||'').trim());   // first one still to answer
-    cur=need>=0?need:0;
-    /* She had reached the music step and closed the tab: land there again,
-       as long as every group is still answered. */
+    const need=M.findIndex(m=>!m.turn.done);            // first group with something still to answer
     const pr=(d.collection&&d.collection.progress)||{};
-    if(pr.screen==='genre'&&need<0){ cur=M.length-1; showGenre(); return; }
-    paintAsk(); scrollTo(0,0);
+    if(need<0){
+      /* Everything answered. She may have been on the music page, or be back
+         to press Finished. */
+      if(pr.screen==='genre'){ cur=M.length-1; showGenre(); return; }
+      cur=M.length-1; paintAllDone(); scrollTo(0,0); return; }
+    cur=need; TURN=M[cur].turn; draft='';
+    paintTurn(); scrollTo(0,0);
   }catch(e){ report('load for answers',e);
     plain(`<h1>Couldn't load your photos</h1><p class="do">Please try the link again in a moment.</p>
       <button class="big" id="retryRoute">Try again</button>`); }
 }
-function paintAsk(){
-  const m=M[cur]; if(!m) return;
-  const qs=m.questions||[];
-  let h=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')}</div>
-    <p class="do">Look at these photos and tell us about them — write it however it comes out.</p>
-    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(112px,1fr));margin-bottom:24px">`;
+function photosStrip(m){
+  let h=`<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(112px,1fr));margin-bottom:18px">`;
   m.photos.forEach((p,i)=>{ h+=`<div class="c" data-zoom="${i}">${tile(p)}<div class="n">${i+1}</div></div>`; });
-  h+=`</div><p class="lede" style="margin-top:-14px;font-size:14.5px">Tap a photo to see it properly.</p>`;
-  qs.forEach((q,i)=>{ h+=`<h2 style="margin-top:${i?28:10}px">${esc(q)}</h2>`; });
-  h+=`<textarea id="ans" placeholder="A sentence is fine; more is better.">${esc(m.story||'')}</textarea>
-      <div class="count" id="cnt"></div>`;
+  return h+`</div><p class="lede" style="margin-top:-10px;font-size:14.5px">Tap a photo to see it properly.</p>`;
+}
+function paintTurn(){
+  atEnd=false;
+  const m=M[cur], t=TURN; if(!m||!t||t.done) return;
+  const n=Math.min(+t.answered+1, +t.total)||1, of=+t.total||1;
+  let h=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')} · <b>${n}</b> of ${of}</div>`;
+  h+=photosStrip(m);
+  if(t.because_of) h+=`<p class="said">You said: <i>\u201c${esc(String(t.because_of).trim())}\u201d</i></p>`;
+  h+=`<h2 style="margin-top:${t.because_of?8:14}px">${esc(t.question||'')}</h2>
+      <textarea id="ans" placeholder="A sentence is fine; more is better.">${esc(draft)}</textarea>
+      <div class="count" id="cnt"></div>
+      <p class="lede" style="margin-top:6px"><button class="chip" id="askip" type="button" ${turnBusy?'disabled':''}>Skip this one</button></p>`;
   $('stage').innerHTML=h; $('stage').className='';
   countUp();
-  const last=cur>=M.length-1;
-  nav(last?'<button class="go" id="tomusic">Finished</button>':'<button class="go" id="anext">Next →</button>',
-      `${M.filter(x=>words(x.story)>=12).length} of ${M.length} answered`, cur>0,
-      last?'When you press Finished, that’s everything — your film is made from your photos and your words.':'');
+  nav(`<button class="go" id="anext" ${turnBusy?'disabled':''}>${turnBusy?'One moment…':'Next →'}</button>`,
+      `${M.filter(x=>x.turn&&x.turn.done).length} of ${M.length} groups done`, cur>0, '');
+  $('sheet').classList.add('hide');
+  const ta=$('ans'); if(ta&&!turnBusy) ta.focus();
+}
+let atEnd=false;
+function paintAllDone(){
+  atEnd=true;
+  $('stage').innerHTML=`<div class="step">Group ${M.length} of ${M.length}</div>
+    <h1>That\u2019s all the questions</h1>
+    <p class="do">You\u2019ve told us about every group. Press Finished and we\u2019ll make your film from your photos and your words.</p>
+    <p class="lede">Want to change something? Use \u2190 to go back through the groups.</p>`;
+  $('stage').className='';
+  nav('<button class="go" id="tomusic">Finished</button>',`${M.length} of ${M.length} groups done`,true,
+      'When you press Finished, that\u2019s everything — your film is made from your photos and your words.');
   $('sheet').classList.add('hide');
 }
 function countUp(){ const c=$('cnt'); if(!c) return;
-  const w=words(M[cur].story);
+  const w=words(draft);
   c.textContent=w?`${w} words`:'a few sentences is plenty';
   c.className='count'+(w>=25?' good':''); }
-async function saveStory(){
-  const m=M[cur]; if(!m) return false;
-  if(!m.id){ report('answer has no group to save against',new Error('no chapter id'),{group:cur+1}); flash(false); return false; }
-  try{ await api('save_story',{chapter_id:m.id,story:m.story||''}); flash(true); return true; }
-  catch(e){ flash(false); report('save answer',e,{group:cur+1,words:words(m.story)});
-    setTimeout(saveStory,4000); return false; }
+/* answer or skip → probe → next_turn. The probe is a model call and takes a
+   few seconds; the button says so. */
+async function answerTurn(skip){
+  const m=M[cur], t=TURN; if(!m||!t||turnBusy) return;
+  const text=(draft||'').trim();
+  if(!skip&&!text){ const ta=$('ans'); if(ta) ta.focus(); return; }
+  turnBusy=true; paintTurn();
+  const fail=()=>{ turnBusy=false; paintTurn(); flash(false);
+    const before=$('nav').querySelector('.before'); if(before) before.textContent="That didn't go through. Please press Next again."; };
+  try{
+    const r=await rpc('answer_turn', skip?{p_token:TOKEN,p_turn:t.turn_id,p_skip:true}:{p_token:TOKEN,p_turn:t.turn_id,p_answer:text});
+    if(!r||r.error) throw new Error((r&&r.error)||'answer_turn failed');
+  }catch(e){ report(skip?'skip turn':'answer turn',e,{group:m.title,seq:t.seq}); fail(); return; }
+  if(!skip){
+    /* Does that answer deserve a follow-up? If so the server has already put
+       it in as the next turn. */
+    try{ const {ok,j}=await post('probe',{chapter_id:m.id}); if(!ok||j.error) report('probe',new Error((j&&j.error)||'probe failed'),{group:m.title}); }
+    catch(e){ report('probe',e,{group:m.title}); }
+  }
+  let nt;
+  try{ nt=await rpc('next_turn',{p_token:TOKEN,p_chapter:m.id}); if(!nt||nt.error) throw new Error((nt&&nt.error)||'next_turn failed'); }
+  catch(e){ report('next_turn',e,{group:m.title}); fail(); return; }
+  if(page!=='answer') return;
+  turnBusy=false; draft=''; m.turn=nt; TURN=nt;
+  prog({screen:'answer',part:cur+1,turn:nt.seq||null});
+  if(!nt.done){ paintTurn(); scrollTo(0,0); return; }
+  /* this group is done: on to the next with something to ask */
+  const next=M.findIndex((x,i)=>i>cur&&!x.turn.done);
+  if(next>=0){ cur=next; TURN=M[cur].turn; paintTurn(); scrollTo(0,0); return; }
+  paintAllDone(); scrollTo(0,0);
 }
+async function gotoGroup(i){
+  atEnd=false; cur=Math.max(0,Math.min(M.length-1,i)); draft='';
+  try{ const t=await rpc('next_turn',{p_token:TOKEN,p_chapter:M[cur].id}); M[cur].turn=(t&&!t.error)?t:M[cur].turn; }catch(_){}
+  TURN=M[cur].turn;
+  if(TURN.done){
+    /* nothing left to ask here: say so, with the way on */
+    $('stage').innerHTML=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(M[cur].title||'')}</div>
+      <h2>You\u2019ve answered everything about this group.</h2>${photosStrip(M[cur])}`;
+    $('stage').className='';
+    nav('<button class="go" id="anext">Next →</button>',`${M.filter(x=>x.turn&&x.turn.done).length} of ${M.length} groups done`,cur>0,'');
+    $('sheet').classList.add('hide'); return;
+  }
+  paintTurn();
+}
+
 async function toMusic(){
   /* Finished on the last group. If a sound is already chosen and confirmed —
      usually, from the scan page — that's everything. Otherwise the music page
      comes once more, on its own, before Finished. */
   const b=$('tomusic'); if(!b) return;
   b.disabled=true; b.textContent='One moment…';
-  clearTimeout(saveTimer);
-  const saved=await saveStory();
-  if(!saved){ b.disabled=false; b.textContent='Finished'; return; }
   await loadMusic();
   if(page!=='answer') return;
   if(G.chosen&&G.chosen.confirmed){ await finishFilm(b); return; }
@@ -1610,10 +1683,10 @@ document.addEventListener('click',async e=>{
   if(t.id==='onext'){ cur++; sel=null; picking=false; saveGroups(); prog({screen:'organise',part:cur+1}); paint(); scrollTo(0,0); return; }
   if(t.id==='back'){
     if(page==='upload'&&P.mode==='say'){ P.mode='list'; paintWho(); scrollTo(0,0); return; }
-    if(screen==='genre'){ cur=M.length-1; screen='answer'; paintAsk(); scrollTo(0,0); return; }
-    if(screen==='answer'){ saveStory(); }
+    if(screen==='genre'){ screen='answer'; gotoGroup(M.length-1); scrollTo(0,0); return; }
+    if(screen==='answer'){ if(atEnd){ atEnd=false; gotoGroup(M.length-1); } else if(cur>0) gotoGroup(cur-1); scrollTo(0,0); return; }
     if(cur>0){cur--;} sel=null; picking=false;
-    if(screen==='answer') paintAsk(); else paint();
+    paint();
     scrollTo(0,0); return; }
   if(t.id==='tofirst'){ const i=M.findIndex(x=>!(x.title||'').trim());
     if(i>=0){ cur=i; sel=null; picking=false; paint(); scrollTo(0,0); } return; }
@@ -1655,7 +1728,10 @@ document.addEventListener('click',async e=>{
   if(c&&screen==='organise'){ sel=sel===c.dataset.p?null:c.dataset.p; picking=false; paint(); return; }
 
   /* answer */
-  if(t.id==='anext'){ saveStory(); cur++; prog({screen:'answer',part:cur+1}); paintAsk(); scrollTo(0,0); return; }
+  if(t.id==='anext'){
+    if(TURN&&TURN.done){ const next=M.findIndex((x,i)=>i>cur&&!x.turn.done); if(next>=0) gotoGroup(next); else paintAllDone(); scrollTo(0,0); return; }
+    answerTurn(false); return; }
+  if(t.id==='askip'){ answerTurn(true); return; }
   if(t.id==='tomusic'){ toMusic(); return; }
   /* the music */
   if(t.id==='gnext'){ translateGenre(); return; }
@@ -1678,9 +1754,7 @@ document.addEventListener('input',e=>{
   if(e.target.dataset&&e.target.dataset.saytype!==undefined){ const x=P.say[+e.target.dataset.saytype]; x.typed=e.target.value;
     const b=$('sayDone'); if(b) b.disabled=!P.say.every(y=>!y.needs||y.answer==='yes'||(y.answer==='no'&&y.typed.trim())); return; }
   if(e.target.id==='nm'){ M[cur].title=e.target.value; queueSave(); if(screen==='organise') orgNav(); }
-  if(e.target.id==='ans'){ M[cur].story=e.target.value; countUp();
-    const t=document.querySelector('#nav .tally'); if(t) t.textContent=`${M.filter(x=>words(x.story)>=12).length} of ${M.length} answered`;
-    clearTimeout(saveTimer); saveTimer=setTimeout(saveStory,1400); }
+  if(e.target.id==='ans'){ draft=e.target.value; countUp(); }
 });
 window.addEventListener('beforeunload',e=>{
   if(dirty||failed){ e.preventDefault(); e.returnValue=''; }
