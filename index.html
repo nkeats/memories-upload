@@ -149,6 +149,8 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 .sug{font-family:"Public Sans",sans-serif;font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
   color:#20180A;background:var(--brass);border-radius:4px;padding:2px 7px;margin-left:8px;vertical-align:middle}
 .sug.on{background:var(--green);color:#fff}
+.quiet{background:none;border:none;color:var(--fg3);font:inherit;font-size:14px;cursor:pointer;padding:12px 6px;text-decoration:underline;text-underline-offset:3px}
+.quiet:hover{color:var(--fg2)}
 .said{font-size:16.5px;line-height:1.5;color:var(--fg2);margin:8px 0 0;padding-left:14px;border-left:3px solid var(--brass)}
 .said i{color:var(--fg)}
 .ph.clip{flex-direction:column;gap:6px;padding:10px;font-size:12.5px;color:var(--fg2);line-height:1.35}
@@ -1323,7 +1325,7 @@ async function finishSort(){
    "3 of 5", and it can grow as follow-ups arrive — never a bar. Every
    question can be skipped. Resume is natural: next_turn is always the first
    one not yet answered. */
-let askedAgain=false, TURN=null, draft='', turnBusy=false;
+let askedAgain=false, TURN=null, draft='', turnBusy=false, wrongOpen=false, whatDraft='';
 async function showAnswer(){
   page='answer'; screen='answer';
   plain('<p class="load">Loading your photos…</p>');
@@ -1386,7 +1388,12 @@ function paintTurn(){
   h+=`<h2 style="margin-top:${t.because_of?8:14}px">${esc(t.question||'')}</h2>
       <textarea id="ans" placeholder="A sentence is fine; more is better.">${esc(draft)}</textarea>
       <div class="count" id="cnt"></div>
-      <p class="lede" style="margin-top:6px"><button class="chip" id="askip" type="button" ${turnBusy?'disabled':''}>Skip this one</button></p>`;
+      <p class="lede" style="margin-top:6px"><button class="chip" id="askip" type="button" ${turnBusy?'disabled':''}>Skip this one</button>
+        <button class="quiet" id="awrong" type="button" ${turnBusy?'disabled':''} aria-expanded="${wrongOpen?'true':'false'}">That’s not what’s in that photo</button></p>
+      ${wrongOpen?`<div class="card" id="wrongcard"><label for="what">What is it?</label>
+        <input type="text" id="what" value="${esc(whatDraft)}" placeholder="Tell us what’s really there" autocomplete="off">
+        <div class="acts" style="margin-top:12px"><button class="yes" id="awrongsend" ${turnBusy||!whatDraft.trim()?'disabled':''}>That’s what it is</button>
+          <button id="awrongcancel">Never mind</button></div></div>`:''}`;
   $('stage').innerHTML=h; $('stage').className='';
   countUp();
   nav(`<button class="go" id="anext" ${turnBusy?'disabled':''}>${turnBusy?'One moment…':'Next →'}</button>`,
@@ -1433,10 +1440,31 @@ async function answerTurn(skip){
   try{ nt=await rpc('next_turn',{p_token:TOKEN,p_chapter:m.id}); if(!nt||nt.error) throw new Error((nt&&nt.error)||'next_turn failed'); }
   catch(e){ report('next_turn',e,{group:m.title}); fail(); return; }
   if(page!=='answer') return;
-  turnBusy=false; draft=''; m.turn=nt; TURN=nt;
+  turnBusy=false; draft=''; wrongOpen=false; whatDraft=''; m.turn=nt; TURN=nt;
   prog({screen:'answer',part:cur+1,turn:nt.seq||null});
   if(!nt.done){ paintTurn(); scrollTo(0,0); return; }
   /* this group is done: on to the next with something to ask */
+  const next=M.findIndex((x,i)=>i>cur&&!x.turn.done);
+  if(next>=0){ cur=next; TURN=M[cur].turn; paintTurn(); scrollTo(0,0); return; }
+  paintAllDone(); scrollTo(0,0);
+}
+/* "That's not what's in that photo." A description is a model's READING of
+   a photograph, not the photograph; the question is where a wrong reading
+   gets caught, but only if she can tell us. Her correction is testimony —
+   worth more than the description it replaces — and the turn is marked
+   wrong_premise and skipped so nothing downstream builds on it. */
+async function flagWrong(){
+  const m=M[cur], t=TURN; if(!m||!t||turnBusy) return;
+  const what=(whatDraft||'').trim(); if(!what){ const f=$('what'); if(f) f.focus(); return; }
+  turnBusy=true; paintTurn();
+  try{ const r=await rpc('flag_wrong_premise',{p_token:TOKEN,p_turn:t.turn_id,p_what_it_really_is:what}); if(!r||r.error) throw new Error((r&&r.error)||'flag_wrong_premise failed'); }
+  catch(e){ report('flag_wrong_premise',e,{group:m.title,seq:t.seq}); turnBusy=false; paintTurn(); flash(false); return; }
+  let nt;
+  try{ nt=await rpc('next_turn',{p_token:TOKEN,p_chapter:m.id}); if(!nt||nt.error) throw new Error((nt&&nt.error)||'next_turn failed'); }
+  catch(e){ report('next_turn',e,{group:m.title}); turnBusy=false; paintTurn(); flash(false); return; }
+  if(page!=='answer') return;
+  turnBusy=false; draft=''; wrongOpen=false; whatDraft=''; m.turn=nt; TURN=nt;
+  if(!nt.done){ paintTurn(); scrollTo(0,0); return; }
   const next=M.findIndex((x,i)=>i>cur&&!x.turn.done);
   if(next>=0){ cur=next; TURN=M[cur].turn; paintTurn(); scrollTo(0,0); return; }
   paintAllDone(); scrollTo(0,0);
@@ -1732,6 +1760,9 @@ document.addEventListener('click',async e=>{
     if(TURN&&TURN.done){ const next=M.findIndex((x,i)=>i>cur&&!x.turn.done); if(next>=0) gotoGroup(next); else paintAllDone(); scrollTo(0,0); return; }
     answerTurn(false); return; }
   if(t.id==='askip'){ answerTurn(true); return; }
+  if(t.id==='awrong'){ wrongOpen=!wrongOpen; paintTurn(); if(wrongOpen){ const f=$('what'); if(f) f.focus(); } return; }
+  if(t.id==='awrongcancel'){ wrongOpen=false; whatDraft=''; paintTurn(); return; }
+  if(t.id==='awrongsend'){ flagWrong(); return; }
   if(t.id==='tomusic'){ toMusic(); return; }
   /* the music */
   if(t.id==='gnext'){ translateGenre(); return; }
@@ -1748,6 +1779,7 @@ document.addEventListener('click',async e=>{
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&(e.target.id==='pname'||e.target.id==='prel')){ e.preventDefault(); addPerson(); }
   if(e.key==='Enter'&&e.target.classList&&e.target.classList.contains('anchor')){ e.preventDefault(); translateGenre(); }
+  if(e.key==='Enter'&&e.target.id==='what'){ e.preventDefault(); flagWrong(); }
 });
 document.addEventListener('input',e=>{
   if(e.target.classList&&e.target.classList.contains('anchor')){ G.answers[e.target.dataset.key]=e.target.value; return; }
@@ -1755,6 +1787,7 @@ document.addEventListener('input',e=>{
     const b=$('sayDone'); if(b) b.disabled=!P.say.every(y=>!y.needs||y.answer==='yes'||(y.answer==='no'&&y.typed.trim())); return; }
   if(e.target.id==='nm'){ M[cur].title=e.target.value; queueSave(); if(screen==='organise') orgNav(); }
   if(e.target.id==='ans'){ draft=e.target.value; countUp(); }
+  if(e.target.id==='what'){ whatDraft=e.target.value; const b=$('awrongsend'); if(b) b.disabled=!whatDraft.trim(); }
 });
 window.addEventListener('beforeunload',e=>{
   if(dirty||failed){ e.preventDefault(); e.returnValue=''; }
