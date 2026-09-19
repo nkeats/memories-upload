@@ -419,6 +419,21 @@ async function speechIn(file){
   return null;
 }
 
+/* A 1280-px JPEG of a photograph, drawn here. describe prefers the thumb to
+   the original (a full-resolution JPEG is ~48 MB decoded), and the grids
+   load faster. Null when the browser can't decode the file; never fatal. */
+async function thumbOf(file){
+  let bmp=null;
+  try{ bmp=await createImageBitmap(file,{resizeWidth:1280,resizeQuality:'high',imageOrientation:'from-image'}); }
+  catch(_){ return null; }
+  try{
+    const c=document.createElement('canvas'); c.width=bmp.width; c.height=bmp.height;
+    c.getContext('2d').drawImage(bmp,0,0);
+    return await new Promise(r=>c.toBlob(r,'image/jpeg',0.85));
+  }catch(_){ return null; }
+  finally{ if(bmp&&bmp.close) bmp.close(); }
+}
+
 /* "Already in" means the same picture: the same file twice, or the same photo
    after a messaging app has re-saved it (measured: 0 bits moved). ⚠ Two
    different pictures with the same composition can sit 1–2 bits apart, and
@@ -702,7 +717,7 @@ async function pick(files){
       item.duration=pv.duration; item.thumb=pv.frame; item.has_speech=pv.has_speech; item.noFrame=pv.frameFailed;
       if(pv.frameFailed) report('video frame',new Error('no frame'),{file:item.file.name,type:item.file.type,size:item.file.size});
       item.phash=item.thumb?await phashOf(new File([item.thumb],'frame.jpg',{type:'image/jpeg'})):null;
-    }else item.phash=await phashOf(item.file);
+    }else{ item.phash=await phashOf(item.file); item.thumb=await thumbOf(item.file); }
     if(item.phash&&(alreadyIn(item.phash)||batch.some(x=>hamming(x,item.phash)<=SAME))) item.status='dup';
     else { item.status='ready'; if(item.phash) batch.push(item.phash); }
     paintQueue();
@@ -774,7 +789,7 @@ async function send(){
         const plainWhy=/mime type/i.test(why)?`we can't take .${ext} files yet`:(why||`the upload was refused (HTTP ${put.status})`);
         const e=new Error(plainWhy); e.detail={http:put.status,server:body.slice(0,300),mime:mimeOf(q.file),ext,size:q.file.size};
         throw e; }
-      if(q.video&&q.thumb) await sendThumb(q);
+      if(q.thumb) await sendThumb(q);
       const c=await post('upload',{action:'confirm',asset_id:q.asset_id,phash:q.phash,device:q.device,
         ...(q.video?{duration_s:q.duration,has_speech:q.has_speech,frame_ok:!!q.thumb,thumb_path:q.thumb_path||null}:{})});
       if(!c.ok) throw new Error(c.j.error||'confirm failed');
@@ -800,20 +815,19 @@ function finished(sentence){
   s.classList.remove('hide');
   report('upload after submitted',new Error('409'),{queued:queue.length});
 }
-/* The frame goes up as the clip's thumbnail, same place a photo's thumb
-   lives (<collection>/thumbs/<asset>.jpg). ⚠ The server side of this —
-   `upload {action:'sign_thumb', asset_id}` answering {signed_url, thumb_path}
-   — did not exist on 19 Sep; until it does the page reports it once and the
-   clip goes in without a picture. Never fatal. */
-let thumbRouteMissing=false;
+/* The thumbnail — a clip's frame or a photograph's 1280-px JPEG — goes up
+   through sign-thumb: {token, asset_id} → {path, signed_url}, the path derived
+   from the asset's own storage path (<collection>/thumbs/<uuid>.jpg), so it
+   can land nowhere else. thumb_path is recorded by the server at once; if the
+   bytes never arrive, describe falls through to the transcript or the honest
+   line. Never fatal here. */
 async function sendThumb(q){
-  if(thumbRouteMissing) return;
   try{
-    const {ok,status,j}=await post('upload',{action:'sign_thumb',asset_id:q.asset_id,mime:'image/jpeg',size:q.thumb.size});
-    if(!ok||!j.signed_url){ if(/unknown action/i.test(j.error||'')){ thumbRouteMissing=true; report('sign_thumb missing',new Error(j.error),{status}); } else report('sign_thumb',new Error(j.error||('HTTP '+status))); return; }
+    const {ok,status,j}=await post('sign-thumb',{asset_id:q.asset_id});
+    if(!ok||!j.signed_url){ report('sign-thumb',new Error(j.error||('HTTP '+status)),{asset:q.asset_id}); return; }
     const put=await fetch(j.signed_url,{method:'PUT',headers:{'Content-Type':'image/jpeg'},body:q.thumb});
     if(!put.ok) throw new Error('thumb PUT '+put.status);
-    q.thumb_path=j.thumb_path||null;
+    q.thumb_path=j.path||null;
   }catch(e){ report('send thumb',e,{asset:q.asset_id}); }
 }
 async function look(){
