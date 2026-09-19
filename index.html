@@ -280,19 +280,18 @@ async function route(){
 
 /* ═══ 1 · UPLOAD ═════════════════════════════════════════════════ */
 let exifr=null, queue=[], inSoFar=0;
-/* Every hash already in this collection — what came from the server, what
-   went in during this visit, and what this device remembers sending on an
-   earlier visit — so the same photo is never added twice. This is the fast
-   pre-check, so she is told before pressing Add; ⚠ the server is the
-   authority (sign refuses a duplicate itself, and it knows every device). */
+/* Every hash already in this collection, AS THE SERVER HAS IT RIGHT NOW,
+   plus what went in during this visit — so she is told "already added"
+   before pressing Add. ⚠ The server is the authority: sign refuses a
+   duplicate itself. ⚠⚠ There used to be a copy of this list in
+   localStorage, from the afternoon the server wasn't storing hashes. On 19
+   Sep it refused Nigel's clip after the row had been deleted server-side —
+   a client-side memory of server state is wrong every time the two diverge,
+   and it gave a confident wrong answer with no way to override it. Gone,
+   and purged from any browser that still has one. */
 let inHashes=[];
-const HKEY='memories.phash.'+TOKEN.slice(0,16);
-function remember(h){
-  if(!h) return;
-  if(!inHashes.includes(h)) inHashes.push(h);
-  try{ localStorage.setItem(HKEY,JSON.stringify(inHashes.slice(-2000))); }catch(_){}
-}
-function remembered(){ try{ const a=JSON.parse(localStorage.getItem(HKEY)||'[]'); return Array.isArray(a)?a:[]; }catch(_){ return []; } }
+function remember(h){ if(h&&!inHashes.includes(h)) inHashes.push(h); }
+try{ Object.keys(localStorage).filter(k=>k.startsWith('memories.phash.')).forEach(k=>localStorage.removeItem(k)); }catch(_){}
 
 /* Perceptual hash, in the browser, at upload. The browser has already decoded
    the image, so this is nearly free. 8×8 greyscale average hash: shrink to
@@ -740,7 +739,7 @@ function paintQueue(){
   const word={reading:'having a look',converting:'converting',ready:'ready',adding:'adding'};
   $('rows').innerHTML=queue.map(q=>`<div class="row"><span class="nm">${esc(q.file.name)}</span>
     <span class="st ${q.status==='done'||q.status==='dup'?'ok':q.status==='failed'?'bad':'wait'}">
-      ${q.status==='done'?'in':q.status==='dup'?(q.err?esc(q.err):"you've already added this one"):q.status==='failed'?(esc(q.err)||"didn't go in"):(word[q.status]||esc(q.status))}
+      ${q.status==='done'?'in':q.status==='dup'?(q.err?esc(q.err):"you've already added this one")+(q.err?'':` <button class="chip" type="button" data-anyway="${queue.indexOf(q)}" style="padding:4px 10px;font-size:12.5px;margin-left:6px">Add it anyway</button>`):q.status==='failed'?(esc(q.err)||"didn't go in"):(word[q.status]||esc(q.status))}
       ${q.video?`<span class="tagd">video${q.duration?' · '+Math.round(q.duration)+' s':''}${q.has_speech?' · someone talking':''}${q.noFrame?' · no still — it’ll still be in your film':''}</span>`:''}
       ${q.src&&q.status!=='dup'?`<span class="tagd ${CLS[q.src]}">${LABEL[q.src]}</span>`:''}</span></div>`).join('');
 }
@@ -753,7 +752,7 @@ async function send(){
     if(q.status==='done'){done++;continue;}
     /* Last look before it goes: something with the same hash may have gone in
        moments ago from this very batch, or from another device on the same link. */
-    if(alreadyIn(q.phash)){ q.status='dup'; paintQueue(); continue; }
+    if(!q.force&&alreadyIn(q.phash)){ q.status='dup'; paintQueue(); continue; }
     q.status='adding'; paintQueue();
     try{
       /* A retry after a dropped connection reuses the signed URL it already
@@ -843,9 +842,7 @@ async function look(){
     catch(e){ report('load hashes',e); }
     if(page!=='upload') return;
   }
-  /* Merge in what this device remembers; if the collection is empty the memory is stale (a fresh collection on the same link is impossible, but a cleared one is not). */
-  inHashes=inSoFar?[...new Set([...hs,...remembered()])]:[];
-  if(!inSoFar){ try{ localStorage.removeItem(HKEY); }catch(_){} }
+  inHashes=inSoFar?[...new Set(hs)]:[];
   $('sofarH').textContent=inSoFar?`${plural(inSoFar,'photo')} in so far`:'Nothing in yet';
   $('sofarP').textContent=inSoFar
     ?(j.stats.undated?`${j.stats.undated} with no date — you'll place those by hand later.`:'All of them have a date.')
@@ -1583,6 +1580,7 @@ document.addEventListener('click',async e=>{
   if(t.dataset.sayno!==undefined){ const x=P.say[+t.dataset.sayno]; x.answer=x.answer==='no'?null:'no'; paintSay(); return; }
   if(t.id==='sayDone'){ finishSay(); return; }
   /* upload */
+  if(t.dataset.anyway!==undefined){ const q=queue[+t.dataset.anyway]; if(q&&q.status==='dup'){ q.status='ready'; q.force=true; paintQueue(); $('send').disabled=false; } return; }
   if(t.id==='allin'){ askAllIn(); return; }
   if(t.id==='allinNo'){ $('sheet').classList.add('hide'); return; }
   if(t.id==='allinYes'){ finishUpload(); return; }
