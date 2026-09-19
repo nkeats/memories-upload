@@ -329,6 +329,31 @@ async function phashOf(file){
   }catch(e){ report('phash',e,{file:file.name}); return null; }
   finally{ if(bmp&&bmp.close) bmp.close(); }
 }
+/* What kind of file this is. ⚠ Chrome on Windows reports an empty type for
+   .heic, and a PUT sent as application/octet-stream is refused by the bucket
+   (415) — that was every iPhone photo failing on 19 Sep. Name it ourselves. */
+const EXT_MIME={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',bmp:'image/bmp',
+  heic:'image/heic',heif:'image/heif',tif:'image/tiff',tiff:'image/tiff',mp4:'video/mp4',mov:'video/quicktime',m4v:'video/mp4',
+  '3gp':'video/3gpp',avi:'video/x-msvideo',webm:'video/webm'};
+function mimeOf(file){
+  if(file.type&&file.type!=='application/octet-stream') return file.type;
+  const ext=(file.name.split('.').pop()||'').toLowerCase();
+  return EXT_MIME[ext]||'application/octet-stream';
+}
+const isHeicFile=file=>/^image\/hei[cf]$/i.test(file.type)||/\.(heic|heif)$/i.test(file.name);
+/* iPhone photos come as HEIC, which no browser but Safari can draw and the
+   vision pass can't read. Convert to JPEG here, once, before the hash and the
+   upload. The decoder (heic-to, libheif in wasm, ~3 MB) is fetched only when a
+   HEIC is actually picked. The date and camera are read from the ORIGINAL
+   first, since the converted file has no EXIF. */
+let heicLib=null;
+async function toJpeg(file){
+  if(!heicLib) heicLib=await import('https://cdn.jsdelivr.net/npm/heic-to@1.5.2/dist/heic-to.js');
+  const blob=await heicLib.heicTo({blob:file,type:'image/jpeg',quality:0.9});
+  const name=file.name.replace(/\.(heic|heif)$/i,'')+'.jpg';
+  return new File([blob],name,{type:'image/jpeg',lastModified:file.lastModified});
+}
+
 /* "Already in" means the same picture: the same file twice, or the same photo
    after a messaging app has re-saved it (measured: 0 bits moved). ⚠ Two
    different pictures with the same composition can sit 1–2 bits apart, and
@@ -511,11 +536,28 @@ function uploadNav(){
 /* date detection: EXIF, then filename, then file date.
    Also the camera's make and model (`device`), so the server can tell one
    camera from another when it looks for a clock that is set wrong. */
+/* exifr reads JPEG and most HEIC. ⚠ Some HEIC files make it throw "Malformed
+   EXIF data" (seen 19 Sep); the EXIF is still in there as a plain TIFF block,
+   so find the TIFF header in the bytes and hand exifr that slice. */
+async function exifOf(file){
+  const pick=['DateTimeOriginal','CreateDate','ModifyDate','Make','Model'];
+  try{ const x=await exifr.parse(file,pick); if(x&&(x.DateTimeOriginal||x.CreateDate||x.Make)) return x; }catch(_){}
+  if(!isHeicFile(file)||file.size>64*1024*1024) return null;
+  try{
+    const b=new Uint8Array(await file.arrayBuffer());
+    for(let i=0,n=b.length-4;i<n;i++){
+      const mm=b[i]===0x4D&&b[i+1]===0x4D&&b[i+2]===0&&b[i+3]===0x2A, ii=b[i]===0x49&&b[i+1]===0x49&&b[i+2]===0x2A&&b[i+3]===0;
+      if(!mm&&!ii) continue;
+      try{ const x=await exifr.parse(b.slice(i).buffer,{tiff:true,ifd0:true,exif:true,pick}); if(x&&(x.DateTimeOriginal||x.CreateDate||x.Make)) return x; }catch(_){}
+    }
+  }catch(_){}
+  return null;
+}
 async function dateOf(file){
   let device=null;
   try{
     if(exifr){
-      const x=await exifr.parse(file,['DateTimeOriginal','CreateDate','ModifyDate','Make','Model']);
+      const x=await exifOf(file);
       const mk=(x?.Make||'').toString().trim(), md=(x?.Model||'').toString().trim();
       device=[mk,md.startsWith(mk)&&mk?md.slice(mk.length).trim():md].filter(Boolean).join(' ').slice(0,80)||null;
       const d=x?.DateTimeOriginal||x?.CreateDate||x?.ModifyDate;
@@ -538,37 +580,54 @@ async function dateOf(file){
 const LABEL={exif:'date from camera',filename:'date from filename',modified:'file date only',none:'no date'};
 const CLS={exif:'exif',filename:'',modified:'',none:'none'};
 
+/* ⚠ Picking a second batch ADDS to the list. It used to replace it — six
+   photos she had just watched fail vanished the moment she chose more, which
+   from her side is losing them. Rows already in, already refused or failed
+   stay where she can see them. */
 let pickRun=0;
 async function pick(files){
   const run=++pickRun;
-  queue=[...files].map(f=>({file:f,status:'reading'}));
-  if(!queue.length) return;
+  const fresh=[...files].map(f=>({file:f,status:'reading'}));
+  if(!fresh.length) return;
+  queue.push(...fresh);
   $('picked').classList.remove('hide'); $('send').textContent='Add these'; $('prog').style.width='0';
-  $('send').disabled=true;                                 // until every file is read and hashed
+  $('send').disabled=true;                                 // until every new file is read and hashed
   paintQueue();
-  const batch=[];                                          // hashes seen in this pick, so the same photo chosen twice is caught too
-  for(const item of queue){
-    if(run!==pickRun) return;                              // she picked again — the new pick owns the queue
+  const batch=queue.filter(q=>q.phash&&q.status!=='dup').map(q=>q.phash);   // so the same photo chosen twice is caught too
+  let heicNote=false;
+  for(const item of fresh){
+    if(run!==pickRun) return;                              // she picked again — that pick carries on from here
     const d=await dateOf(item.file); item.at=d.at; item.src=d.src; item.device=d.device;
+    if(isHeicFile(item.file)){
+      item.status='converting'; item.heic=true; if(!heicNote){ heicNote=true; paintQueue(); }
+      try{ item.file=await toJpeg(item.file); }
+      catch(e){ report('heic convert',e,{file:item.file.name,size:item.file.size}); item.unconverted=true; }
+      if(run!==pickRun) return;
+    }
     item.phash=await phashOf(item.file);
     if(item.phash&&(alreadyIn(item.phash)||batch.some(x=>hamming(x,item.phash)<=SAME))) item.status='dup';
     else { item.status='ready'; if(item.phash) batch.push(item.phash); }
     paintQueue();
   }
   if(run!==pickRun) return;
-  $('send').disabled=!queue.some(q=>q.status==='ready');
+  $('send').disabled=!queue.some(q=>q.status==='ready'||q.status==='failed');
 }
 function paintQueue(){
   const dups=queue.filter(q=>q.status==='dup'), rest=queue.filter(q=>q.status!=='dup');
   const n=rest.length, undated=rest.filter(q=>q.src==='none').length;
-  const reading=queue.some(q=>q.status==='reading');
+  const reading=queue.some(q=>q.status==='reading'), converting=queue.some(q=>q.status==='converting');
+  const inn=queue.filter(q=>q.status==='done').length, failed=queue.filter(q=>q.status==='failed').length;
   $('summary').innerHTML=(n?`<strong>${plural(n,'photo')}</strong>`:'<strong>Nothing new</strong>')+
-    (reading?' — having a look…':
-     (n?(undated?` — <span class="bad">${undated} with no date</span>, which you'll place by hand later.`:' — all dated.'):'')+
-     (dups.length?`<br><span class="ok">You've already added ${dups.length===1?'one of these':dups.length+' of these'}</span> — we'll skip ${dups.length===1?'it':'them'}.`:''));
+    (converting?' — <span class="ok">iPhone photos need converting — one moment.</span>':
+     reading?' — having a look…':
+     (n?(undated?` — <span class="bad">${undated} with no date</span>, which you'll place by hand later.`:' — all dated.'):''))+
+    (inn&&inn<n?`<br>${inn} of them in so far.`:'')+
+    (failed?`<br><span class="bad">${failed===1?'One':failed} didn't go in</span> — the reason is next to ${failed===1?'it':'each one'}. Press the button to try again.`:'')+
+    (dups.length?`<br><span class="ok">You've already added ${dups.length===1?'one of these':dups.length+' of these'}</span> — we'll skip ${dups.length===1?'it':'them'}.`:'');
+  const word={reading:'having a look',converting:'converting',ready:'ready',adding:'adding'};
   $('rows').innerHTML=queue.map(q=>`<div class="row"><span class="nm">${esc(q.file.name)}</span>
     <span class="st ${q.status==='done'||q.status==='dup'?'ok':q.status==='failed'?'bad':'wait'}">
-      ${q.status==='done'?'in':q.status==='dup'?(q.err?esc(q.err):"you've already added this one"):q.status==='failed'?(esc(q.err)||'failed'):q.status}
+      ${q.status==='done'?'in':q.status==='dup'?(q.err?esc(q.err):"you've already added this one"):q.status==='failed'?(esc(q.err)||"didn't go in"):(word[q.status]||esc(q.status))}
       ${q.src&&q.status!=='dup'?`<span class="tagd ${CLS[q.src]}">${LABEL[q.src]}</span>`:''}</span></div>`).join('');
 }
 async function send(){
@@ -588,12 +647,14 @@ async function send(){
          server also ignores unconfirmed rows when it looks for duplicates and
          clears abandoned ones, so a retry after a reload works too.) */
       if(!q.signed_url){
-        const {ok,status,j}=await post('upload',{action:'sign',filename:q.file.name,mime:q.file.type||'image/jpeg',
+        const {ok,status,j}=await post('upload',{action:'sign',filename:q.file.name,mime:mimeOf(q.file),
           size:q.file.size,taken_at:q.at,date_source:q.src,uploaded_by:who,phash:q.phash,device:q.device});
         /* The server is the authority on "already in": it answers
            {duplicate:true, of:<filename>, message} instead of a signed URL. It
            knows about every device; the page's own list only knows this one. */
         if(j.duplicate){ q.status='dup'; q.err=j.message||''; q.of=j.of||''; remember(q.phash); paintQueue(); continue; }
+        if(!ok&&/unsupported file type|mime/i.test(j.error||'')){ const ext=(q.file.name.split('.').pop()||'').toLowerCase();
+          const e=new Error(`we can't take .${ext} files — photos and short videos only`); e.detail={http:status,server:j.error,mime:mimeOf(q.file)}; throw e; }
         /* ⚠ 409 "This one is finished": she has already said that's everything
            and the server keeps that promise, whatever tab or back button got
            her here. Stop the batch, say so in the server's words, and take her
@@ -602,21 +663,30 @@ async function send(){
         if(!ok) throw new Error(j.error||'rejected');
         q.signed_url=j.signed_url; q.asset_id=j.asset_id;
       }
-      const put=await fetch(q.signed_url,{method:'PUT',headers:{'Content-Type':q.file.type||'application/octet-stream'},body:q.file});
-      if(!put.ok){ if(put.status>=400&&put.status<500) q.signed_url=null;   // expired or refused — sign afresh next time
-        throw new Error('upload failed'); }
+      const put=await fetch(q.signed_url,{method:'PUT',headers:{'Content-Type':mimeOf(q.file)},body:q.file});
+      if(!put.ok){
+        if(put.status>=400&&put.status<500) q.signed_url=null;   // expired or refused — sign afresh next time
+        /* ⚠ Never "upload failed" with no reason. Say what the server said, in
+           her words where we know them, and keep the raw reply for the log. */
+        let body=''; try{ body=await put.text(); }catch(_){}
+        let why=''; try{ why=JSON.parse(body).message||''; }catch(_){}
+        const ext=(q.file.name.split('.').pop()||'').toLowerCase();
+        const plainWhy=/mime type/i.test(why)?`we can't take .${ext} files yet`:(why||`the upload was refused (HTTP ${put.status})`);
+        const e=new Error(plainWhy); e.detail={http:put.status,server:body.slice(0,300),mime:mimeOf(q.file),ext,size:q.file.size};
+        throw e; }
       const c=await post('upload',{action:'confirm',asset_id:q.asset_id,phash:q.phash,device:q.device});
       if(!c.ok) throw new Error(c.j.error||'confirm failed');
       q.status='done';
       remember(q.phash);
-    }catch(e){ q.status='failed'; q.err=e.message; report('upload',e,{file:q.file.name,size:q.file.size}); }
+    }catch(e){ q.status='failed'; q.err="didn't go in — "+e.message; report('upload',e,{file:q.file.name,size:q.file.size,mime:mimeOf(q.file),heic:!!q.heic,...(e.detail||{})}); }
     done++; $('prog').style.width=Math.round(done/Math.max(1,todo.length)*100)+'%'; paintQueue();
   }
   const failed=queue.filter(q=>q.status==='failed').length;
   $('send').disabled=!failed;
   $('send').textContent=failed?`Try the ${failed} that didn't go in`:'All in';
-  if(!failed){ queue=[]; setTimeout(()=>{ if(page!=='upload') return; $('picked').classList.add('hide');
-    $('send').textContent='Add these'; $('prog').style.width='0'; $('file').value=''; },2200); }
+  $('file').value='';
+  if(!failed){ setTimeout(()=>{ if(page!=='upload'||queue.some(q=>q.status==='failed')) return;
+    queue=[]; $('picked').classList.add('hide'); $('send').textContent='Add these'; $('prog').style.width='0'; },2200); }
   await look();
 }
 function finished(sentence){
