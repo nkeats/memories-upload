@@ -150,6 +150,12 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
   color:#20180A;background:var(--brass);border-radius:4px;padding:2px 7px;margin-left:8px;vertical-align:middle}
 .sug.on{background:var(--green);color:#fff}
 .helpline{text-align:right;margin:0 0 -6px}
+.tips{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin:0 0 16px;font-size:15px;line-height:1.5;color:var(--fg2)}
+.tips summary{cursor:pointer;color:var(--fg3);font-size:13px;letter-spacing:.06em;text-transform:uppercase;list-style:none}
+.tips summary::-webkit-details-marker{display:none}
+.tips summary::after{content:' \25be';} .tips[open] summary::after{content:' \25b4'}
+.tips ul{margin:8px 0 2px;padding-left:18px} .tips li{margin:4px 0}
+@media (min-width:900px){ .tips{float:right;width:250px;margin:6px 0 16px 22px;position:sticky;top:12px} .tips summary{pointer-events:none} .tips summary::after{content:''} .beside{max-width:calc(100% - 290px)} }
 .helpline .quiet{padding:6px 0}
 .help textarea{min-height:90px}
 .help .reply{font-size:17px;line-height:1.55;margin:14px 0 6px;color:var(--fg)}
@@ -494,15 +500,29 @@ async function showUpload(){
   if(people.some(x=>!x.sound_ok)){ await sayNames(); return; }   // she added them but never settled how they're said
   showUploadPage();
 }
+/* The instructions, in context: short bullets beside the photographs on
+   every screen (Nigel's suggestion — better than a wall up front nobody
+   remembers). On a phone the panel sits above the photographs and folds to
+   one line that opens. */
+const TIPS={
+  upload:['Sixty to a hundred is the sweet spot — about six seconds each','Faces over scenery','Send the blurry one if it’s the only one of that moment','Not twenty of the same thing'],
+  sort:['Your order, not ours — you were there and we weren’t','Move anything that’s in the wrong place','The names you give each group go in the film'],
+  answer:['Small specific things — they’re what end up in the song','Tell us what happened, not how it felt','Messy is fine. Don’t write it nicely — that’s our job','Skip anything you’d rather not answer'],
+  music:['Have a listen — they’re twenty seconds each','Or just tell us what you love and we’ll work it out']};
+const wide=()=>window.matchMedia('(min-width:900px)').matches;
+function tips(which){
+  const t=TIPS[which]; if(!t) return '';
+  return `<details class="tips" ${wide()?'open':''}><summary>What helps</summary><ul>${t.map(x=>`<li>${x}</li>`).join('')}</ul></details>`;
+}
 /* §1 — before they start. Said once, at the start, as reassurance: the half
    hour is honest (80 photographs take five minutes just to scan), and this is
    the one place "come back whenever you like" belongs. */
 function paintWelcome(){
   const st=$('stage'); st.className=''; $('sheet').classList.add('hide'); $('nav').classList.add('hide');
   st.innerHTML=`<h1>Your film</h1>
-    <p class="do">You’ll choose your photographs, tell us about them, and pick the music.</p>
-    <p class="do">About half an hour, and you can stop and come back whenever you like — this link remembers where you got to.</p>
-    <p class="do"><b>The more you tell us, the more your film sounds like you.</b> That’s the whole of it.</p>
+    <p class="do">You’ll choose your photographs, tell us about them, and pick the music. About half an hour.</p>
+    <p class="do">The more you tell us, the more it sounds like you. That’s the whole of it.</p>
+    <p class="do">You can stop and come back whenever you like — this link remembers where you got to.</p>
     <p style="margin-top:26px"><button class="big" id="welcomeGo">Let’s start →</button></p>`;
 }
 function paintWho(){
@@ -693,10 +713,8 @@ async function showUploadPage(){
   page='upload';
   if(!P.printsSeen&&!(+J.photos||0)){ paintPrints(); return; }
   plain(`<h1>Add your photos</h1>
-    <p class="do">Sixty to a hundred is the sweet spot.</p>
-    <p class="lede">Each photograph gets about six seconds. Fewer than sixty and they have to linger — the film goes slow. More than a hundred and they start to flash past.</p>
-    <p class="do" style="font-size:18px">Faces over scenery. A photograph of the two of you laughing is worth ten of a beach.</p>
-    <p class="lede">Send the blurry one if it’s the only one of that moment — we’d rather have it. Don’t send twenty of the same thing; pick your favourite. We’ll spot the repeats anyway and ask.</p>
+    ${tips('upload')}
+    <p class="do">Choose the photos you’d like in your film, and we’ll bring them in.</p>
     <div class="card"><label for="who">Your name, so we know whose camera each photo came from</label>
       <input type="text" id="who" value="${esc(J.owner_name||'')}" placeholder="Your name" autocomplete="name"></div>
     <div class="drop" id="drop"><b>Choose photos</b>
@@ -707,9 +725,7 @@ async function showUploadPage(){
       <div class="rows" id="rows"></div>
       <div style="margin-top:16px"><button class="big" id="send">Add these</button></div>
     </div>
-    <p class="lede"><b>Video clips:</b> short is better — we’ll use about six seconds of a clip, or longer if someone’s talking.
-      A clip where somebody is talking or laughing is worth more than any photograph: we turn the music down and let them be heard.
-      Send the whole clip — don’t trim it. We’ll find the best part.</p>
+    <p class="lede"><b>Video:</b> a clip where somebody is talking or laughing is worth more than any photograph — we turn the music down and let them be heard. Send the whole clip; we’ll find the best part.</p>
     <p class="lede">Pick them from your camera roll rather than from a message — photos sent through a
       messaging app lose their date, and the date is how we put your film in order.
       Your photos go straight to private storage and nobody else can see them.</p>
@@ -1234,9 +1250,8 @@ function paint(){
   const st=$('stage'); st.className='';
   if(screen==='welcome'){
     st.innerHTML=`<h1>Your order, not ours</h1>
-      <p class="do">We’ve put them in the order they were taken. Move anything that’s in the wrong place.</p>
-      <p class="lede">You were there and we weren’t. If the dates are wrong — a camera with the wrong clock, a scan of an old print — just move them where they belong.</p>
-      <p class="lede">Then give each group a name. Those names go in the film.</p>
+      ${tips('sort')}
+      <p class="do">We’ve put them in the order they were taken. Move anything that’s in the wrong place, then give each group a name.</p>
       <label class="lede" style="display:block">What should we call you?<br><br>
       <input type="text" id="who" value="${esc(name)}" placeholder="Your name" autocomplete="name"></label>
       <br><button class="big" id="start">Start</button>`;
@@ -1299,8 +1314,9 @@ function paintOrg(){
       so some photos are out of order. Shall we put that right?
       <div class="row"><button id="fixclock">Yes, fix it</button><button class="no" id="skipclock">Leave it</button></div></div>`;
   h+=`<div class="step">Group <b>${cur+1}</b> of ${M.length}</div>
+    ${tips('sort')}
     <h2>What do you call this group?</h2>
-    <input type="text" id="nm" value="${esc(m.title)}" placeholder="Anything you like" autocomplete="off">
+    <input type="text" id="nm" class="beside" value="${esc(m.title)}" placeholder="Anything you like" autocomplete="off">
     <p class="do" style="font-size:16.5px;margin:9px 0 22px;color:var(--fg2)">
       ${plural(inn.length,'photo')} · about ${mmss(secs(m))} of film · tap a photo to move it, or leave it out</p>
     <div class="chips"><span class="lab">How did this time feel?</span>
@@ -1440,7 +1456,7 @@ async function finishSort(){
    "3 of 5", and it can grow as follow-ups arrive — never a bar. Every
    question can be skipped. Resume is natural: next_turn is always the first
    one not yet answered. */
-let askedAgain=false, TURN=null, draft='', turnBusy=false, wrongOpen=false, whatDraft='', askIntroSeen=false;
+let askedAgain=false, TURN=null, draft='', turnBusy=false, wrongOpen=false, whatDraft='';
 async function showAnswer(){
   page='answer'; screen='answer';
   plain('<p class="load">Loading your photos…</p>');
@@ -1485,35 +1501,10 @@ async function showAnswer(){
     cur=need; TURN=M[cur].turn; draft='';
     /* §7b once, before the first question of the whole film — this is where
        the song is actually made. Never on a resume part-way through. */
-    if(M.every(m=>!(+m.turn.answered||0))&&!askIntroSeen){ paintAskIntro(); scrollTo(0,0); return; }
     paintTurn(); scrollTo(0,0);
   }catch(e){ report('load for answers',e);
     plain(`<h1>Couldn't load your photos</h1><p class="do">Please try the link again in a moment.</p>
       <button class="big" id="retryRoute">Try again</button>`); }
-}
-function paintAskIntro(){
-  askIntroSeen=true;
-  $('stage').innerHTML=`<h1>Now the part that makes it yours</h1>
-    <p class="do">We’ll ask you a few things about each group of photographs, one at a time.</p>
-    <p class="do">Your words are what the song is written from. Not a summary of them — the actual things you say end up in it, sometimes almost unchanged.</p>
-    <h2 style="margin-top:30px">What makes a good answer</h2>
-    <p class="do">Small, specific things that happened.</p>
-    <p class="lede">This is the difference:</p>
-    <p class="said" style="border-color:var(--l2)"><i>“It was a lovely day, we had a great time.”</i><br><span style="color:var(--fg3)">Nothing we can use. We can’t put that in a song — nobody’s life sounds like that.</span></p>
-    <p class="said"><i>“She put her feet in the pool where the little fish clean your toes. She couldn’t stop laughing because it tickled.”</i><br><span style="color:var(--fg3)">That’s a verse. The fish, the laughing, the tickling — all of it goes in.</span></p>
-    <p class="do" style="margin-top:22px"><b>Don’t try to write it nicely. That’s our job.</b> Tell it like you’d tell a friend in the kitchen. Messy is fine. Typos are fine.</p>
-    <div class="card" style="line-height:1.6">
-      <b>Things you can see or touch.</b> <span style="color:var(--fg2)">The yellow raincoat. The chipped mug. The scooter helmet.</span> Objects stay in a song; adjectives don’t.<br><br>
-      <b>What somebody did.</b> <span style="color:var(--fg2)">She squealed. He rowed with his feet. They handed us a shawl at the door.</span> A person doing something beats a person being something.<br><br>
-      <b>What went wrong.</b> The best lines in most films come from this. <span style="color:var(--fg2)">The foot that swelled up. The prank that backfired. The day nobody got out of bed.</span><br><br>
-      <b>What somebody said.</b> <span style="color:var(--fg2)">Exact words if you remember them.</span> Anything anyone actually said goes in nearly untouched.</div>
-    <p class="lede" style="margin-top:22px">You don’t need to explain how you felt. If you tell us what happened, the feeling comes with it. <i>“It was emotional”</i> tells us nothing. <i>“There were three survivors there that day, and one of them had written a book”</i> tells us everything.</p>
-    <p class="lede">A sentence is fine. A paragraph is fine. There’s no prize for long. One real detail beats five general ones.</p>
-    <p class="lede">Sometimes we’ll ask you one more thing about what you just said. That’s not us checking up on you — it’s the interesting bit. When you said <i>“she wasn’t happy with me after”</i>, we want to know what happened next, because that’s where the song is. Skip it if you’d rather.</p>
-    <p class="lede">We look at your photographs before we ask, and sometimes we misread one. If we ask about something that isn’t there, just say so — and tell us what it actually is. That’s more useful to us than the question was.</p>`;
-  $('stage').className='';
-  nav('<button class="go" id="askIntroGo">First question →</button>','',false,'');
-  $('sheet').classList.add('hide');
 }
 function photosStrip(m){
   let h=`<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(112px,1fr));margin-bottom:18px">`;
@@ -1524,11 +1515,12 @@ function paintTurn(){
   atEnd=false;
   const m=M[cur], t=TURN; if(!m||!t||t.done) return;
   const n=Math.min(+t.answered+1, +t.total)||1, of=+t.total||1;
-  let h=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')} · <b>${n}</b> of ${of}</div>`;
+  let h=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')} · question <b>${n}</b> of ${of}</div>`;
+  h+=tips('answer');
   h+=photosStrip(m);
   if(t.because_of) h+=`<p class="said">You said: <i>\u201c${esc(String(t.because_of).trim())}\u201d</i></p>`;
   h+=`<h2 style="margin-top:${t.because_of?8:14}px">${esc(t.question||'')}</h2>
-      <textarea id="ans" placeholder="Tell us what happened, not how it felt. The feeling comes with it.">${esc(draft)}</textarea>
+      <textarea id="ans" class="beside" placeholder="Tell us what happened, not how it felt. The feeling comes with it.">${esc(draft)}</textarea>
       <div class="count" id="cnt"></div>
       <p class="lede" style="margin-top:6px"><button class="chip" id="askip" type="button" ${turnBusy?'disabled':''}>Skip this one</button>
         <button class="quiet" id="awrong" type="button" ${turnBusy?'disabled':''} aria-expanded="${wrongOpen?'true':'false'}">That’s not what’s in that photo</button></p>
@@ -1538,7 +1530,7 @@ function paintTurn(){
           <button id="awrongcancel">Never mind</button></div></div>`:''}`;
   $('stage').innerHTML=h; $('stage').className='';
   countUp();
-  nav(`<button class="go" id="anext" ${turnBusy?'disabled':''}>${turnBusy?'One moment…':'Next →'}</button>`,
+  nav(`<button class="go" id="anext" ${turnBusy?'disabled':''}>${turnBusy?'One moment…':(n<of?'Next question →':'Last one — next →')}</button>`,
       `${M.filter(x=>x.turn&&x.turn.done).length} of ${M.length} groups done`, cur>0, '');
   $('sheet').classList.add('hide');
   const ta=$('ans'); if(ta&&!turnBusy) ta.focus();
@@ -1582,13 +1574,31 @@ async function answerTurn(skip){
   try{ nt=await rpc('next_turn',{p_token:TOKEN,p_chapter:m.id}); if(!nt||nt.error) throw new Error((nt&&nt.error)||'next_turn failed'); }
   catch(e){ report('next_turn',e,{group:m.title}); fail(); return; }
   if(page!=='answer') return;
-  turnBusy=false; draft=''; wrongOpen=false; whatDraft=''; m.turn=nt; TURN=nt;
+  turnBusy=false; draft=''; wrongOpen=false; whatDraft='';
+  /* ⚠ Same chapter until it says done. If it says done with NO turns at all
+     straight after an answer, the questions were rewritten underneath her;
+     say so rather than jumping on. */
+  if(nt.done&&!(+nt.total)&&(+t.total)>0){ report('turns vanished mid-answer',new Error('total 0'),{group:m.title}); m.turn=nt; TURN=nt;
+    $('stage').innerHTML=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')}</div><h2>One moment</h2>
+      <p class="do">We’re getting more questions ready for this group. Please try the link again in a little while.</p>`;
+    nav('<button class="go" id="retryRoute">Try again</button>','',cur>0,''); return; }
+  m.turn=nt; TURN=nt;
   prog({screen:'answer',part:cur+1,turn:nt.seq||null});
   if(!nt.done){ paintTurn(); scrollTo(0,0); return; }
-  /* this group is done: on to the next with something to ask */
+  /* this group is done: the move between memories looks different from the
+     move between questions — a pause, then the next group by name */
   const next=M.findIndex((x,i)=>i>cur&&!x.turn.done);
-  if(next>=0){ cur=next; TURN=M[cur].turn; paintTurn(); scrollTo(0,0); return; }
+  if(next>=0){ paintGroupDone(next); scrollTo(0,0); return; }
   paintAllDone(); scrollTo(0,0);
+}
+function paintGroupDone(next){
+  const m=M[cur];
+  $('stage').innerHTML=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')}</div>
+    <h1>That’s everything about “${esc(m.title||'this group')}”</h1>
+    <p class="do">Thank you. Next: “${esc(M[next].title||'the next group')}”.</p>${photosStrip(m)}`;
+  $('stage').className='';
+  nav(`<button class="go" id="agroupnext" data-next="${next}">On to “${esc(M[next].title||'the next group')}” →</button>`,`${M.filter(x=>x.turn&&x.turn.done).length} of ${M.length} groups done`,cur>0,'');
+  $('sheet').classList.add('hide');
 }
 /* "That's not what's in that photo." A description is a model's READING of
    a photograph, not the photograph; the question is where a wrong reading
@@ -1696,12 +1706,10 @@ function paintMusic(){
   let h='';
   if(G.finishMode){
     h+=`<div class="step">Nearly done · the music</div><h1>Now, the music</h1>
-      <p class="do">Have a listen to a few — they’re twenty seconds each. Or just tell us what you love: a band, a song, “the stuff we played in the car”. We’ll work out the sound from that.</p>
-      <p class="lede">We can’t use a recording of somebody else’s song in your film — that needs the record label’s permission. But we can write you something in the same spirit, and it’ll be yours.</p>`;
+      ${tips('music')}`;
   }else{
     h+=`<div class="step">Getting your photos ready</div><h1>While we look at your photos, choose the music</h1>
-      <p class="do">Have a listen to a few — they’re twenty seconds each. Or just tell us what you love: a band, a song, “the stuff we played in the car”. We’ll work out the sound from that.</p>
-      <p class="lede">We can’t use a recording of somebody else’s song in your film — that needs the record label’s permission. But we can write you something in the same spirit, and it’ll be yours.</p>
+      ${tips('music')}
       <p class="lede" id="scan">${scanLine()}</p>
       <button class="chip ${scan.stalled?'':'hide'}" id="dretry" type="button">Try the photos again</button>`;
   }
@@ -1967,7 +1975,6 @@ document.addEventListener('click',async e=>{
   /* before they start */
   if(t.id==='welcomeGo'){ P.welcomed=true; P.mode='list'; paintWho(); scrollTo(0,0); return; }
   if(t.id==='printsGo'||t.id==='printsSkip'){ showUploadPage(); scrollTo(0,0); return; }
-  if(t.id==='askIntroGo'){ paintTurn(); scrollTo(0,0); return; }
   /* who */
   if(t.id==='padd'){ addPerson(); return; }
   if(t.id==='pdone'){ sayNames(); return; }
@@ -2059,6 +2066,7 @@ document.addEventListener('click',async e=>{
     if(TURN&&TURN.done){ const next=M.findIndex((x,i)=>i>cur&&!x.turn.done); if(next>=0) gotoGroup(next); else paintAllDone(); scrollTo(0,0); return; }
     answerTurn(false); return; }
   if(t.id==='askip'){ answerTurn(true); return; }
+  if(t.id==='agroupnext'){ cur=+t.dataset.next; TURN=M[cur].turn; draft=''; paintTurn(); scrollTo(0,0); return; }
   if(t.id==='awrong'){ wrongOpen=!wrongOpen; paintTurn(); if(wrongOpen){ const f=$('what'); if(f) f.focus(); } return; }
   if(t.id==='awrongcancel'){ wrongOpen=false; whatDraft=''; paintTurn(); return; }
   if(t.id==='awrongsend'){ flagWrong(); return; }
