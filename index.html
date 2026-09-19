@@ -172,6 +172,12 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 .person.ask{border-color:var(--brass)}
 .person .rel{color:var(--fg2)}
 .person .acts{margin-top:10px}
+.sungrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.sungrow label{font-size:13px;color:var(--fg3);width:100%}
+.sungrow .sungbox{width:auto;flex:1;min-width:140px;max-width:260px;padding:10px 12px;font-size:17px}
+.sungrow .play{margin:0;white-space:nowrap}
+.person .note{font-size:14px;color:var(--fg3);margin:8px 0 0}
+.person .note.bad{color:var(--red)}
 .tick{display:flex;align-items:center;gap:10px;font-size:16px;color:var(--fg2);cursor:pointer}
 .tick input{width:22px;height:22px;accent-color:var(--brass)}
 .load{padding:70px 0;color:var(--fg2);line-height:1.8;text-align:center}
@@ -558,30 +564,95 @@ async function sayNames(){
     report('say-name',new Error(j.error||('HTTP '+status)));
     plain(`<h1>One moment</h1><p class="do">We couldn't work out how to say the names just now. Please try again.</p>
       <button class="big" id="psayagain">Try again</button>`); return; }
-  P.say=j.people.map(x=>({name:x.name,said_as:x.said_as||'',needs:!!x.needs_asking,answer:null,typed:''}));
+  P.say=j.people.map(x=>({name:x.name,said_as:x.said_as||'',needs:!!x.needs_asking,answer:null,typed:'',
+    sung:x.sung||x.name,tried:x.sung||x.name,take:null,making:false,chosen:false,busy:false}));
   P.asking=+j.asking||P.say.filter(x=>x.needs).length;
+  P.newTakes=0;
   P.mode='say'; paintSay(); scrollTo(0,0);
+  P.say.forEach((x,i)=>lookForTake(i,x.sung));   // cached takes are instant; show them without being asked
+}
+/* ── hearing a name ──────────────────────────────────────────────────
+   "If the correct spelling gives the wrong pronunciation, they can play
+   around with spellings until it does sound right." A spelling she can't
+   hear is a spelling she's guessing at. So: we propose a spelling, she plays
+   it; if it's wrong she types another and plays that — iterating until it
+   sounds like her husband, not choosing from a list. A tried spelling is
+   instant (take_for); a new one is made (ask_for_take, about a minute) while
+   she carries on with the other names. Eight new spellings a film; cached
+   ones never count. */
+const NEW_TAKES_CAP=8;
+function takeState(x){ return x.take&&x.take.ready?'ready':x.making?'making':'idle'; }
+async function lookForTake(i,sung){
+  const x=P.say[i]; if(!x||!sung) return;
+  try{ const r=await rpc('take_for',{p_sung:sung}); if(r&&!r.error&&r.ready&&x.tried===sung){ x.take=r; x.making=false; paintSayRow(i); } }
+  catch(e){ report('take_for',e,{sung}); }
+}
+async function tryTake(i){
+  const x=P.say[i]; if(!x||x.busy) return;
+  const sung=(x.sung||'').trim(); if(!sung){ const f=document.querySelector(`input[data-sung="${i}"]`); if(f) f.focus(); return; }
+  x.busy=true; x.tried=sung; x.take=null; x.chosen=false; paintSayRow(i);
+  try{
+    const r=await rpc('take_for',{p_sung:sung});
+    if(r&&!r.error&&r.ready){ x.take=r; x.making=false; x.busy=false; paintSayRow(i); return; }     // cached: instant
+    if(P.newTakes>=NEW_TAKES_CAP){ x.busy=false; x.note='That\u2019s the eight new spellings for this film \u2014 the ones already made still play.'; paintSayRow(i); return; }
+    const q=await rpc('ask_for_take',{p_token:TOKEN,p_sung:sung,p_said_as:x.said_as||sung});
+    if(!q||q.error) throw new Error((q&&q.error)||'ask_for_take failed');
+    P.newTakes++; x.making=true; x.busy=false; x.note=''; paintSayRow(i);
+    pollTake(i,sung);
+  }catch(e){ report('ask_for_take',e,{sung}); x.busy=false; x.making=false; x.note="That didn\u2019t go through \u2014 try again in a moment."; paintSayRow(i); }
+}
+async function pollTake(i,sung){
+  for(let n=0;n<40;n++){                         // up to ~3½ minutes
+    await sleep(n<6?5000:8000);
+    const x=P.say[i]; if(!x||x.tried!==sung||P.mode!=='say') return;
+    try{ const r=await rpc('take_for',{p_sung:sung}); if(r&&r.ready){ x.take=r; x.making=false; paintSayRow(i); return; } }catch(_){}
+  }
+  const x=P.say[i]; if(x&&x.tried===sung){ x.making=false; x.note='It\u2019s taking longer than usual. Press the button again in a minute.'; paintSayRow(i); }
+}
+async function chooseTake(i){
+  const x=P.say[i]; if(!x||!x.take||!x.take.ready||x.busy) return;
+  x.busy=true; paintSayRow(i);
+  try{ const r=await rpc('chose_take',{p_token:TOKEN,p_name:x.name,p_sung:x.tried}); if(!r||r.error) throw new Error((r&&r.error)||'chose_take failed');
+    x.chosen=true; x.answer='yes'; if(x.take.said_as) x.said_as=x.take.said_as; }
+  catch(e){ report('chose_take',e,{name:x.name,sung:x.tried}); x.note="That didn\u2019t go through \u2014 try again."; }
+  x.busy=false; paintSayRow(i); paintSayNav();
+}
+function sayRow(x,i){
+  const open=x.answer==='no', st=takeState(x), t=x.take||{};
+  const btn= st==='ready'?`<button class="play" type="button" data-play="${esc(sampleUrl(t.sample))}" aria-label="Hear ${esc(x.name)} sung">\u25b6 Hear it</button>`
+           : st==='making'?`<button class="play" type="button" disabled>Making it \u2014 about a minute</button>`
+           : `<button class="play" type="button" data-trytake="${i}" ${x.busy?'disabled':''}>${x.busy?'One moment\u2026':'Hear this spelling'}</button>`;
+  return `<b>${esc(x.name)}</b> <span class="rel">\u2014 said <i>${esc(x.said_as||'\u2026')}</i></span>${x.chosen?' <span class="sug on">that\u2019s it</span>':''}
+    <div class="sungrow"><label>Spelt for the singer</label>
+      <input type="text" class="sungbox" data-sung="${i}" value="${esc(x.sung)}" autocomplete="off" spellcheck="false" ${x.busy?'disabled':''}>
+      ${btn}
+      ${st==='ready'&&!x.chosen?`<button class="yes" data-choosetake="${i}" style="padding:9px 14px;font-size:15px">That\u2019s it</button>`:''}</div>
+    ${st==='making'?`<p class="note">We\u2019re making that one \u2014 about a minute. Carry on with the other names; it\u2019ll be ready when you come back to it.</p>`:''}
+    ${st==='ready'&&t.verified===false?`<p class="note bad">We couldn\u2019t hear the name clearly in this one \u2014 try another spelling.</p>`:''}
+    ${st==='ready'&&+t.chosen_by>0?`<p class="note">Most people spell it this way${+t.chosen_by>1?` \u2014 ${t.chosen_by} so far`:''}.</p>`:''}
+    ${x.note?`<p class="note">${esc(x.note)}</p>`:''}
+    ${x.needs&&!x.chosen?`<div class="acts" style="margin-top:10px">
+        <button class="${x.answer==='yes'?'yes':''}" data-sayok="${i}">${x.answer==='yes'?'Yes \u2014 that\u2019s it':'Yes, that\u2019s how it\u2019s said'}</button>
+        <button class="${open?'yes':''}" data-sayno="${i}">No, it\u2019s said\u2026</button></div>`
+      :(!x.chosen?`<button class="chip" data-sayno="${i}" style="margin-top:8px">${open?'Cancel':'Change how it\u2019s said'}</button>`:'')}
+    ${open?`<input type="text" class="saytype" data-saytype="${i}" value="${esc(x.typed)}" placeholder="Write it how it sounds, like LAY-sa or shiv-AWN" autocomplete="off" style="margin-top:10px">`:''}`;
+}
+function paintSayRow(i){ const el=document.querySelector(`[data-say="${i}"]`); if(!el) return; const x=P.say[i]; el.className=`person ${x.needs&&x.answer===null?'ask':''}`; el.innerHTML=sayRow(x,i); paintSayNav(); }
+function paintSayNav(){
+  const ready=P.say.every(x=>!x.needs||x.answer==='yes'||(x.answer==='no'&&x.typed.trim()));
+  const left=NEW_TAKES_CAP-(P.newTakes||0);
+  nav(`<button class="go" id="sayDone" ${ready?'':'disabled'}>That\u2019s right \u2192</button>`, left<NEW_TAKES_CAP?`${left} new spelling${left===1?'':'s'} left to try`:'', true, '');
 }
 function paintSay(){
   const st=$('stage'); st.className=''; $('sheet').classList.add('hide');
-  let h=`<div class="step">First · the people</div><h1>Here's how we'll say these</h1>
-    <p class="do">${P.asking?`Check the ${P.asking===1?'one':P.asking} we're not sure of. The rest you can change if we've got them wrong.`:'Tap any that we\'ve got wrong. Otherwise you\'re done here.'}</p>
+  let h=`<div class="step">First \u00b7 the people</div><h1>Here\u2019s how we\u2019ll say these</h1>
+    <p class="do">${P.asking?`Check the ${P.asking===1?'one':P.asking} we\u2019re not sure of. The rest you can change if we\u2019ve got them wrong.`:'Tap any that we\u2019ve got wrong. Otherwise you\u2019re done here.'}</p>
+    <p class="lede">Press \u25b6 to hear each name sung. If it doesn\u2019t sound right, change the spelling and hear that \u2014 keep going until it sounds like them. A spelling that\u2019s been tried before plays straight away; a new one takes about a minute to make.</p>
     <div class="people">`;
-  P.say.forEach((x,i)=>{
-    const open=x.answer==='no';
-    h+=`<div class="person ${x.needs&&x.answer===null?'ask':''}" data-say="${i}">
-      <b>${esc(x.name)}</b> <span class="rel">— said <i>${esc(x.said_as||'…')}</i></span>
-      ${x.needs?`<div class="acts" style="margin-top:10px">
-          <button class="${x.answer==='yes'?'yes':''}" data-sayok="${i}">${x.answer==='yes'?'Yes — that\'s it':'Yes, that\'s it'}</button>
-          <button class="${open?'yes':''}" data-sayno="${i}">No, it's said…</button></div>`
-        :`<button class="chip" data-sayno="${i}" style="margin-top:8px">${open?'Cancel':'Change it'}</button>`}
-      ${open?`<input type="text" class="saytype" data-saytype="${i}" value="${esc(x.typed)}" placeholder="Write it how it sounds, like LAY-sa or shiv-AWN" autocomplete="off" style="margin-top:10px">`:''}
-    </div>`; });
+  P.say.forEach((x,i)=>{ h+=`<div class="person ${x.needs&&x.answer===null?'ask':''}" data-say="${i}">${sayRow(x,i)}</div>`; });
   h+='</div>';
   st.innerHTML=h;
-  const ready=P.say.every(x=>!x.needs||x.answer==='yes'||(x.answer==='no'&&x.typed.trim()));
-  nav(`<button class="go" id="sayDone" ${ready?'':'disabled'}>That's right →</button>`,'',true,'');
-  const t=document.querySelector('.saytype'); if(t&&document.activeElement!==t&&!t.value) t.focus();
+  paintSayNav();
 }
 /* Her correction is typed the way it sounds. The sung form the generator
    needs is derived from it on the server (sung_from_said), in one place. */
@@ -1903,8 +1974,10 @@ document.addEventListener('click',async e=>{
   if(t.dataset.premove!==undefined){ removePerson(+t.dataset.premove); return; }
   if(t.id==='psayagain'){ sayNames(); return; }
   if(t.id==='pmore'){ P.mode='list'; paintWho(); scrollTo(0,0); return; }
-  if(t.dataset.sayok!==undefined){ const x=P.say[+t.dataset.sayok]; x.answer='yes'; x.typed=''; paintSay(); return; }
-  if(t.dataset.sayno!==undefined){ const x=P.say[+t.dataset.sayno]; x.answer=x.answer==='no'?null:'no'; paintSay(); return; }
+  if(t.dataset.sayok!==undefined){ const i=+t.dataset.sayok, x=P.say[i]; x.answer='yes'; x.typed=''; paintSayRow(i); return; }
+  if(t.dataset.sayno!==undefined){ const i=+t.dataset.sayno, x=P.say[i]; x.answer=x.answer==='no'?null:'no'; paintSayRow(i); if(x.answer==='no'){ const f=document.querySelector(`input[data-saytype="${i}"]`); if(f) f.focus(); } return; }
+  if(t.dataset.trytake!==undefined){ tryTake(+t.dataset.trytake); return; }
+  if(t.dataset.choosetake!==undefined){ chooseTake(+t.dataset.choosetake); return; }
   if(t.id==='sayDone'){ finishSay(); return; }
   /* upload */
   if(t.dataset.anyway!==undefined){ const q=queue[+t.dataset.anyway]; if(q&&q.status==='dup'){ q.status='ready'; q.force=true; paintQueue(); $('send').disabled=false; } return; }
@@ -2006,11 +2079,17 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&(e.target.id==='pname'||e.target.id==='prel')){ e.preventDefault(); addPerson(); }
   if(e.key==='Enter'&&e.target.classList&&e.target.classList.contains('anchor')){ e.preventDefault(); translateGenre(); }
   if(e.key==='Enter'&&e.target.id==='what'){ e.preventDefault(); flagWrong(); }
+  if(e.key==='Enter'&&e.target.dataset&&e.target.dataset.sung!==undefined){ e.preventDefault(); tryTake(+e.target.dataset.sung); }
 });
 document.addEventListener('input',e=>{
   if(e.target.classList&&e.target.classList.contains('anchor')){ G.answers[e.target.dataset.key]=e.target.value; return; }
   if(e.target.dataset&&e.target.dataset.saytype!==undefined){ const x=P.say[+e.target.dataset.saytype]; x.typed=e.target.value;
     const b=$('sayDone'); if(b) b.disabled=!P.say.every(y=>!y.needs||y.answer==='yes'||(y.answer==='no'&&y.typed.trim())); return; }
+  if(e.target.dataset&&e.target.dataset.sung!==undefined){ const i=+e.target.dataset.sung, x=P.say[i]; x.sung=e.target.value;
+    /* a different spelling than the one that's playing: the button becomes "Hear this spelling" */
+    if(x.sung.trim()!==x.tried){ const cached=null; const row=e.target.closest('.person'); const btn=row&&row.querySelector('.play');
+      if(btn){ btn.outerHTML=`<button class="play" type="button" data-trytake="${i}">Hear this spelling</button>`; const c=row.querySelector('[data-choosetake]'); if(c) c.remove(); } }
+    return; }
   if(e.target.id==='nm'){ M[cur].title=e.target.value; queueSave(); if(screen==='organise') orgNav(); }
   if(e.target.id==='ans'){ draft=e.target.value; countUp(); }
   if(e.target.id==='what'){ whatDraft=e.target.value; const b=$('awrongsend'); if(b) b.disabled=!whatDraft.trim(); }
