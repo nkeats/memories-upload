@@ -378,7 +378,7 @@ function paintWho(){
   let h=`<div class="step">First · the people</div><h1>${esc(w.h)}</h1><p class="do">${esc(w.do)}</p>`;
   if(P.people.length){
     h+='<div class="people">';
-    P.people.forEach((x,i)=>{ h+=`<div class="person"><b>${esc(x.name)}</b>${x.relation?` <span class="rel">· ${esc(x.relation)}</span>`:''}${x.is_subject?' <span class="sug">the film is about them</span>':''}
+    P.people.forEach((x,i)=>{ h+=`<div class="person"><b>${esc(x.name)}</b>${x.relation?` <span class="rel">· ${esc(x.relation)}</span>`:''}${x.is_you?' <span class="rel">· that's you</span>':''}${x.is_subject?' <span class="sug">the film is about them</span>':''}
       <button class="close" data-premove="${i}" type="button" style="float:right;padding:0" aria-label="Remove ${esc(x.name)}">remove</button></div>`; });
     h+='</div>';
   }
@@ -388,6 +388,7 @@ function paintWho(){
       <label for="prel" style="margin-top:14px">Who they are to you</label>
       <input type="text" id="prel" placeholder="wife, husband, daughter, best friend…" autocomplete="off">
       <label class="tick" style="margin-top:14px"><input type="checkbox" id="psub" ${P.people.length<2?'checked':''}> This film is about them</label>
+      <label class="tick" style="margin-top:10px"><input type="checkbox" id="pyou" ${P.people.length?'':'checked'}> This is me</label>
       <div style="margin-top:16px"><button class="big" id="padd" ${P.adding?'disabled':''}>${P.adding?'One moment…':'Add them'}</button></div>
     </div>
     <p class="lede">${esc(P.people.length?w.add:'Add one person at a time. You can add more later.')}</p>`;
@@ -397,14 +398,15 @@ function paintWho(){
   if(!P.people.length){ const n=$('pname'); if(n) n.focus(); }
 }
 async function addPerson(){
-  const name=($('pname').value||'').trim(), rel=($('prel').value||'').trim(), sub=$('psub').checked;
+  const name=($('pname').value||'').trim(), rel=($('prel').value||'').trim(), sub=$('psub').checked, you=$('pyou').checked;
   if(!name){ $('pname').focus(); return; }
   P.adding=true; paintWho();
   try{
-    const r=await rpc('set_person',{p_token:TOKEN,p_name:name,p_relation:rel||null,p_is_subject:sub});
+    const r=await rpc('set_person',{p_token:TOKEN,p_name:name,p_relation:rel||null,p_is_subject:sub,p_is_you:you});
     if(!r||r.error) throw new Error((r&&r.error)||'set_person failed');
     const i=P.people.findIndex(x=>x.name.toLowerCase()===name.toLowerCase());
-    const row={name:r.name||name,relation:rel||null,is_subject:sub,said_as:r.said_as||null,sound_ok:false};
+    if(you) P.people.forEach(x=>{ x.is_you=false; });        // only one person is "me"
+    const row={name:r.name||name,relation:rel||null,is_subject:sub,is_you:you,said_as:r.said_as||null,sound_ok:false};
     if(i>=0) P.people[i]=row; else P.people.push(row);
   }catch(e){ report('set_person',e,{name}); P.adding=false; paintWho(); $('pname').value=name; $('prel').value=rel;
     const b=$('padd'); if(b) b.textContent="That didn't go through — try again"; return; }
