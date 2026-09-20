@@ -48,6 +48,7 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 .c .tag{position:absolute;top:6px;right:6px;font-size:10.5px;font-weight:600;padding:3px 8px;
   border-radius:4px;background:var(--green);color:#fff}
 .c.one{max-width:420px;margin-bottom:14px;cursor:pointer}
+.grid.around .c{cursor:pointer} .grid.around .ph{border-radius:4px}
 .c .ph{width:100%;aspect-ratio:4/3;background:var(--p2);display:flex;align-items:center;
   justify-content:center;color:var(--fg3);font-size:12px;text-align:center;padding:6px}
 
@@ -788,7 +789,7 @@ function paintPrints(){
       Fill the frame with the photograph.</div>
     <p class="lede">Two minutes of care here makes more difference than anything we can do afterwards. A crooked phone snap under a lightbulb can’t be fixed by us or by anybody.</p>
     <div class="acts" style="margin-top:22px"><button class="yes" id="printsGo">I’ve got that →</button>
-      <button id="printsSkip">My photos are already on my phone</button></div>`;
+      <button id="printsSkip">My photos are already on my phone or computer</button></div>`;
 }
 async function showUploadPage(){
   page='upload';
@@ -1588,26 +1589,31 @@ async function showAnswer(){
     plain(`<h1>Couldn't load your photos</h1><p class="do">Please try the link again in a moment.</p>
       <button class="big" id="retryRoute">Try again</button>`); }
 }
-/* Which photographs a question shows. A question anchored to one photograph
-   names it (`asset_id`, or `assets`); a question with NONE attached — free
-   recall, "put yourself back there", "what would she say" — says so with
-   `asset_id: null` or a `kind`, and gets no photographs at all, because the
-   photographs are the cues and the point is what she says without them. A
-   turn that says nothing either way (the questions written before this)
-   gets the group as before. */
-const NO_PHOTO_KINDS=/free|recall|context|reinstat|perspective|unphotograph|nobody/i;
+/* Which photographs a question shows, and how. Two different things:
+   HERE IS WHAT WE'RE ASKING ABOUT — a photo turn names its picture
+   (`asset_id`/`assets`) and shows that one large. HERE IS WHAT WE'RE TALKING
+   AROUND — a free-recall, context or perspective turn (`photos_set: true`
+   with `asset_id: null`, or a `kind`) shows the group as a small strip, a
+   memory jogger, not the subject. A turn that says nothing either way (the
+   questions written before this) shows the group as before. ⚠ The group is
+   always visible while its questions are asked; nothing means "show nothing". */
+const AROUND_KINDS=/free|recall|context|reinstat|perspective|unphotograph|nobody/i;
 function turnPhotos(m,t){
-  if(!t) return {photos:m.photos,cued:true};
+  if(!t) return {photos:m.photos,mode:'about'};
   const ids=Array.isArray(t.assets)?t.assets:(t.asset_id||t.asset||t.photo?[t.asset_id||t.asset||t.photo]:null);
-  if(ids&&ids.length){ const ph=m.photos.filter(p=>ids.includes(p.id)); return {photos:ph.length?ph:m.photos,cued:true,single:ph.length===1}; }
-  if(('asset_id' in t&&t.asset_id===null)||('assets' in t&&Array.isArray(t.assets)&&!t.assets.length)||NO_PHOTO_KINDS.test(String(t.kind||t.type||''))) return {photos:[],cued:false};
-  return {photos:m.photos,cued:true};
+  if(ids&&ids.length){ const ph=m.photos.filter(p=>ids.includes(p.id)); if(ph.length) return {photos:ph,mode:'about',single:ph.length===1}; }
+  const around=(t.photos_set&&t.asset_id==null)||('asset_id' in t&&t.asset_id===null)||('assets' in t&&Array.isArray(t.assets)&&!t.assets.length)||AROUND_KINDS.test(String(t.kind||t.type||''));
+  return {photos:m.photos,mode:around?'around':'about'};
 }
 function photosStrip(m,t){
-  const {photos,cued,single}=turnPhotos(m,t);
+  const {photos,mode,single}=turnPhotos(m,t);
   if(!photos.length) return '';
   if(single){ const p=photos[0], i=m.photos.indexOf(p);
     return `<div class="c one" data-zoom="${i}">${tile(p)}</div><p class="lede" style="margin-top:-4px;font-size:14.5px">Tap it to see it properly.</p>`; }
+  if(mode==='around'){
+    let h=`<div class="grid around" style="grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;margin-bottom:10px">`;
+    photos.forEach(p=>{ const i=m.photos.indexOf(p); h+=`<div class="c" data-zoom="${i}">${tile(p)}</div>`; });
+    return h+`</div><p class="lede" style="margin-top:0;font-size:13.5px;color:var(--fg3)">Just to jog your memory — this question isn’t about any one of them.</p>`; }
   let h=`<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(112px,1fr));margin-bottom:18px">`;
   photos.forEach(p=>{ const i=m.photos.indexOf(p); h+=`<div class="c" data-zoom="${i}">${tile(p)}<div class="n">${i+1}</div></div>`; });
   return h+`</div><p class="lede" style="margin-top:-10px;font-size:14.5px">Tap a photo to see it properly.</p>`;
@@ -1626,10 +1632,10 @@ function paintTurn(){
   h+=photosStrip(m,t);
   if(t.because_of) h+=`<p class="said">You said: <i>\u201c${esc(String(t.because_of).trim())}\u201d</i></p>`;
   h+=`<h2 style="margin-top:${t.because_of?8:14}px">${esc(t.question||'')}</h2>
-      <textarea id="ans" class="beside" ${turnPhotos(m,t).cued?'':'style="min-height:240px"'} placeholder="Tell us what happened, not how it felt. The feeling comes with it.">${esc(draft)}</textarea>
+      <textarea id="ans" class="beside" placeholder="Tell us what happened, not how it felt. The feeling comes with it.">${esc(draft)}</textarea>
       <div class="count" id="cnt"></div>
       <p class="lede" style="margin-top:6px"><button class="chip" id="askip" type="button" ${turnBusy?'disabled':''}>Skip this one</button>
-        <button class="quiet" id="awrong" type="button" ${turnBusy?'disabled':''} aria-expanded="${wrongOpen?'true':'false'}">That’s not what’s in that photo</button></p>
+        ${turnPhotos(m,t).mode==='about'?`<button class="quiet" id="awrong" type="button" ${turnBusy?'disabled':''} aria-expanded="${wrongOpen?'true':'false'}">That’s not what’s in that photo</button>`:''}</p>
       ${wrongOpen?`<div class="card" id="wrongcard"><label for="what">What is it?</label>
         <input type="text" id="what" value="${esc(whatDraft)}" placeholder="Tell us what’s really there" autocomplete="off">
         <div class="acts" style="margin-top:12px"><button class="yes" id="awrongsend" ${turnBusy||!whatDraft.trim()?'disabled':''}>That’s what it is</button>
