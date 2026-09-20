@@ -66,12 +66,17 @@ async function rpc(name,args){
 
 let A=[], prog={}, cur=null, turns=[], busy=false, err='', up=null, scan=null;
 const need={progress:false,answer:false};
+/* Two modes. 'photo': one photograph through deep. 'memory': a whole memory
+   (a chapter) through memory-engine — the same six levels across the group. */
+let MODE=location.hash==='#memory'?'memory':'photo';
+let CH=[], mprog={}, mcur=null, mturns=[];
 
 async function load(){
   const {ok,j}=await fn('flow',{action:'load'});
   if(!ok||!j.assets){ $('app').innerHTML=`<p class="err">Could not load the bench collection: ${esc(JSON.stringify(j))}</p>`; return; }
   A=j.assets.filter(a=>!a.excluded&&a.url).sort((x,y)=>String(y.taken_at||'').localeCompare(String(x.taken_at||''))||(x.sort_index??0)-(y.sort_index??0));
-  await readProgress(); paint();
+  CH=(j.chapters||[]).map(c=>({id:c.id,title:c.title||'(untitled)',photos:j.assets.filter(a=>a.chapter_id===c.id&&!a.excluded&&a.url).sort((x,y)=>(x.sort_index??0)-(y.sort_index??0))}));
+  await readProgress(); await readMemoryProgress(); paint();
 }
 async function readProgress(){
   const {ok,j}=await rpc('deep_progress',{});
@@ -84,8 +89,15 @@ function levelsOf(id){
   if(cur===id&&turns.length) return {n:turns.filter(t=>t.answer).length,waiting:!turns[turns.length-1].answer,src:' (this session)'};
   return null;
 }
+/* next_memory_turn per memory is read-only (checked: an unrun memory answers
+   {done:true,total:0} and stays unrun) — so it doubles as progress. */
+async function readMemoryProgress(){
+  mprog={};
+  await Promise.all(CH.map(async c=>{ const {ok,j}=await rpc('next_memory_turn',{p_chapter:c.id}); if(ok&&j&&!j.error) mprog[c.id]=j; }));
+}
 function paint(){
-  let h='';
+  let h=`<div class="bar"><button data-mode="photo" ${MODE==='photo'?'disabled':''}>One photograph</button><button data-mode="memory" ${MODE==='memory'?'disabled':''}>One memory</button></div>`;
+  if(MODE==='memory'){ $('app').innerHTML=h+paintMemory(); return; }
   if(cur) h+=runPanel();
   /* the upload: pick → sign/PUT/confirm → describe until done → the list */
   h+=`<h2>Add photographs</h2><div class="bar"><input type="file" id="file" accept="image/*,.heic,.heif" multiple ${busy?'disabled':''}>`;
@@ -214,8 +226,91 @@ async function describeAll(){
     await sleep(+j.this_call>0?400:3000);
   }
 }
+/* ── ONE MEMORY: memory-engine {token, chapter_id[, turn_id, answer]} →
+   {ok, level, of, stage, turn_id, question, asset_id, photos_set, because_of, looked_up}
+   asset_id: null with photos_set: true → NO photographs (free recall, senses, the landing);
+   asset_id set → that one photograph. looked_up is what the engine researched
+   before asking — shown apart from the question so a leak is visible. */
+function mstate(c){ const p=mprog[c.id]; if(!p) return null; if(p.done&&!+p.total) return null; return p; }
+function paintMemory(){
+  let h=`<h2>Memories</h2>`;
+  if(mcur) h=mrunPanel()+h;
+  if(!CH.length) h+=`<p class="muted">This collection has no memories yet. A memory is a group of photographs.</p>
+    <div class="bar"><button id="mkone" ${busy||!A.length?'disabled':''}>Put all ${A.length} photographs into one memory</button></div>`;
+  h+='<table>';
+  CH.forEach(c=>{ const p=mstate(c);
+    h+=`<tr class="${mcur===c.id?'now':''}"><td><div style="display:flex;gap:2px;flex-wrap:wrap;width:110px">${c.photos.slice(0,6).map(a=>`<img src="${esc(a.thumb_url||a.url)}" style="width:34px;height:26px" alt="">`).join('')}</div></td>
+      <td><b>${esc(c.title)}</b><br><span class="muted">${c.photos.length} photographs \u00b7 ${p?`${+p.answered||0} of 6 answered${!p.done?', one open':''}`:'not run'}</span></td>
+      <td class="acts"><button class="run" data-mrun="${c.id}" ${busy||!c.photos.length||(p&&p.done)?'disabled':''}>${mcur===c.id?'Showing':(p?(p.done?'Finished':'Carry on'):'Run')}</button>
+        ${p?`<button data-mrestart="${c.id}" ${busy?'disabled':''}>Start again</button>`:''}</td></tr>`; });
+  return h+'</table>';
+}
+function mrunPanel(){
+  const c=CH.find(x=>x.id===mcur); if(!c) return '';
+  const open=mturns.length&&!mturns[mturns.length-1].answer?mturns[mturns.length-1]:null;
+  let h=`<div class="turn now"><div class="bar"><b style="font-size:18px">${esc(c.title)}</b><span class="muted">${c.photos.length} photographs</span><span style="flex:1"></span>
+      <button data-mrestart="${c.id}" ${busy?'disabled':''}>Start this memory again</button><button data-mclose="1" ${busy?'disabled':''}>Close</button></div>`;
+  if(mturns.length&&mturns[0].partial) h+=`<p class="muted">Earlier turns of this memory were answered before this page was opened; only the open one is shown.</p>`;
+  mturns.forEach(t=>{
+    const ph=t.asset_id?c.photos.find(a=>a.id===t.asset_id):null;
+    h+=`<div class="turn${t.answer?' done':''}"><div class="lvl">${t.level??'?'} of ${t.of||6} \u00b7 ${esc(t.stage||'')} \u00b7 ${t.asset_id?(ph?'<b>one photograph</b>':`<b class="err">asset ${esc(t.asset_id)} is not in this memory</b>`):(t.photos_set?'<b>no photographs</b>':'<span class="muted">photos_set not sent</span>')}</div>
+      ${ph?`<img src="${esc(ph.url)}" style="max-width:100%;max-height:40vh;display:block;margin:4px 0 8px" alt="">`:''}
+      ${t.because_of?`<div class="because">because you said: \u201c${esc(t.because_of)}\u201d</div>`:''}
+      <div class="q">${esc(t.question)}</div>
+      ${t.looked_up?`<div style="border-left:3px solid #c93;padding:4px 8px;margin:6px 0;font-size:14px"><b>looked up:</b> ${esc(t.looked_up)}</div>`:''}
+      ${t.answer&&t.answer.trim()?`<div class="a">${esc(t.answer)}</div>`:''}</div>`; });
+  if(open) h+=`<textarea id="mans" placeholder="Answer as the customer would"></textarea>
+      <div class="bar"><button id="msend" class="run" ${busy?'disabled':''}>${busy?'One moment\u2026':'Send answer \u2192 next question'}</button></div>`;
+  if(err) h+=`<p class="err">${esc(err)}</p>`;
+  return h+'</div>';
+}
+function mtake(j){
+  if(j.done||j.finished||(j.level&&j.of&&!j.question)){ mturns.push({level:j.level,of:j.of,stage:'done',question:'(the engine says this memory is finished)',answer:' ',turn_id:null,photos_set:true}); return; }
+  if(j.turn_id&&!mturns.some(t=>t.turn_id===j.turn_id)) mturns.push({turn_id:j.turn_id,level:j.level,of:j.of,stage:j.stage,question:j.question,asset_id:j.asset_id??null,photos_set:!!j.photos_set,because_of:j.because_of,looked_up:j.looked_up,answer:''});
+}
+async function mrun(id){
+  if(mcur!==id){ mcur=id; mturns=[]; err=''; }
+  busy=true; paint();
+  /* an open question already on the server shows as it is; otherwise the engine starts or continues */
+  const st=await rpc('next_memory_turn',{p_chapter:id});
+  if(st.ok&&st.j&&!st.j.error&&!st.j.done&&st.j.turn_id&&!mturns.some(t=>t.turn_id===st.j.turn_id)){
+    mturns=[{...st.j,of:st.j.of||6,partial:+st.j.answered>0,answer:''}]; busy=false; paint(); return; }
+  if(st.ok&&st.j&&st.j.done&&+st.j.total>0){ mturns=[{level:6,of:6,stage:'done',question:'(the engine says this memory is finished)',answer:' ',photos_set:true,partial:true}]; busy=false; paint(); return; }
+  const {ok,j}=await fn('memory-engine',{chapter_id:id}); busy=false;
+  if(!ok||!j||j.error){ err=`memory-engine: ${JSON.stringify(j)}`; paint(); return; }
+  if(j.waiting){ err='memory-engine says waiting, but next_memory_turn shows no open question.'; paint(); return; }
+  mtake(j); paint(); const ta=$('mans'); if(ta) ta.focus();
+}
+async function msend(){
+  const t=mturns[mturns.length-1]; const a=($('mans')?.value||'').trim(); if(!t||!a) return;
+  busy=true; err=''; paint();
+  const {ok,j}=await fn('memory-engine',{chapter_id:mcur,turn_id:t.turn_id,answer:a}); busy=false;
+  if(!ok||!j||j.error){ err=`memory-engine: ${JSON.stringify(j)}`; paint(); const ta=$('mans'); if(ta) ta.value=a; return; }
+  if(j.waiting){ err='memory-engine replied \u201cwaiting\u201d instead of taking the answer.'; paint(); const ta=$('mans'); if(ta) ta.value=a; return; }
+  t.answer=a; mtake(j); await readMemoryProgress(); paint(); const ta=$('mans'); if(ta) ta.focus();
+}
+async function mrestart(id){
+  busy=true; err=''; paint();
+  const {ok,status,j}=await rpc('memory_restart',{p_chapter:id}); busy=false;
+  if(!ok||(j&&j.error)){ err=`Start again needs memory_restart {p_token, p_chapter} on the server \u2014 delete from memory_turns where chapter_id = p_chapter (HTTP ${status}${j&&(j.message||j.error)?': '+(j.message||j.error):''}). Nothing was cleared.`; if(mcur!==id){ mcur=id; mturns=[]; } paint(); return; }
+  mcur=id; mturns=[]; await readMemoryProgress(); await mrun(id);
+}
+/* the bench collection has no sorting step: one memory of everything, for the engine to work across */
+async function makeOne(){
+  busy=true; paint();
+  const {ok,j}=await fn('flow',{action:'save_groups',groups:[{title:'Bench memory',register:'warm',story:'',assets:A.map(a=>a.id),hero:null}],excluded:[]});
+  busy=false;
+  if(!ok||!j.ids){ err=`save_groups: ${JSON.stringify(j)}`; paint(); return; }
+  await load();
+}
 document.addEventListener('click',async e=>{
   const t=e.target.closest('button'); if(!t||busy) return;
+  if(t.dataset.mode){ MODE=t.dataset.mode; location.hash=MODE==='memory'?'#memory':''; err=''; paint(); return; }
+  if(t.dataset.mrun){ await mrun(t.dataset.mrun); scrollTo(0,0); return; }
+  if(t.dataset.mrestart){ await mrestart(t.dataset.mrestart); scrollTo(0,0); return; }
+  if(t.dataset.mclose){ mcur=null; mturns=[]; err=''; paint(); return; }
+  if(t.id==='msend'){ await msend(); return; }
+  if(t.id==='mkone'){ await makeOne(); return; }
   if(t.dataset.run){ if(cur!==t.dataset.run){ cur=t.dataset.run; turns=[]; err=''; } await askNext(); scrollTo(0,0); return; }
   if(t.dataset.restart){ await restart(t.dataset.restart); scrollTo(0,0); return; }
   if(t.dataset.close){ cur=null; turns=[]; err=''; paint(); return; }
