@@ -17,6 +17,7 @@ button{font:inherit;padding:7px 12px;cursor:pointer} button:disabled{opacity:.5;
 .run{font-weight:600}
 table{border-collapse:collapse;width:100%} td{padding:6px 4px;vertical-align:middle;border-top:1px solid #8884}
 td img{width:72px;height:54px;object-fit:cover;display:block;border-radius:3px}
+td.acts{white-space:nowrap} td.acts button{display:block;margin:3px 0;width:100%}
 .turn{border:1px solid #8886;border-radius:6px;padding:10px 12px;margin:10px 0}
 .turn .lvl{font-size:13px;opacity:.7;margin-bottom:4px}
 .turn .q{font-size:18px;margin:2px 0 8px}
@@ -56,12 +57,12 @@ async function rpc(name,args){
 /* ── the contract ────────────────────────────────────────────────────────
    upload {action:'sign', filename, mime, size, uploaded_by} → {signed_url, asset_id}; PUT; upload {action:'confirm', asset_id}   (the journey's calls)
    describe {}                                     → {described, total, remaining, done, this_call, stalled}                      (until done)
-   deep {token, asset_id}                          → {ok, level, stage, turn_id, because_of, question, saw_the_photograph}
-                                                     or {ok, waiting:true, detail} while the last one is unanswered            (LIVE)
-   deep {token, asset_id, turn_id, answer}         → records the answer, returns the next question   (⚠ the live function doesn't take it yet)
-   deep_progress {p_token}                         → [{asset_id, turns, answered, last_level}]        (⚠ not built yet)
-   deep_restart  {p_token, p_asset}                → delete from deep_turns where asset_id = p_asset  (⚠ not built yet)
-   A missing piece is named on screen, so it never looks like the engine's fault. */
+   deep {token, asset_id}                          → {ok, level, stage, of, turn_id, because_of, question, so_far[{level,stage,question,answer}],
+                                                      saw_the_photograph, why_no_image}   or {ok, waiting:true, detail} while the last one is unanswered
+   deep {token, asset_id, turn_id, answer}         → records the answer, returns the next question in the same shape
+   deep_progress {p_token}                         → [{asset_id, filename, description, path, waiting, levels_done}]
+   deep_restart  {p_token, p_asset}                → {ok, cleared}   (delete from deep_turns where asset_id = p_asset)
+   All live and checked 20 Sep. ⚠ `waiting` doesn't carry the open turn, so after a reload an open question can only be restarted. */
 
 let A=[], prog={}, cur=null, turns=[], busy=false, err='', up=null, scan=null;
 const need={progress:false,answer:false};
@@ -78,8 +79,9 @@ async function readProgress(){
   if(ok) (Array.isArray(j)?j:(j&&j.rows)||[]).forEach(r=>{ prog[r.asset_id]=r; });
 }
 function levelsOf(id){
-  const p=prog[id]; if(p) return {n:+(p.last_level??p.answered??p.turns)||0,src:''};
-  if(cur===id&&turns.length) return {n:Math.max(...turns.map(t=>+t.level||0)),src:' (this session)'};
+  const p=prog[id];
+  if(p) return (+p.levels_done||p.waiting)?{n:+p.levels_done||0,waiting:!!p.waiting,src:''}:null;
+  if(cur===id&&turns.length) return {n:turns.filter(t=>t.answer).length,waiting:!turns[turns.length-1].answer,src:' (this session)'};
   return null;
 }
 function paint(){
@@ -92,12 +94,12 @@ function paint(){
   h+='</div>';
   h+=`<h2>Photographs</h2>`;
   if(!A.length) h+='<p class="muted">None yet. Add some above.</p>';
-  if(A.length&&need.progress) h+=`<p class="muted">How far each has been through isn’t known — <code>deep_progress {p_token}</code> isn’t on the server yet; only this session’s runs are shown.</p>`;
+  if(A.length&&need.progress) h+=`<p class="err">deep_progress failed — how far each has been through isn’t known; only this session’s runs are shown.</p>`;
   h+='<table>';
   A.forEach(a=>{ const l=levelsOf(a.id);
     h+=`<tr class="${cur===a.id?'now':''}"><td><img src="${esc(a.thumb_url||a.url)}" alt=""></td>
-      <td>${a.description?esc(a.description.slice(0,80))+(a.description.length>80?'…':''):'<span class="muted">not described yet</span>'}<br><span class="muted">${l?`through level ${l.n}${l.src}`:'not run'}</span></td>
-      <td style="white-space:nowrap"><button class="run" data-run="${a.id}" ${busy||!a.description?'disabled':''}>${cur===a.id?'Showing':(l?'Carry on':'Run')}</button>
+      <td>${a.description?esc(a.description.slice(0,80))+(a.description.length>80?'…':''):'<span class="muted">not described yet</span>'}<br><span class="muted">${l?`${l.n} of 6 answered${l.waiting?', one open':''}${l.src}`:'not run'}${a.thumb_path||a.thumb_url?'':' · <b class="err">no thumbnail</b>'}</span></td>
+      <td class="acts"><button class="run" data-run="${a.id}" ${busy||!a.description||(l&&l.n>=6&&!l.waiting)?'disabled':''}>${cur===a.id?'Showing':(l?(l.n>=6&&!l.waiting?'Finished':'Carry on'):'Run')}</button>
         ${l?`<button data-restart="${a.id}" ${busy?'disabled':''}>Start again</button>`:''}</td></tr>`; });
   h+='</table>';
   $('app').innerHTML=h;
@@ -108,26 +110,30 @@ function runPanel(){
   const open=turns.length&&!turns[turns.length-1].answer?turns[turns.length-1]:null;
   let h=`<div class="turn now"><img id="big" src="${esc(a.url)}" alt="">
       <div class="bar"><button data-restart="${a.id}" ${busy?'disabled':''}>Start this one again</button><button data-close="1" ${busy?'disabled':''}>Close</button></div>`;
-  turns.forEach(t=>{ h+=`<div class="turn${t.answer?' done':''}"><div class="lvl">level ${t.level??'?'} · ${esc(t.stage||'')}${t.saw_the_photograph?' · saw the photograph':''}</div>
+  turns.forEach(t=>{ h+=`<div class="turn${t.answer?' done':''}"><div class="lvl">${t.level??'?'} of ${t.of||6} · ${esc(t.stage||'')} · ${t.saw_the_photograph===true?'<b>saw the photograph</b>':t.saw_the_photograph===false?`<b class="err">DID NOT SEE THE PHOTOGRAPH — working from the description${t.why_no_image?' ('+esc(t.why_no_image)+')':''}</b>`:'<span class="muted">(earlier turn)</span>'}</div>
       ${t.because_of?`<div class="because">because you said: “${esc(t.because_of)}”</div>`:''}
       <div class="q">${esc(t.question)}</div>${t.answer?`<div class="a">${esc(t.answer)}</div>`:''}</div>`; });
   if(open) h+=`<textarea id="ans" placeholder="Answer as the customer would"></textarea>
       <div class="bar"><button id="send" class="run" ${busy?'disabled':''}>${busy?'One moment…':'Send answer → next question'}</button>
-      ${need.answer?`<span class="err">The live <code>deep</code> function doesn’t take an answer yet (it replied “waiting”). The page sends <code>{token, asset_id, turn_id, answer}</code>.</span>`:''}</div>`;
+      ${need.answer?`<span class="err">deep replied “waiting” instead of taking the answer (<code>{token, asset_id, turn_id, answer}</code>).</span>`:''}</div>`;
   else if(turns.length&&turns[turns.length-1].turn_id) h+=`<div class="bar"><button id="next" class="run" ${busy?'disabled':''}>Next question</button></div>`;
   if(err) h+=`<p class="err">${esc(err)}</p>`;
   return h+'</div>';
 }
 /* ── the engine ── */
 function takeTurn(j){
-  if(j.done||j.finished){ turns.push({level:j.level,stage:'done',question:'(the engine says this photograph is finished)',answer:' ',turn_id:null}); return; }
-  if(j.turn_id&&!turns.some(t=>t.turn_id===j.turn_id)) turns.push({turn_id:j.turn_id,level:j.level,stage:j.stage,because_of:j.because_of,question:j.question,saw_the_photograph:j.saw_the_photograph,answer:''});
+  if(Array.isArray(j.so_far)){                      // the server's transcript wins over the page's
+    const seen=turns.filter(t=>t.answer);
+    turns=j.so_far.map((x,i)=>({...(seen[i]||{}),level:x.level,stage:x.stage,question:x.question,answer:x.answer||' ',of:j.of,turn_id:seen[i]?.turn_id||null,because_of:seen[i]?.because_of||x.because_of||null,saw_the_photograph:seen[i]?.saw_the_photograph}));
+  }
+  if(j.done||j.finished){ turns.push({level:j.level,of:j.of,stage:'done',question:'(the engine says this photograph is finished)',answer:' ',turn_id:null}); return; }
+  if(j.turn_id&&!turns.some(t=>t.turn_id===j.turn_id)) turns.push({turn_id:j.turn_id,level:j.level,of:j.of,stage:j.stage,because_of:j.because_of,question:j.question,saw_the_photograph:j.saw_the_photograph,why_no_image:j.why_no_image,answer:''});
 }
 async function askNext(){
   busy=true; err=''; paint();
   const {ok,j}=await fn('deep',{asset_id:cur}); busy=false;
   if(!ok||!j||j.error){ err=`deep: ${JSON.stringify(j)}`; paint(); return; }
-  if(j.waiting){ err=`deep says: ${j.detail||'waiting'} — there is an open question on the server for this photograph, but deep doesn’t return it, so it can’t be shown or answered here. Start this one again, or have deep return the open turn with “waiting”.`; paint(); return; }
+  if(j.waiting){ err=`This photograph has an open question on the server that deep doesn’t return with “waiting”, so it can’t be shown here — Start this one again.`; paint(); return; }
   takeTurn(j); paint(); const ta=$('ans'); if(ta) ta.focus();
 }
 async function sendAnswer(){
@@ -136,12 +142,12 @@ async function sendAnswer(){
   const {ok,j}=await fn('deep',{asset_id:cur,turn_id:t.turn_id,answer:a}); busy=false;
   if(!ok||!j||j.error){ err=`deep: ${JSON.stringify(j)}`; paint(); const ta=$('ans'); if(ta) ta.value=a; return; }
   if(j.waiting){ need.answer=true; paint(); const ta=$('ans'); if(ta) ta.value=a; return; }   // the answer was not taken
-  need.answer=false; t.answer=a; takeTurn(j); paint(); const ta=$('ans'); if(ta) ta.focus();
+  need.answer=false; t.answer=a; takeTurn(j); await readProgress(); paint(); const ta=$('ans'); if(ta) ta.focus();
 }
 async function restart(id){
   busy=true; err=''; paint();
   const {ok,status,j}=await rpc('deep_restart',{p_asset:id}); busy=false;
-  if(!ok||(j&&j.error)){ err=`Start again needs deep_restart {p_token, p_asset} on the server — it isn’t there yet (HTTP ${status}${j&&(j.message||j.error)?': '+(j.message||j.error):''}). Nothing was cleared.`; if(cur!==id){ cur=id; turns=[]; } paint(); return; }
+  if(!ok||(j&&j.error)){ err=`deep_restart failed (HTTP ${status}${j&&(j.message||j.error)?': '+(j.message||j.error):''}). Nothing was cleared.`; if(cur!==id){ cur=id; turns=[]; } paint(); return; }
   delete prog[id]; cur=id; turns=[]; await readProgress(); await askNext();
 }
 /* ── the upload: the journey's calls, nothing else ── */
@@ -153,6 +159,26 @@ async function toJpeg(f){
   if(!heicLib) heicLib=await import('https://cdn.jsdelivr.net/npm/heic-to@1.5.2/dist/heic-to.js');
   const blob=await heicLib.heicTo({blob:f,type:'image/jpeg',quality:0.9});
   return new File([blob],f.name.replace(/\.(heic|heif)$/i,'')+'.jpg',{type:'image/jpeg',lastModified:f.lastModified});
+}
+/* The thumbnail, exactly as the journey does it: a 1280-px JPEG drawn from
+   the decode, sign-thumb, PUT, then confirm. deep then reads ~30 KB instead
+   of a 6.7 MB original, and every photograph gets SEEN rather than read
+   from its description. */
+async function thumbOf(file){
+  let bmp=null;
+  try{ bmp=await createImageBitmap(file,{resizeWidth:1280,resizeQuality:'high',imageOrientation:'from-image'}); }
+  catch(_){ return null; }
+  try{ const c=document.createElement('canvas'); c.width=bmp.width; c.height=bmp.height; c.getContext('2d').drawImage(bmp,0,0);
+    return await new Promise(r=>c.toBlob(r,'image/jpeg',0.85)); }
+  catch(_){ return null; }
+  finally{ if(bmp&&bmp.close) bmp.close(); }
+}
+async function sendThumb(asset_id,thumb){
+  const {ok,status,j}=await fn('sign-thumb',{asset_id});
+  if(!ok||!j.signed_url) throw new Error('sign-thumb: '+(j.error||('HTTP '+status)));
+  const put=await fetch(j.signed_url,{method:'PUT',headers:{'Content-Type':'image/jpeg'},body:thumb});
+  if(!put.ok) throw new Error('thumb PUT '+put.status);
+  return j.path||null;
 }
 async function upload(files){
   if(!files.length) return;
@@ -166,7 +192,9 @@ async function upload(files){
       if(!s.ok||!s.j.signed_url) throw new Error(s.j.error||('sign HTTP '+s.status));
       const put=await fetch(s.j.signed_url,{method:'PUT',headers:{'Content-Type':mimeOf(f)},body:f});
       if(!put.ok) throw new Error('PUT '+put.status+' '+(await put.text()).slice(0,120));
-      const c=await fn('upload',{action:'confirm',asset_id:s.j.asset_id});
+      const thumb=await thumbOf(f); let thumb_path=null;
+      if(thumb) thumb_path=await sendThumb(s.j.asset_id,thumb); else failed.push(`${f.name}: in, but no thumbnail could be drawn — deep will work from the description`);
+      const c=await fn('upload',{action:'confirm',asset_id:s.j.asset_id,thumb_path});
       if(!c.ok) throw new Error(c.j.error||'confirm failed');
     }catch(e){ failed.push(`${f.name}: ${e.message}`); }
   }
