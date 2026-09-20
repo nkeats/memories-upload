@@ -167,6 +167,7 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 .quiet:hover{color:var(--fg2)}
 .said{font-size:16.5px;line-height:1.5;color:var(--fg2);margin:8px 0 0;padding-left:14px;border-left:3px solid var(--brass)}
 .said i{color:var(--fg)}
+.lookedup{font-size:13px;line-height:1.45;color:var(--fg3);margin:-4px 0 10px;padding-left:10px;border-left:2px solid var(--line)}
 .ph.clip{flex-direction:column;gap:6px;padding:10px;font-size:12.5px;color:var(--fg2);line-height:1.35}
 .ph.clip b{color:var(--fg);font-size:13px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ph.clip small{color:var(--fg3);font-size:11px}
@@ -261,7 +262,8 @@ function report(what,e,detail){
 }
 window.addEventListener('error', ev => report('uncaught', ev.error||ev.message));
 window.addEventListener('unhandledrejection', ev => report('unhandled promise', ev.reason));
-const prog=o=>api('save_progress',{progress:o}).catch(e=>report('save progress',e));
+let PROG={};
+const prog=o=>{ PROG={...PROG,...o}; return api('save_progress',{progress:PROG}).catch(e=>report('save progress',e)); };
 
 let J={};            // what journey told us: name, stage, photos, described, owner_name …
 let page='';         // which page is showing
@@ -1512,45 +1514,81 @@ async function finishSort(){
    question can be skipped. Resume is natural: next_turn is always the first
    one not yet answered. */
 let TURN=null, draft='', turnBusy=false, wrongOpen=false, whatDraft='';
-/* ═══ the memory engine ═══
-   Six levels per memory, each written AFTER the last answer:
-     POST memory-engine {token, chapter_id}                    → the next question, or {done:true, so_far}
-     POST memory-engine {token, chapter_id, turn_id, answer}   → records the answer, returns the next
-     rpc next_memory_turn {p_token, p_chapter}                 → the open turn, or {done:true, total, answered} (reads only — never writes)
-     rpc answer_memory_turn {p_token, p_turn, p_skip:true}     → a skip
-   The row the page paints has one shape whichever call it came from:
-   {done, turn_id, level, of, stage, question, asset_id, photos_set, because_of, looked_up, total, answered}.
-   ⚠ next_memory_turn says `done` whenever there is no OPEN turn — after a
-   skip, or before the engine has written the next — so "done" from it is not
-   "finished". A memory is finished when the ENGINE says done, or six are in. */
-const finishedTurn=t=>!!(t&&t.done&&(t.finished||+t.total>=6));
+/* ═══ the interview ═══
+   No fixed number of questions. After every answer it classifies what it
+   has and stops when the memory has EITHER a complete story OR a strong
+   image with a feeling attached — two questions for some memories, five for
+   others; six is a hard ceiling.
+     POST brief {token, chapter_id}      → {brief:{place, kind, register, likely, promising[], opener, looked_up}}
+                                           once, when a memory is first opened: where it is, the mood, the promising photographs, an opener
+     POST interview {token, chapter_id}  → the next question {turn_id, question, asset_id, photos_set, because_of, looked_up, asked, stage}
+     POST interview {…, turn_id, answer} → records the answer and returns the next, or {done:true, enough, have, asked, capped?, why}
+     rpc next_memory_turn {p_token, p_chapter}             → the open turn, or {done:true, total, answered} (reads only)
+     rpc answer_memory_turn {p_token, p_turn, p_skip:true} → a skip
+   ⚠ "Finished" is known only from the interview's own reply: next_memory_turn
+   can't tell a finished memory from one with nothing open yet, and asking the
+   interview again is a model call (3–7 s, measured). So the verdict is kept in
+   the collection's progress on the server — PROG.memories[chapter] =
+   {done:'enough'|'closed'|'capped', have} — and counts only while the memory
+   still has turns (memory_restart empties them, and the verdict lapses).
+   ⚠ capped:true means it hit six without getting there — reported, never
+   shown to her. */
+const memVerdict=m=>((PROG.memories||{})[m.id])||null;
+const finishedMem=m=>!!(m&&m.turn&&m.turn.done&&(m.turn.finished||(memVerdict(m)&&+m.turn.total>0)));
 function fromEngine(j){
-  if(j.done){ const n=Array.isArray(j.so_far)?j.so_far.length:6; return {done:true,finished:true,total:n,answered:n}; }
-  const lv=+j.level||1;
-  return {done:false,turn_id:j.turn_id,seq:lv,level:lv,of:+j.of||6,stage:j.stage||'',question:j.question||'',asset_id:j.asset_id??null,
-    photos_set:!!j.photos_set,because_of:j.because_of||null,looked_up:j.looked_up||null,total:lv,answered:lv-1};
+  if(j.done){ const n=+j.asked||0; return {done:true,finished:true,total:n,answered:n,enough:!!j.enough,have:j.have||null,capped:!!j.capped,why:j.why||null}; }
+  const n=+j.asked||1;
+  return {done:false,turn_id:j.turn_id,seq:n,level:n,stage:j.stage||j.gap||'',question:j.question||'',asset_id:j.asset_id??null,
+    photos_set:!!j.photos_set,because_of:j.because_of||null,looked_up:j.looked_up||null,total:n,answered:n-1};
 }
 async function readTurn(m){                                  // where a memory is up to; generates nothing
   try{ const t=await rpc('next_memory_turn',{p_token:TOKEN,p_chapter:m.id});
-    if(t&&!t.error) return t.done?t:{...t,of:+t.of||6,level:+t.level||+t.seq||1,asset_id:t.asset_id??null,photos_set:!!t.photos_set};
+    if(t&&!t.error) return t.done?t:{...t,level:+t.level||+t.seq||1,asset_id:t.asset_id??null,photos_set:!!t.photos_set};
     report('next_memory_turn',new Error((t&&t.error)||'bad reply'),{group:m.title}); }
   catch(e){ report('next_memory_turn',e,{group:m.title}); }
   return {done:true,total:0,answered:0};
 }
 async function askEngine(m,turn_id,answer){                 // the next question, or done — a model call, a few seconds
   const body={chapter_id:m.id}; if(turn_id){ body.turn_id=turn_id; body.answer=answer; }
-  const {ok,status,j}=await post('memory-engine',body);
-  if(!ok||!j||j.error) throw new Error((j&&j.error)||('memory-engine HTTP '+status));
-  if(j.waiting){ const t=await readTurn(m); if(!t.done) return t; throw new Error('memory-engine: waiting, but no open turn'); }
-  return fromEngine(j);
+  const {ok,status,j}=await post('interview',body);
+  if(!ok||!j||j.error) throw new Error((j&&j.error)||('interview HTTP '+status));
+  if(j.waiting){ const t=await readTurn(m); if(!t.done) return t; throw new Error('interview: waiting, but no open turn'); }
+  const t=fromEngine(j);
+  if(t.done){
+    const mem={...(PROG.memories||{})}; mem[m.id]={done:t.capped?'capped':'enough',have:t.have,asked:t.total}; prog({memories:mem});
+    if(t.capped) report('interview capped',new Error('capped at six'),{group:m.title,have:t.have,why:t.why});
+  }
+  return t;
 }
 /* the turn to put in front of her for a memory: the open one if there is
-   one; otherwise the engine writes the next, or says the memory is done */
+   one; otherwise the interview writes the next, or says the memory is done.
+   ⚠ A memory opened for the first time (no turns at all) is briefed first —
+   the brief works out where it is and writes the opener the interview uses. */
 async function openTurn(m){
   const t=await readTurn(m);
   if(!t.done) return t;
-  if(finishedTurn(t)) return {...t,finished:true};
+  if(finishedMem({...m,turn:t})) return {...t,finished:true};
+  if(!(+t.total)){ try{ const {ok,status,j}=await post('brief',{chapter_id:m.id}); if(!ok||!j||j.error) throw new Error((j&&j.error)||('brief HTTP '+status)); m.brief=j.brief||null; }
+    catch(e){ report('brief',e,{group:m.title}); } }          // the interview still opens without it
   return askEngine(m);
+}
+/* "That's enough about this one." A customer can always close a memory
+   early: the open question is skipped so nothing dangles, the verdict is
+   recorded as hers, and the interview is told (close_memory) when the
+   server has that; the page moves on either way. */
+async function closeMemory(){
+  const m=M[cur], t=TURN; if(!m||turnBusy) return;
+  turnBusy=true; paintTurn();
+  try{ if(t&&!t.done&&t.turn_id){ const r=await rpc('answer_memory_turn',{p_token:TOKEN,p_turn:t.turn_id,p_skip:true}); if(!r||r.error) throw new Error((r&&r.error)||'skip failed'); } }
+  catch(e){ report('close: skip open turn',e,{group:m.title}); turnBusy=false; paintTurn(); flash(false); return; }
+  try{ const r=await rpc('close_memory',{p_token:TOKEN,p_chapter:m.id}); if(!r||r.error) throw new Error((r&&r.error)||'close_memory failed'); }
+  catch(e){ report('close_memory (server side not built?)',e,{group:m.title}); }
+  const mem={...(PROG.memories||{})}; mem[m.id]={done:'closed',asked:+(t&&t.total)||0}; await prog({memories:mem});
+  m.turn={done:true,finished:true,total:Math.max(1,+(t&&t.total)||1),answered:+(t&&t.total)||1}; TURN=m.turn;
+  turnBusy=false; draft=''; wrongOpen=false; whatDraft='';
+  const next=M.findIndex((x,i)=>i>cur&&!finishedMem(x));
+  if(next>=0){ paintGroupDone(next); scrollTo(0,0); return; }
+  paintAllDone(); scrollTo(0,0);
 }
 async function showAnswer(){
   page='answer'; screen='answer';
@@ -1571,8 +1609,8 @@ async function showAnswer(){
       plain(`<h1>One moment</h1><p class="do">We can't find your groups. Please try the link again in a little while.</p>`); return; }
     for(const m of M) m.turn=await readTurn(m);
     if(page!=='answer') return;
-    const need=M.findIndex(m=>!finishedTurn(m.turn));   // first memory with something still to ask
-    const pr=(d.collection&&d.collection.progress)||{};
+    const pr=(d.collection&&d.collection.progress)||{}; PROG={...PROG,...pr};
+    const need=M.findIndex(m=>!finishedMem(m));           // first memory with something still to ask
     if(need<0){
       /* Everything answered. She may have been on the music page, or be back
          to press Finished. */
@@ -1621,15 +1659,17 @@ function photosStripAll(m){
 function paintTurn(){
   atEnd=false;
   const m=M[cur], t=TURN; if(!m||!t||t.done) return;
-  const n=+t.level||Math.min(+t.answered+1, +t.total)||1, of=+t.of||6;
-  let h=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')} · question <b>${n}</b> of ${of}</div>`;
+  /* ⚠ No "question n of N": there is no N. It stops when it has enough. */
+  let h=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')}</div>`;
   h+=tips('answer');
   h+=photosStrip(m,t);
   if(t.because_of) h+=`<p class="said">You said: <i>\u201c${esc(String(t.because_of).trim())}\u201d</i></p>`;
   h+=`<h2 style="margin-top:${t.because_of?8:14}px">${esc(t.question||'')}</h2>
+      ${t.looked_up?`<p class="lookedup">Looked up: ${esc(t.looked_up)}</p>`:''}
       <textarea id="ans" class="beside" placeholder="Tell us what happened, not how it felt. The feeling comes with it.">${esc(draft)}</textarea>
       <div class="count" id="cnt"></div>
       <p class="lede" style="margin-top:6px"><button class="chip" id="askip" type="button" ${turnBusy?'disabled':''}>Skip this one</button>
+        <button class="chip" id="aenough" type="button" ${turnBusy?'disabled':''}>That\u2019s enough about this one</button>
         ${turnPhotos(m,t).mode==='about'?`<button class="quiet" id="awrong" type="button" ${turnBusy?'disabled':''} aria-expanded="${wrongOpen?'true':'false'}">That’s not what’s in that photo</button>`:''}</p>
       ${wrongOpen?`<div class="card" id="wrongcard"><label for="what">What is it?</label>
         <input type="text" id="what" value="${esc(whatDraft)}" placeholder="Tell us what’s really there" autocomplete="off">
@@ -1637,8 +1677,8 @@ function paintTurn(){
           <button id="awrongcancel">Never mind</button></div></div>`:''}`;
   $('stage').innerHTML=h; $('stage').className='';
   countUp();
-  nav(`<button class="go" id="anext" ${turnBusy?'disabled':''}>${turnBusy?'One moment…':(n<of?'Next question →':'Last one — next →')}</button>`,
-      `${M.filter(x=>finishedTurn(x.turn)).length} of ${M.length} groups done`, cur>0, '');
+  nav(`<button class="go" id="anext" ${turnBusy?'disabled':''}>${turnBusy?'One moment…':'Next →'}</button>`,
+      `${M.filter(finishedMem).length} of ${M.length} groups done`, cur>0, '');
   $('sheet').classList.add('hide');
   const ta=$('ans'); if(ta&&!turnBusy) ta.focus();
 }
@@ -1657,7 +1697,7 @@ async function arrive(){
   if(page!=='answer') return;
   m.turn=t; TURN=t;
   if(!t.done){ prog({screen:'answer',part:cur+1,turn:t.seq||null}); paintTurn(); scrollTo(0,0); return; }
-  const next=M.findIndex((x,i)=>i>cur&&!finishedTurn(x.turn));
+  const next=M.findIndex((x,i)=>i>cur&&!finishedMem(x));
   if(next>=0){ paintGroupDone(next); scrollTo(0,0); return; }
   paintAllDone(); scrollTo(0,0);
 }
@@ -1697,7 +1737,7 @@ async function answerTurn(skip){
   if(!nt.done){ paintTurn(); scrollTo(0,0); return; }
   /* this memory is done: the move between memories looks different from the
      move between questions — a pause, then the next by name */
-  const next=M.findIndex((x,i)=>i>cur&&!finishedTurn(x.turn));
+  const next=M.findIndex((x,i)=>i>cur&&!finishedMem(x));
   if(next>=0){ paintGroupDone(next); scrollTo(0,0); return; }
   paintAllDone(); scrollTo(0,0);
 }
@@ -1707,7 +1747,7 @@ function paintGroupDone(next){
     <h1>That’s everything about “${esc(m.title||'this group')}”</h1>
     <p class="do">Thank you. Next: “${esc(M[next].title||'the next group')}”.</p>${photosStripAll(m)}`;
   $('stage').className='';
-  nav(`<button class="go" id="agroupnext" data-next="${next}">On to “${esc(M[next].title||'the next group')}” →</button>`,`${M.filter(x=>finishedTurn(x.turn)).length} of ${M.length} groups done`,cur>0,'');
+  nav(`<button class="go" id="agroupnext" data-next="${next}">On to “${esc(M[next].title||'the next group')}” →</button>`,`${M.filter(finishedMem).length} of ${M.length} groups done`,cur>0,'');
   $('sheet').classList.add('hide');
 }
 /* "That's not what's in that photo." A description is a model's READING of
@@ -1728,7 +1768,7 @@ async function flagWrong(){
   if(page!=='answer') return;
   turnBusy=false; draft=''; wrongOpen=false; whatDraft=''; m.turn=nt; TURN=nt;
   if(!nt.done){ paintTurn(); scrollTo(0,0); return; }
-  const next=M.findIndex((x,i)=>i>cur&&!finishedTurn(x.turn));
+  const next=M.findIndex((x,i)=>i>cur&&!finishedMem(x));
   if(next>=0){ paintGroupDone(next); scrollTo(0,0); return; }
   paintAllDone(); scrollTo(0,0);
 }
@@ -1736,13 +1776,13 @@ async function gotoGroup(i){
   atEnd=false; cur=Math.max(0,Math.min(M.length-1,i)); draft='';
   M[cur].turn=await readTurn(M[cur]);
   TURN=M[cur].turn;
-  if(TURN.done&&!finishedTurn(TURN)){ await arrive(); return; }      // more to ask: the engine writes it
+  if(TURN.done&&!finishedMem(M[cur])){ await arrive(); return; }      // more to ask: the interview writes it
   if(TURN.done){
     /* nothing left to ask here: say so, with the way on */
     $('stage').innerHTML=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(M[cur].title||'')}</div>
       <h2>You\u2019ve answered everything about this group.</h2>${photosStripAll(M[cur])}`;
     $('stage').className='';
-    nav('<button class="go" id="anext">Next →</button>',`${M.filter(x=>finishedTurn(x.turn)).length} of ${M.length} groups done`,cur>0,'');
+    nav('<button class="go" id="anext">Next →</button>',`${M.filter(finishedMem).length} of ${M.length} groups done`,cur>0,'');
     $('sheet').classList.add('hide'); return;
   }
   paintTurn();
@@ -2180,9 +2220,10 @@ document.addEventListener('click',async e=>{
 
   /* answer */
   if(t.id==='anext'){
-    if(TURN&&TURN.done){ const next=M.findIndex((x,i)=>i>cur&&!finishedTurn(x.turn)); if(next>=0) gotoGroup(next); else paintAllDone(); scrollTo(0,0); return; }
+    if(TURN&&TURN.done){ const next=M.findIndex((x,i)=>i>cur&&!finishedMem(x)); if(next>=0) gotoGroup(next); else paintAllDone(); scrollTo(0,0); return; }
     answerTurn(false); return; }
   if(t.id==='askip'){ answerTurn(true); return; }
+  if(t.id==='aenough'){ closeMemory(); return; }
   if(t.id==='agroupnext'){ cur=+t.dataset.next; draft=''; arrive(); return; }
   if(t.id==='awrong'){ wrongOpen=!wrongOpen; paintTurn(); if(wrongOpen){ const f=$('what'); if(f) f.focus(); } return; }
   if(t.id==='awrongcancel'){ wrongOpen=false; whatDraft=''; paintTurn(); return; }
