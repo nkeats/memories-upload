@@ -235,7 +235,7 @@ async function describeAll(){
    asset_id: null with photos_set: true → NO photographs; asset_id set → that one photograph.
    looked_up comes on every question — shown apart from the question so a leak is visible.
    The brief is shown in full: it is where the place, the mood and the opener come from. */
-function mstate(c){ const p=mprog[c.id]; if(!p) return null; if(p.done&&!+p.total) return null; return p; }
+function mstate(c){ const p=mprog[c.id]; if(!p) return null; if(p.done&&!+p.total&&!p.finished) return null; return p; }
 function paintMemory(){
   let h=`<h2>Memories</h2>`;
   if(mcur) h=mrunPanel()+h;
@@ -244,8 +244,8 @@ function paintMemory(){
   h+='<table>';
   CH.forEach(c=>{ const p=mstate(c);
     h+=`<tr class="${mcur===c.id?'now':''}"><td><div style="display:flex;gap:2px;flex-wrap:wrap;width:110px">${c.photos.slice(0,6).map(a=>`<img src="${esc(a.thumb_url||a.url)}" style="width:34px;height:26px" alt="">`).join('')}</div></td>
-      <td><b>${esc(c.title)}</b><br><span class="muted">${c.photos.length} photographs \u00b7 ${p?`${+p.answered||0} answered${!p.done?', one open':''}`:'not run'}</span></td>
-      <td class="acts"><button class="run" data-mrun="${c.id}" ${busy||!c.photos.length?'disabled':''}>${mcur===c.id?'Showing':(p?'Carry on':'Run')}</button>
+      <td><b>${esc(c.title)}</b><br><span class="muted">${c.photos.length} photographs \u00b7 ${p?`${+p.answered||0} answered${!p.done?', one open':''}${p.finished?` · <b>finished: ${esc(p.finished)}</b>`:''}`:'not run'}</span></td>
+      <td class="acts"><button class="run" data-mrun="${c.id}" ${busy||!c.photos.length||(p&&p.finished)?'disabled':''}>${mcur===c.id?'Showing':(p?(p.finished?'Finished':'Carry on'):'Run')}</button>
         ${p?`<button data-mrestart="${c.id}" ${busy?'disabled':''}>Start again</button>`:''}</td></tr>`; });
   return h+'</table>';
 }
@@ -306,7 +306,9 @@ async function msend(){
   const {ok,j}=await fn('interview',{chapter_id:mcur,turn_id:t.turn_id,answer:a}); busy=false;
   if(!ok||!j||j.error){ err=`interview: ${JSON.stringify(j)}`; paint(); const ta=$('mans'); if(ta) ta.value=a; return; }
   if(j.waiting){ err='interview replied \u201cwaiting\u201d instead of taking the answer.'; paint(); const ta=$('mans'); if(ta) ta.value=a; return; }
-  t.answer=a; mtake(j); await readMemoryProgress(); paint(); const ta=$('mans'); if(ta) ta.focus();
+  t.answer=a; mtake(j);
+  if(j.done){ const r=await rpc('close_memory',{p_chapter:mcur,p_how:j.capped?'capped':'enough'}); if(!r.ok||(r.j&&r.j.error)) err=`close_memory: ${JSON.stringify(r.j)}`; }   // the verdict goes on the chapter
+  await readMemoryProgress(); paint(); const ta=$('mans'); if(ta) ta.focus();
 }
 async function mrestart(id){
   busy=true; err=''; paint();

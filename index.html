@@ -262,8 +262,7 @@ function report(what,e,detail){
 }
 window.addEventListener('error', ev => report('uncaught', ev.error||ev.message));
 window.addEventListener('unhandledrejection', ev => report('unhandled promise', ev.reason));
-let PROG={};
-const prog=o=>{ PROG={...PROG,...o}; return api('save_progress',{progress:PROG}).catch(e=>report('save progress',e)); };
+const prog=o=>api('save_progress',{progress:o}).catch(e=>report('save progress',e));
 
 let J={};            // what journey told us: name, stage, photos, described, owner_name …
 let page='';         // which page is showing
@@ -1525,18 +1524,20 @@ let TURN=null, draft='', turnBusy=false, wrongOpen=false, whatDraft='';
      POST interview {…, turn_id, answer} → records the answer and returns the next, or {done:true, enough, have, asked, capped?, why}
      rpc next_memory_turn {p_token, p_chapter}             → the open turn, or {done:true, total, answered} (reads only)
      rpc answer_memory_turn {p_token, p_turn, p_skip:true} → a skip
-   ⚠ "Finished" is known only from the interview's own reply: next_memory_turn
-   can't tell a finished memory from one with nothing open yet, and asking the
-   interview again is a model call (3–7 s, measured). So the verdict is kept in
-   the collection's progress on the server — PROG.memories[chapter] =
-   {done:'enough'|'closed'|'capped', have} — and counts only while the memory
-   still has turns (memory_restart empties them, and the verdict lapses).
+     rpc close_memory {p_token, p_chapter, p_how}          → records the verdict on the chapter (enough | closed | capped) and skips anything dangling
+   next_memory_turn carries `finished`: enough / closed / capped / null — the
+   server's verdict, the only one there is. ⚠ Never keep a page-side record of
+   it: a page-side memory of server state is the fault that once made a browser
+   refuse a file the server had never heard of. memory_restart clears it too.
    ⚠ capped:true means it hit six without getting there — reported, never
    shown to her. */
-const memVerdict=m=>((PROG.memories||{})[m.id])||null;
-const finishedMem=m=>!!(m&&m.turn&&m.turn.done&&(m.turn.finished||(memVerdict(m)&&+m.turn.total>0)));
+const finishedMem=m=>!!(m&&m.turn&&m.turn.done&&m.turn.finished);
+async function closeOnServer(m,how){
+  try{ const r=await rpc('close_memory',{p_token:TOKEN,p_chapter:m.id,p_how:how}); if(!r||r.error) throw new Error((r&&r.error)||'close_memory failed'); return true; }
+  catch(e){ report('close_memory',e,{group:m.title,how}); return false; }
+}
 function fromEngine(j){
-  if(j.done){ const n=+j.asked||0; return {done:true,finished:true,total:n,answered:n,enough:!!j.enough,have:j.have||null,capped:!!j.capped,why:j.why||null}; }
+  if(j.done){ const n=+j.asked||0; return {done:true,finished:j.capped?'capped':'enough',total:n,answered:n,enough:!!j.enough,have:j.have||null,capped:!!j.capped,why:j.why||null}; }
   const n=+j.asked||1;
   return {done:false,turn_id:j.turn_id,seq:n,level:n,stage:j.stage||j.gap||'',question:j.question||'',asset_id:j.asset_id??null,
     photos_set:!!j.photos_set,because_of:j.because_of||null,looked_up:j.looked_up||null,total:n,answered:n-1};
@@ -1555,8 +1556,8 @@ async function askEngine(m,turn_id,answer){                 // the next question
   if(j.waiting){ const t=await readTurn(m); if(!t.done) return t; throw new Error('interview: waiting, but no open turn'); }
   const t=fromEngine(j);
   if(t.done){
-    const mem={...(PROG.memories||{})}; mem[m.id]={done:t.capped?'capped':'enough',have:t.have,asked:t.total}; prog({memories:mem});
     if(t.capped) report('interview capped',new Error('capped at six'),{group:m.title,have:t.have,why:t.why});
+    await closeOnServer(m,t.finished);                       // the verdict lives on the chapter, nowhere else
   }
   return t;
 }
@@ -1567,24 +1568,21 @@ async function askEngine(m,turn_id,answer){                 // the next question
 async function openTurn(m){
   const t=await readTurn(m);
   if(!t.done) return t;
-  if(finishedMem({...m,turn:t})) return {...t,finished:true};
+  if(t.finished) return t;
   if(!(+t.total)){ try{ const {ok,status,j}=await post('brief',{chapter_id:m.id}); if(!ok||!j||j.error) throw new Error((j&&j.error)||('brief HTTP '+status)); m.brief=j.brief||null; }
     catch(e){ report('brief',e,{group:m.title}); } }          // the interview still opens without it
   return askEngine(m);
 }
 /* "That's enough about this one." A customer can always close a memory
-   early: the open question is skipped so nothing dangles, the verdict is
-   recorded as hers, and the interview is told (close_memory) when the
-   server has that; the page moves on either way. */
+   early. close_memory marks the open question skipped and records the
+   verdict as hers ('closed'); if that fails, nothing has changed and she is
+   told so — never a "done" that didn't happen. */
 async function closeMemory(){
   const m=M[cur], t=TURN; if(!m||turnBusy) return;
   turnBusy=true; paintTurn();
-  try{ if(t&&!t.done&&t.turn_id){ const r=await rpc('answer_memory_turn',{p_token:TOKEN,p_turn:t.turn_id,p_skip:true}); if(!r||r.error) throw new Error((r&&r.error)||'skip failed'); } }
-  catch(e){ report('close: skip open turn',e,{group:m.title}); turnBusy=false; paintTurn(); flash(false); return; }
-  try{ const r=await rpc('close_memory',{p_token:TOKEN,p_chapter:m.id}); if(!r||r.error) throw new Error((r&&r.error)||'close_memory failed'); }
-  catch(e){ report('close_memory (server side not built?)',e,{group:m.title}); }
-  const mem={...(PROG.memories||{})}; mem[m.id]={done:'closed',asked:+(t&&t.total)||0}; await prog({memories:mem});
-  m.turn={done:true,finished:true,total:Math.max(1,+(t&&t.total)||1),answered:+(t&&t.total)||1}; TURN=m.turn;
+  if(!(await closeOnServer(m,'closed'))){ turnBusy=false; paintTurn(); flash(false);
+    const before=$('nav').querySelector('.before'); if(before) before.textContent="That didn't go through. Please try again."; return; }
+  m.turn=await readTurn(m); if(!m.turn.finished) m.turn={...m.turn,done:true,finished:'closed'}; TURN=m.turn;
   turnBusy=false; draft=''; wrongOpen=false; whatDraft='';
   const next=M.findIndex((x,i)=>i>cur&&!finishedMem(x));
   if(next>=0){ paintGroupDone(next); scrollTo(0,0); return; }
@@ -1609,7 +1607,7 @@ async function showAnswer(){
       plain(`<h1>One moment</h1><p class="do">We can't find your groups. Please try the link again in a little while.</p>`); return; }
     for(const m of M) m.turn=await readTurn(m);
     if(page!=='answer') return;
-    const pr=(d.collection&&d.collection.progress)||{}; PROG={...PROG,...pr};
+    const pr=(d.collection&&d.collection.progress)||{};
     const need=M.findIndex(m=>!finishedMem(m));           // first memory with something still to ask
     if(need<0){
       /* Everything answered. She may have been on the music page, or be back
