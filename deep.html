@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Deep — test bench</title>
+<style>
+/* A TEST BENCH, not a screen. Nothing here is a design decision. Plain, fast,
+   legible on a phone: the thing being judged is whether question three
+   follows from answer two. */
+:root{color-scheme:light dark}
+body{font:16px/1.45 system-ui,sans-serif;margin:0;padding:12px;max-width:760px;margin-inline:auto}
+h1{font-size:20px;margin:0 0 4px} h2{font-size:17px;margin:18px 0 6px}
+.muted{opacity:.65;font-size:14px}
+table{border-collapse:collapse;width:100%} td{padding:6px 4px;vertical-align:top;border-top:1px solid #8884}
+td img{width:64px;height:48px;object-fit:cover;display:block;border-radius:3px}
+button{font:inherit;padding:6px 10px;cursor:pointer} button:disabled{opacity:.5;cursor:default}
+.run{font-weight:600}
+.turn{border:1px solid #8886;border-radius:6px;padding:10px 12px;margin:10px 0}
+.turn .lvl{font-size:13px;opacity:.7;margin-bottom:4px}
+.turn .q{font-size:18px;margin:2px 0 8px}
+.turn .a{white-space:pre-wrap;opacity:.9}
+.turn .because{font-size:14px;opacity:.75;font-style:italic}
+textarea{width:100%;box-sizing:border-box;min-height:110px;font:inherit;padding:8px}
+.err{color:#c33;white-space:pre-wrap}
+.tag{display:inline-block;font-size:12px;padding:1px 6px;border:1px solid #8886;border-radius:10px;margin-left:6px}
+.done{opacity:.55}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
+.now{background:#8882}
+</style>
+</head>
+<body>
+<h1>Deep — test bench</h1>
+<p class="muted" id="sub">Runs the <code>deep</code> engine against one photograph at a time so the questions can be judged.</p>
+<div id="app"><p>Loading…</p></div>
+
+<script type="module">
+const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
+const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
+const TOKEN=new URLSearchParams(location.search).get('t')||'';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function fn(name,body){
+  const r=await fetch(`${SB}/functions/v1/${name}`,{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':'application/json'},body:JSON.stringify({token:TOKEN,...body})});
+  let j=null; try{ j=await r.json(); }catch(_){}
+  return {ok:r.ok,status:r.status,j:j||{}};
+}
+async function rpc(name,args){
+  const r=await fetch(`${SB}/rest/v1/rpc/${name}`,{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+KEY,'Content-Type':'application/json'},body:JSON.stringify({p_token:TOKEN,...args})});
+  let j=null; try{ j=await r.json(); }catch(_){}
+  return {ok:r.ok,status:r.status,j};
+}
+
+/* ── the contract this bench uses ───────────────────────────────────────
+   deep {token, asset_id}                          → next unanswered question for that photograph:
+        {ok, level, stage, turn_id, because_of, question, saw_the_photograph}
+        or {ok, waiting:true, detail} while the last one is unanswered            (LIVE, checked)
+   deep {token, asset_id, turn_id, answer}         → records the answer, returns the next question  (what the page sends —
+                                                     ⚠ the live function does not yet take it; it answers `waiting`)
+   deep_progress {p_token}                         → [{asset_id, turns, answered, last_level, stage}]   (⚠ not built yet)
+   deep_restart  {p_token, p_asset}                → delete from deep_turns where asset_id = p_asset    (⚠ not built yet)
+   Each of the three unbuilt pieces is named on screen when it fails, so a
+   missing RPC never looks like the engine's fault. */
+
+let A=[], C={}, prog={}, cur=null, turns=[], busy=false, err='';
+const need={progress:false,restart:false,answer:false};
+
+async function load(){
+  if(!TOKEN){ $('app').innerHTML='<p class="err">No token. Open this as deep.html?t=TOKEN — the same token as the customer link.</p>'; return; }
+  const {ok,j}=await fn('flow',{action:'load'});
+  if(!ok||!j.assets){ $('app').innerHTML=`<p class="err">Could not load the collection: ${esc(JSON.stringify(j))}</p>`; return; }
+  (j.chapters||[]).forEach(c=>{ C[c.id]=c; });
+  A=j.assets.filter(a=>!a.excluded&&a.url).sort((x,y)=>(C[x.chapter_id]?.seq??0)-(C[y.chapter_id]?.seq??0)||(x.sort_index??0)-(y.sort_index??0));
+  $('sub').textContent=`${j.collection?.owner_name||''} · ${A.length} photographs · runs the deep engine one photograph at a time so the questions can be judged.`;
+  await readProgress();
+  paint();
+}
+/* Which photographs have been run and how far they got. Needs deep_progress. */
+async function readProgress(){
+  const {ok,status,j}=await rpc('deep_progress',{});
+  if(!ok){ need.progress=true; prog={}; return; }
+  need.progress=false; prog={};
+  (Array.isArray(j)?j:(j&&j.rows)||[]).forEach(r=>{ prog[r.asset_id]=r; });
+}
+function progressOf(id){
+  const p=prog[id]; if(p) return p;
+  if(cur===id&&turns.length) return {turns:turns.length,answered:turns.filter(t=>t.answer).length,last_level:turns[turns.length-1].level,local:true};
+  return null;
+}
+function paint(){
+  let h='';
+  if(cur) h+=runPanel();
+  h+=`<h2>Photographs</h2>`;
+  if(need.progress) h+=`<p class="muted">Which ones have been run isn’t known — <code>deep_progress {p_token}</code> isn’t there yet; only what this page ran this session is marked.</p>`;
+  h+='<table>';
+  let lastCh=null;
+  A.forEach((a,i)=>{
+    const ch=C[a.chapter_id]; const ct=ch?ch.title:'(no group)';
+    if(ct!==lastCh){ h+=`<tr><td colspan="4"><b>${esc(ct)}</b></td></tr>`; lastCh=ct; }
+    const p=progressOf(a.id);
+    const state=p?`<span class="tag">${p.answered??p.turns??'?'} answered${p.last_level?` · level ${p.last_level}`:''}${p.stage?` · ${esc(p.stage)}`:''}${p.local?' · this session':''}</span>`:'';
+    h+=`<tr class="${cur===a.id?'now':''}${p?' ran':''}"><td><img src="${esc(a.thumb_url||a.url)}" alt=""></td>
+      <td><span class="muted">${i+1} · ${esc(a.original_filename||'')}</span><br>${esc((a.description||'').slice(0,110))}${(a.description||'').length>110?'…':''}${state}</td>
+      <td><button class="run" data-run="${a.id}" ${busy?'disabled':''}>${cur===a.id?'Showing':(p?'Carry on':'Run this one')}</button></td>
+      <td>${p?`<button data-restart="${a.id}" ${busy?'disabled':''}>Start again</button>`:''}</td></tr>`;
+  });
+  h+='</table>';
+  $('app').innerHTML=h;
+}
+function runPanel(){
+  const a=A.find(x=>x.id===cur); if(!a) return '';
+  const open=turns.length&&!turns[turns.length-1].answer?turns[turns.length-1]:null;
+  let h=`<div class="turn now"><div class="bar"><img src="${esc(a.thumb_url||a.url)}" style="width:96px;height:72px;object-fit:cover"><div><b>${esc(C[a.chapter_id]?.title||'')}</b><br><span class="muted">${esc(a.original_filename||'')}</span></div>
+      <span style="flex:1"></span><button data-restart="${a.id}" ${busy?'disabled':''}>Start this one again</button><button data-close="1">Close</button></div>`;
+  turns.forEach(t=>{ h+=`<div class="turn${t.answer?' done':''}"><div class="lvl">level ${t.level??'?'} · ${esc(t.stage||'')}${t.saw_the_photograph?' · saw the photograph':''}</div>
+      ${t.because_of?`<div class="because">because you said: “${esc(t.because_of)}”</div>`:''}
+      <div class="q">${esc(t.question)}</div>${t.answer?`<div class="a">${esc(t.answer)}</div>`:''}</div>`; });
+  if(open) h+=`<textarea id="ans" placeholder="Answer as the customer would"></textarea>
+      <div class="bar"><button id="send" class="run" ${busy?'disabled':''}>${busy?'One moment…':'Send answer → next question'}</button>
+      ${need.answer?`<span class="err">The live <code>deep</code> function doesn’t take an answer yet (it replied “waiting”). The page sends <code>{token, asset_id, turn_id, answer}</code>.</span>`:''}</div>`;
+  else if(turns.length) h+=`<div class="bar"><button id="next" class="run" ${busy?'disabled':''}>Next question</button></div>`;
+  if(err) h+=`<p class="err">${esc(err)}</p>`;
+  h+='</div>';
+  return h;
+}
+/* deep {token, asset_id} → the next question (or waiting) */
+async function askNext(){
+  busy=true; err=''; paint();
+  const {ok,j}=await fn('deep',{asset_id:cur});
+  busy=false;
+  if(!ok||!j||j.error){ err=`deep: ${JSON.stringify(j)}`; paint(); return; }
+  if(j.waiting){ err=`deep says: ${j.detail||'waiting'} — there is an open question on the server for this photograph, but deep doesn’t return it, so it can’t be shown or answered here. Start this one again, or have deep return the open turn with “waiting”.`; paint(); return; }
+  if(j.done||j.finished){ err=''; turns.push({level:j.level,stage:j.stage||'done',question:'(the engine says this photograph is finished)',answer:' ',turn_id:null}); paint(); return; }
+  if(!turns.some(t=>t.turn_id===j.turn_id)) turns.push({turn_id:j.turn_id,level:j.level,stage:j.stage,because_of:j.because_of,question:j.question,saw_the_photograph:j.saw_the_photograph,answer:''});
+  paint(); const ta=$('ans'); if(ta) ta.focus();
+}
+async function sendAnswer(){
+  const t=turns[turns.length-1]; const a=($('ans')?.value||'').trim(); if(!t||!a) return;
+  busy=true; err=''; paint();
+  const {ok,j}=await fn('deep',{asset_id:cur,turn_id:t.turn_id,answer:a});
+  busy=false;
+  if(!ok||!j||j.error){ err=`deep: ${JSON.stringify(j)}`; paint(); return; }
+  if(j.waiting){ need.answer=true; err=''; paint(); const ta=$('ans'); if(ta) ta.value=a; return; }   // the answer was not taken
+  need.answer=false; t.answer=a;
+  if(j.done||j.finished){ turns.push({level:j.level,stage:j.stage||'done',question:'(the engine says this photograph is finished)',answer:' ',turn_id:null}); paint(); return; }
+  if(j.turn_id&&!turns.some(x=>x.turn_id===j.turn_id)) turns.push({turn_id:j.turn_id,level:j.level,stage:j.stage,because_of:j.because_of,question:j.question,saw_the_photograph:j.saw_the_photograph,answer:''});
+  paint(); const ta=$('ans'); if(ta) ta.focus();
+}
+/* deep_restart {p_token, p_asset} → delete from deep_turns where asset_id = p_asset */
+async function restart(id){
+  busy=true; err=''; paint();
+  const {ok,status,j}=await rpc('deep_restart',{p_asset:id});
+  busy=false;
+  if(!ok||(j&&j.error)){ need.restart=true; err=`Start again needs deep_restart {p_token, p_asset} on the server — it isn’t there yet (HTTP ${status}${j&&(j.message||j.error)?': '+(j.message||j.error):''}). Nothing was cleared.`; if(cur!==id){ cur=id; turns=[]; } paint(); return; }
+  delete prog[id]; cur=id; turns=[]; await readProgress(); await askNext();
+}
+document.addEventListener('click',async e=>{
+  const t=e.target.closest('button'); if(!t||busy) return;
+  if(t.dataset.run){ if(cur!==t.dataset.run){ cur=t.dataset.run; turns=[]; err=''; } await askNext(); scrollTo(0,0); return; }
+  if(t.dataset.restart){ await restart(t.dataset.restart); scrollTo(0,0); return; }
+  if(t.dataset.close){ cur=null; turns=[]; err=''; paint(); return; }
+  if(t.id==='send'){ await sendAnswer(); return; }
+  if(t.id==='next'){ await askNext(); return; }
+});
+load();
+</script>
+</body>
+</html>
