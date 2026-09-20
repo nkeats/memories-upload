@@ -471,7 +471,7 @@ const alreadyIn=h=>!!h&&inHashes.some(x=>hamming(x,h)<=SAME);
    them, and the vision pass can be told who to look for. None of that can
    be harvested later from answers that don't exist yet. Lives at the front
    of the upload stage; get_people is how a reload knows where she was. */
-let P={people:[],say:[],asking:0,mode:'list',adding:false,welcomed:false,printsSeen:false};
+let P={people:[],say:[],asking:0,mode:'me',adding:false,welcomed:false,printsSeen:false};
 const WHO={
   anniversary:{h:'The two of you',add:'Anyone else the film should notice? Add them too.'},
   wedding:{h:'The couple',add:'Add anyone else the film should notice.'},
@@ -497,8 +497,11 @@ async function showUpload(){
   catch(e){ report('get_people',e); }
   if(page!=='upload') return;
   P.people=people;
-  if(!people.length){ if(!P.welcomed){ paintWelcome(); return; } P.mode='list'; paintWho(); return; }
-  if(people.some(x=>!x.sound_ok)){ await sayNames(); return; }   // she added them but never settled how they're said
+  if(!people.length){ if(!P.welcomed){ paintWelcome(); return; } paintMe(); return; }
+  if(!people.some(x=>x.is_you)){ paintMe(); return; }                       // never said who's making it
+  if(people.some(x=>!x.sound_ok)){                                          // names in, not settled yet
+    if(people.some(x=>!x.is_you&&!x.relation)){ paintOthers(); return; }    // may not have finished adding
+    await sayNames(); return; }
   showUploadPage();
 }
 /* The instructions, in context: short bullets beside the photographs on
@@ -526,46 +529,120 @@ function paintWelcome(){
     <p class="do">You can stop and come back whenever you like — this link remembers where you got to.</p>
     <p style="margin-top:26px"><button class="big" id="welcomeGo">Let’s start →</button></p>`;
 }
-function paintWho(){
-  const w=whoWords(); const st=$('stage'); st.className=''; $('sheet').classList.add('hide');
-  let h=`<div class="step">First · the people</div><h1>${esc(w.h)}</h1>
-    <p class="do">Their names, and who they are to you.</p>
-    <p class="lede">We use the names in the song and in the questions we ask you — so <i>“what was Leisa laughing at?”</i> instead of <i>“who’s the woman in the third picture?”</i>.</p>`;
-  if(P.people.length){
-    h+='<div class="people">';
-    P.people.forEach((x,i)=>{ h+=`<div class="person"><b>${esc(x.name)}</b>${x.relation?` <span class="rel">· ${esc(x.relation)}</span>`:''}${x.is_you?' <span class="rel">· that’s you</span>':''}${x.is_subject?' <span class="sug">the film is about them</span>':''}
+/* One thing at a time, in this order:
+   1. "Who's making this film?" — one name. The person every question
+      afterwards speaks to, so it comes first and needs no explanation.
+   2. "Who else is in it?" — ONE NAME PER BOX, added one at a time. Never a
+      field where "Nigel and Leisa" can go in as one entry.
+   3. "How are they related to you?" — last, once the names exist, asked per
+      person against the name on screen: "And Leisa is…?"
+   ⚠⚠⚠ The pronunciation step must only ever see a single name. A take was
+   once made for "Nigel and Leisa" — 121 credits on something that can never
+   be sung. So a joined name is refused at the box, and again at the spelling
+   box, and again from the help path. */
+const JOINER=/\band\b|[&+,\/]/i;
+function joinedNames(name){ const parts=String(name||'').split(JOINER).map(x=>x.trim()).filter(Boolean); return parts.length>1?parts:null; }
+function oneNameOnly(name){ const p=joinedNames(name); return p?`One name at a time \u2014 add \u201c${p[0]}\u201d first, then \u201c${p[1]}\u201d.`:''; }
+function meRow(){ return P.people.find(x=>x.is_you)||null; }
+function others(){ return P.people.filter(x=>!x.is_you); }
+function nameBox(id,label,ph){ return `<label for="${id}">${label}</label>
+      <input type="text" id="${id}" placeholder="${ph}" autocomplete="off" autocapitalize="words" spellcheck="false">
+      <p class="note bad" id="pwarn" style="display:none;margin:8px 0 0;font-size:14px"></p>`; }
+function warnName(msg){ const w=$('pwarn'); if(!w) return; w.textContent=msg; w.style.display=msg?'':'none'; }
+function paintWho(){ const m=P.mode; if(m==='me') paintMe(); else if(m==='rel') paintRel(); else paintOthers(); }
+/* 1 · who's making it */
+function paintMe(){
+  P.mode='me'; const st=$('stage'); st.className=''; $('sheet').classList.add('hide'); $('nav').classList.add('hide');
+  const me=meRow();
+  st.innerHTML=`<div class="step">First \u00b7 the people</div><h1>Who\u2019s making this film?</h1>
+    <p class="do">Just you \u2014 your first name is fine.</p>
+    <p class="lede">We ask this first so that everything we ask you afterwards can speak to you directly: <i>\u201cwhat was Leisa laughing at?\u201d</i> rather than <i>\u201cwho\u2019s the woman in the third one?\u201d</i>. That only works if we know which one is you.</p>
+    <div class="card">${nameBox('pname','Your name','First name is fine')}
+      <div style="margin-top:16px"><button class="big" id="pme" ${P.adding?'disabled':''}>${P.adding?'One moment\u2026':'That\u2019s me \u2192'}</button></div></div>`;
+  const n=$('pname'); if(n){ if(me) n.value=me.name; n.focus(); }
+}
+/* 2 · who else — one name per box */
+function paintOthers(){
+  P.mode='others'; const w=whoWords(); const st=$('stage'); st.className=''; $('sheet').classList.add('hide');
+  const me=meRow(), rest=others();
+  let h=`<div class="step">First \u00b7 the people</div><h1>Who else is in it?</h1>
+    <p class="do">One name in the box, then <b>Add another</b> for the next.</p>
+    <p class="lede">${esc(w.add)} We use the names in the song and in the questions we ask you.</p>
+    <div class="people">`;
+  if(me) h+=`<div class="person"><b>${esc(me.name)}</b> <span class="rel">\u00b7 that\u2019s you</span> <button class="chip" id="pnotme" type="button" style="float:right">Not me?</button></div>`;
+  rest.forEach(x=>{ const i=P.people.indexOf(x); h+=`<div class="person"><b>${esc(x.name)}</b>${x.relation?` <span class="rel">\u00b7 ${esc(x.relation)}</span>`:''}
       <button class="close" data-premove="${i}" type="button" style="float:right;padding:0" aria-label="Remove ${esc(x.name)}">remove</button></div>`; });
-    h+='</div>';
-  }
-  h+=`<div class="card" id="addcard">
-      <label for="pname">Their name</label>
-      <input type="text" id="pname" placeholder="First name is fine" autocomplete="off" autocapitalize="words">
-      <label for="prel" style="margin-top:14px">Who they are to you</label>
-      <input type="text" id="prel" placeholder="wife, husband, daughter, best friend…" autocomplete="off">
-      <label class="tick" style="margin-top:14px"><input type="checkbox" id="psub" ${P.people.length<2?'checked':''}> This film is about them</label>
-      <label class="tick" style="margin-top:10px"><input type="checkbox" id="pyou" ${P.people.length?'':'checked'}> This is me</label>
-      <div style="margin-top:16px"><button class="big" id="padd" ${P.adding?'disabled':''}>${P.adding?'One moment…':'Add them'}</button></div>
-    </div>
-    <p class="lede">${esc(P.people.length?w.add:'Add one person at a time. You can add more later.')}</p>`;
+  h+=`</div><div class="card" id="addcard">${nameBox('pname',rest.length?'Another name':'Their name','One name \u2014 first name is fine')}
+      <div style="margin-top:16px"><button class="big" id="padd" ${P.adding?'disabled':''}>${P.adding?'One moment\u2026':(rest.length?'Add another':'Add them')}</button></div></div>
+    <p class="lede">One person at a time. When everyone\u2019s in, press <b>That\u2019s everyone</b>.</p>`;
   st.innerHTML=h;
-  nav(`<button class="go" id="pdone" ${P.people.length?'':'disabled'}>That's everyone →</button>`,
-      P.people.length?`<b>${P.people.length}</b><br>${P.people.length===1?'person':'people'}`:'nobody yet');
-  if(!P.people.length){ const n=$('pname'); if(n) n.focus(); }
+  nav(`<button class="go" id="pdone" ${P.adding?'disabled':''}>That\u2019s everyone \u2192</button>`,
+      `<b>${P.people.length}</b><br>${P.people.length===1?'person':'people'}`, true, '');
+  const n=$('pname'); if(n) n.focus();
+}
+/* 3 · who each one is to them, against the name on screen */
+function paintRel(){
+  P.mode='rel'; const st=$('stage'); st.className=''; $('sheet').classList.add('hide');
+  const me=meRow(), rest=others();
+  let h=`<div class="step">First \u00b7 the people</div><h1>How are they related to you?</h1>
+    <p class="do">Wife, husband, daughter, best friend \u2014 whatever you\u2019d call them${me?`, ${esc(me.name)}`:''}.</p>
+    <div class="people">`;
+  const anySub=rest.some(x=>x.is_subject);           // nobody marked yet → a film with one or two others is about them
+  rest.forEach(x=>{ const i=P.people.indexOf(x); const sub=anySub?!!x.is_subject:rest.length<=2;
+    h+=`<div class="person" style="padding-bottom:14px"><label for="prel${i}" style="font-size:18px;color:var(--fg)">And <b>${esc(x.name)}</b> is\u2026</label>
+      <input type="text" id="prel${i}" data-rel="${i}" value="${esc(x.relation||'')}" placeholder="your wife, your brother, your best friend\u2026" autocomplete="off" style="margin-top:8px">
+      <label class="tick" style="margin-top:10px"><input type="checkbox" data-sub="${i}" ${sub?'checked':''}> This film is about ${esc(x.name)}</label></div>`; });
+  h+=`</div><p class="lede"><button class="chip" id="pmore" type="button">Add someone else</button></p>`;
+  st.innerHTML=h;
+  nav(`<button class="go" id="preldone" ${P.adding?'disabled':''}>${P.adding?'One moment\u2026':'That\u2019s right \u2192'}</button>`,'',true,'');
+  const f=document.querySelector('[data-rel]'); if(f&&!f.value) f.focus();
+}
+/* saving a person: set_person is an upsert by name, so the same call sets
+   the name (steps 1–2) and later the relation (step 3). ⚠ Only one person is
+   "me"; a different name as me replaces the old row. */
+async function savePerson(name,rel,sub,you){
+  const r=await rpc('set_person',{p_token:TOKEN,p_name:name,p_relation:rel||null,p_is_subject:!!sub,p_is_you:!!you});
+  if(!r||r.error) throw new Error((r&&r.error)||'set_person failed');
+  const i=P.people.findIndex(x=>x.name.toLowerCase()===name.toLowerCase());
+  const old=i>=0?P.people[i]:null;
+  const row={name:r.name||name,relation:rel||null,is_subject:!!sub,is_you:!!you,said_as:r.said_as||(old&&old.said_as)||null,sound_ok:false};
+  if(i>=0) P.people[i]=row; else P.people.push(row);
+  return row;
+}
+async function addMe(){
+  const name=($('pname').value||'').trim();
+  if(!name){ $('pname').focus(); return; }
+  const why=oneNameOnly(name); if(why){ warnName(why); $('pname').focus(); return; }
+  const prev=meRow();
+  P.adding=true; paintMe();
+  try{
+    if(prev&&prev.name.toLowerCase()!==name.toLowerCase()){
+      const r=await rpc('remove_person',{p_token:TOKEN,p_name:prev.name}); if(!r||r.error) throw new Error((r&&r.error)||'remove_person failed');
+      P.people.splice(P.people.indexOf(prev),1); }
+    P.people.forEach(x=>{ x.is_you=false; });
+    await savePerson(name,prev&&prev.name.toLowerCase()===name.toLowerCase()?prev.relation:null,false,true);
+  }catch(e){ report('set_person',e,{name}); P.adding=false; paintMe(); $('pname').value=name;
+    const b=$('pme'); if(b) b.textContent="That didn\u2019t go through \u2014 try again"; return; }
+  P.adding=false; P.mode='others'; paintOthers(); scrollTo(0,0);
 }
 async function addPerson(){
-  const name=($('pname').value||'').trim(), rel=($('prel').value||'').trim(), sub=$('psub').checked, you=$('pyou').checked;
+  const name=($('pname').value||'').trim();
   if(!name){ $('pname').focus(); return; }
-  P.adding=true; paintWho();
-  try{
-    const r=await rpc('set_person',{p_token:TOKEN,p_name:name,p_relation:rel||null,p_is_subject:sub,p_is_you:you});
-    if(!r||r.error) throw new Error((r&&r.error)||'set_person failed');
-    const i=P.people.findIndex(x=>x.name.toLowerCase()===name.toLowerCase());
-    if(you) P.people.forEach(x=>{ x.is_you=false; });        // only one person is "me"
-    const row={name:r.name||name,relation:rel||null,is_subject:sub,is_you:you,said_as:r.said_as||null,sound_ok:false};
-    if(i>=0) P.people[i]=row; else P.people.push(row);
-  }catch(e){ report('set_person',e,{name}); P.adding=false; paintWho(); $('pname').value=name; $('prel').value=rel;
-    const b=$('padd'); if(b) b.textContent="That didn't go through — try again"; return; }
-  P.adding=false; paintWho(); scrollTo(0,0); $('pname').focus();
+  const why=oneNameOnly(name); if(why){ warnName(why); $('pname').focus(); return; }
+  const me=meRow(); if(me&&me.name.toLowerCase()===name.toLowerCase()){ warnName(`That\u2019s you \u2014 you\u2019re already in.`); return; }
+  P.adding=true; paintOthers();
+  try{ await savePerson(name,null,false,false); }
+  catch(e){ report('set_person',e,{name}); P.adding=false; paintOthers(); $('pname').value=name;
+    const b=$('padd'); if(b) b.textContent="That didn\u2019t go through \u2014 try again"; return; }
+  P.adding=false; paintOthers(); scrollTo(0,0); $('pname').focus();
+}
+async function saveRelations(){
+  const rows=[...document.querySelectorAll('[data-rel]')].map(f=>({i:+f.dataset.rel,rel:f.value.trim(),sub:!!(document.querySelector(`[data-sub="${f.dataset.rel}"]`)||{}).checked}));
+  P.adding=true; paintRel();
+  try{ for(const r of rows){ const x=P.people[r.i]; if(!x) continue; await savePerson(x.name,r.rel,r.sub,false); } }
+  catch(e){ report('set_person',e,{step:'relations'}); P.adding=false; paintRel();
+    rows.forEach(r=>{ const f=$('prel'+r.i); if(f) f.value=r.rel; }); const b=$('preldone'); if(b) b.textContent="That didn\u2019t go through \u2014 try again"; return; }
+  P.adding=false; sayNames();
 }
 async function removePerson(i){
   const x=P.people[i]; if(!x) return;
@@ -577,6 +654,8 @@ async function removePerson(i){
    usually small. All are shown on one screen; only those are required. ⚠ The
    sung form is never shown; that's for the generator. */
 async function sayNames(){
+  const bad=P.people.find(x=>joinedNames(x.name));
+  if(bad){ paintOthers(); warnName(oneNameOnly(bad.name)+` Remove “${bad.name}” and add them one at a time.`); return; }
   plain('<p class="load">One moment…</p>');
   const names=P.people.map(x=>x.name);
   const {ok,status,j}=await post('say-name',{names});
@@ -611,6 +690,7 @@ async function lookForTake(i,sung){
 async function tryTake(i){
   const x=P.say[i]; if(!x||x.busy) return;
   const sung=(x.sung||'').trim(); if(!sung){ const f=document.querySelector(`input[data-sung="${i}"]`); if(f) f.focus(); return; }
+  const why=oneNameOnly(sung); if(why){ x.note=why; paintSayRow(i); return; }
   x.busy=true; x.tried=sung; x.take=null; x.chosen=false; paintSayRow(i);
   try{
     const r=await rpc('take_for',{p_sung:sung});
@@ -1961,10 +2041,11 @@ async function applyHelp(action,d){
     }
     if(action==='add_person'){
       const nm=pickKey(d,/^name|person|who/i), rel=pickKey(d,/relation|role|relationship/i); if(!nm) return {ok:false,why:"We couldn\u2019t tell the name."};
+      if(joinedNames(nm)) return {ok:false,why:oneNameOnly(nm)};
       const r=await rpc('set_person',{p_token:TOKEN,p_name:nm.trim(),p_relation:rel||null,p_is_subject:!!d.is_subject,p_is_you:false});
       if(!r||r.error) throw new Error((r&&r.error)||'set_person failed');
       P.people.push({name:r.name||nm,relation:rel||null,is_subject:!!d.is_subject,said_as:r.said_as||null,sound_ok:false});
-      if(page==='upload'&&P.mode==='list') paintWho();
+      if(page==='upload'&&/^(others|rel)$/.test(P.mode)) paintWho();
       return {ok:true};
     }
     return {ok:false,why:"That\u2019s not something we can change from here yet."};
@@ -1999,14 +2080,17 @@ document.addEventListener('click',async e=>{
   if(t.id==='helpClose'){ HELP.open=false; paintHelp(); return; }
   if(t.id==='helpSend'){ sendHelp(); return; }
   /* before they start */
-  if(t.id==='welcomeGo'){ P.welcomed=true; P.mode='list'; paintWho(); scrollTo(0,0); return; }
+  if(t.id==='welcomeGo'){ P.welcomed=true; paintMe(); scrollTo(0,0); return; }
+  if(t.id==='pme'){ addMe(); return; }
+  if(t.id==='pnotme'){ paintMe(); scrollTo(0,0); return; }
+  if(t.id==='preldone'){ saveRelations(); return; }
   if(t.id==='printsGo'||t.id==='printsSkip'){ showUploadPage(); scrollTo(0,0); return; }
   /* who */
   if(t.id==='padd'){ addPerson(); return; }
-  if(t.id==='pdone'){ sayNames(); return; }
+  if(t.id==='pdone'){ if(others().length){ paintRel(); scrollTo(0,0); } else sayNames(); return; }
   if(t.dataset.premove!==undefined){ removePerson(+t.dataset.premove); return; }
   if(t.id==='psayagain'){ sayNames(); return; }
-  if(t.id==='pmore'){ P.mode='list'; paintWho(); scrollTo(0,0); return; }
+  if(t.id==='pmore'){ paintOthers(); scrollTo(0,0); return; }
   if(t.dataset.sayok!==undefined){ const i=+t.dataset.sayok, x=P.say[i]; x.answer='yes'; x.typed=''; paintSayRow(i); return; }
   if(t.dataset.sayno!==undefined){ const i=+t.dataset.sayno, x=P.say[i]; x.answer=x.answer==='no'?null:'no'; paintSayRow(i); if(x.answer==='no'){ const f=document.querySelector(`input[data-saytype="${i}"]`); if(f) f.focus(); } return; }
   if(t.dataset.trytake!==undefined){ tryTake(+t.dataset.trytake); return; }
@@ -2042,7 +2126,9 @@ document.addEventListener('click',async e=>{
   if(t.dataset.reg){ M[cur].register=t.dataset.reg; queueSave(); paint(); return; }
   if(t.id==='onext'){ cur++; sel=null; picking=false; saveGroups(); prog({screen:'organise',part:cur+1}); paint(); scrollTo(0,0); return; }
   if(t.id==='back'){
-    if(page==='upload'&&P.mode==='say'){ P.mode='list'; paintWho(); scrollTo(0,0); return; }
+    if(page==='upload'&&P.mode==='say'){ if(others().length) paintRel(); else paintOthers(); scrollTo(0,0); return; }
+    if(page==='upload'&&P.mode==='rel'){ paintOthers(); scrollTo(0,0); return; }
+    if(page==='upload'&&P.mode==='others'){ paintMe(); scrollTo(0,0); return; }
     if(screen==='genre'){ screen='answer'; gotoGroup(M.length-1); scrollTo(0,0); return; }
     if(screen==='answer'){ if(atEnd){ atEnd=false; gotoGroup(M.length-1); } else if(cur>0) gotoGroup(cur-1); scrollTo(0,0); return; }
     if(cur>0){cur--;} sel=null; picking=false;
@@ -2110,7 +2196,8 @@ document.addEventListener('click',async e=>{
   if(gv){ pickVoice(gv.dataset.voice); return; }
 });
 document.addEventListener('keydown',e=>{
-  if(e.key==='Enter'&&(e.target.id==='pname'||e.target.id==='prel')){ e.preventDefault(); addPerson(); }
+  if(e.key==='Enter'&&e.target.id==='pname'){ e.preventDefault(); if(P.mode==='me') addMe(); else addPerson(); }
+  if(e.key==='Enter'&&e.target.dataset&&e.target.dataset.rel!==undefined){ e.preventDefault(); saveRelations(); }
   if(e.key==='Enter'&&e.target.classList&&e.target.classList.contains('anchor')){ e.preventDefault(); translateGenre(); }
   if(e.key==='Enter'&&e.target.id==='what'){ e.preventDefault(); flagWrong(); }
   if(e.key==='Enter'&&e.target.dataset&&e.target.dataset.sung!==undefined){ e.preventDefault(); tryTake(+e.target.dataset.sung); }
