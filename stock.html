@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Simtec — Stock</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2.38.4/dist/umd/supabase.js"></script>
+<script src="live.js?v=3" defer></script>
+<script src="auth.js?v=3" data-roles="admin,manager,office"></script>
+<style>
+body{font-family:system-ui,sans-serif}
+.card{background:#1e293b;border:1px solid #334155;border-radius:.75rem;padding:1.1rem 1.25rem}
+.lbl{font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:#c9a84c;font-weight:700}
+.k{color:#7c8aa0;font-size:.75rem}
+.btn{padding:.4rem .85rem;border-radius:.5rem;font-size:.8rem;font-weight:600;cursor:pointer;border:1px solid #334155;background:#1e293b;color:#94a3b8}
+.btn:hover{border-color:#c9a84c;color:#e2e8f0}
+.btn.on{background:#c9a84c;color:#1a2438;border-color:#c9a84c}
+.gold{background:#c9a84c;color:#1a2438;border:none}
+.inp{display:block;width:100%;padding:.55rem .8rem;background:#0f172a;border:1px solid #334155;border-radius:.6rem;color:#fff;font-size:.95rem;box-sizing:border-box}
+.ov{position:fixed;inset:0;background:rgba(2,6,23,.7);display:none;align-items:center;justify-content:center;z-index:50;padding:1rem}
+.ov.show{display:flex}
+.modal{background:#1e293b;border:1px solid #334155;border-radius:.9rem;padding:1.5rem;max-width:24rem;width:100%}
+table{width:100%;border-collapse:collapse}
+th{font-size:.66rem;letter-spacing:.05em;text-transform:uppercase;color:#7c8aa0;font-weight:700;text-align:left;padding:8px 10px;border-bottom:1px solid #334155}
+td{padding:9px 10px;border-bottom:1px solid #24324a;font-size:.9rem;vertical-align:middle}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:none}
+.onhand{font-size:1.15rem;font-weight:800;font-variant-numeric:tabular-nums}
+.pillc{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;background:#0f1830;border:1px solid #26324a;color:#93a4bd}
+@media(max-width:640px){td .brk{display:none}}
+/* ── PRINT, 23 Sep ─────────────────────────────────────────────────────────
+   The warehouse takes this to the floor. #printArea is built by renderUnpack
+   from THE SAME rows as the screen table, so the paper and the screen can
+   never disagree. Dark theme is forced off - a navy background wastes toner
+   and reads badly under warehouse lighting. */
+#printArea{display:none}
+@media print{
+  body *{visibility:hidden!important}
+  #printArea,#printArea *{visibility:visible!important}
+  #printArea{display:block;position:absolute;left:0;top:0;width:100%;
+             background:#fff;color:#000;font:12pt/1.35 Arial,Helvetica,sans-serif}
+  #printArea h1{font-size:16pt;margin:0 0 2pt}
+  #printArea .sub{font-size:10pt;color:#333;margin:0 0 10pt}
+  #printArea table{width:100%;border-collapse:collapse;font-size:11pt}
+  #printArea th{text-align:right;border-bottom:1.5pt solid #000;padding:5pt 4pt;
+                font-size:9pt;text-transform:uppercase;letter-spacing:.04em}
+  #printArea th:first-child,#printArea td:first-child{text-align:left}
+  #printArea td{text-align:right;border-bottom:.5pt solid #bbb;padding:5pt 4pt}
+  #printArea .job{font-weight:700}
+  #printArea .note{font-size:9pt;color:#444}
+  #printArea .tot td{border-top:1.5pt solid #000;font-weight:700}
+  #printArea .tick{display:inline-block;width:16pt;height:11pt;border:1pt solid #555}
+  #printArea .foot{margin-top:12pt;font-size:9pt;color:#444}
+  @page{margin:14mm}
+}
+</style>
+</head>
+<body class="bg-slate-950 text-white min-h-screen">
+
+<nav class="bg-slate-900 border-b border-slate-800 px-6 py-3 flex items-center gap-3">
+  <a href="home.html" style="color:#cbd5e1;text-decoration:none;font-size:.85rem;margin-right:8px">‹ Home</a>
+  <span class="font-bold tracking-wide text-lg">SIMTEC</span>
+  <span class="text-slate-400 text-sm">Stock</span>
+  <a href="reorder.html" style="color:#7dd3fc;text-decoration:none;font-size:.85rem;margin-left:14px">Reorder planning &rsaquo;</a>
+</nav>
+
+<div class="max-w-5xl mx-auto p-6">
+  <div class="flex gap-2 mb-5" id="tabs">
+    <button class="btn on" id="tabStock" onclick="setTab('stock')">Stock on hand</button>
+    <button class="btn" id="tabUnpack" onclick="setTab('unpack')">Unpack now <span id="unpackCount" class="pillc" style="margin-left:6px"></span></button>
+  </div>
+
+  <div id="paneStock">
+    <div id="forward" class="mb-5"></div>
+    <div id="summary" class="mb-5"></div>
+    <div id="asofnote" class="k mb-4"></div>
+    <div id="body"></div>
+    <div id="movlog" class="mt-8"></div>
+  </div>
+
+  <div id="paneUnpack" class="hidden"></div>
+
+  <div id="state" class="text-center text-slate-500 py-20">Loading stock…</div>
+</div>
+
+<!-- unpacked count modal — 21 Sep -->
+<div class="ov" id="ovc"><div class="modal" style="max-width:26rem">
+  <h3 class="font-semibold text-white mb-1">This week's unpacked count</h3>
+  <p class="k mb-3">How many of each are already out of the wrapping. The faint number is last time's count &mdash; type what's there today. Leave a box empty to keep last time's figure for that one; it will show as out of date.</p>
+  <div id="ovcRows" style="max-height:55vh;overflow:auto;margin-bottom:14px"></div>
+  <div class="flex gap-3">
+    <button class="btn gold flex-1" id="ovcSave" onclick="saveCount()">Save count</button>
+    <button class="btn flex-1" onclick="closeCount()">Cancel</button>
+  </div>
+  <div id="ovcErr" class="text-xs mt-3" style="color:#f87171"></div>
+</div></div>
+
+<!-- stock movement modal -->
+<div class="ov" id="ov"><div class="modal">
+  <h3 class="font-semibold text-white mb-1" id="ovtitle">Stock movement</h3>
+  <p id="ovwho" class="text-slate-500 text-xs mb-4"></p>
+  <div class="flex gap-2 mb-4">
+    <button class="btn flex-1 on" id="tabReceived" onclick="setMoveType('received')">Stock received</button>
+    <button class="btn flex-1" id="tabAdjust" onclick="setMoveType('adjustment')">Adjustment</button>
+  </div>
+  <label class="k block mb-1" id="qtyLabel">Quantity received</label>
+  <input type="number" id="mvqty" class="inp mb-1" inputmode="numeric" placeholder="e.g. 20">
+  <p class="k mb-3" id="qtyHint">How many units arrived.</p>
+  <label class="k block mb-1">Note <span style="text-transform:none;letter-spacing:normal;color:#64748b">(optional)</span></label>
+  <textarea id="mvnote" class="inp mb-4" rows="2" placeholder="e.g. factory batch, stocktake correction, 2 damaged"></textarea>
+  <div class="flex gap-3">
+    <button class="btn gold flex-1" onclick="saveMove()">Save</button>
+    <button class="btn flex-1" onclick="closeOv()">Cancel</button>
+  </div>
+  <div id="mverr" class="text-xs mt-3" style="color:#f87171"></div>
+</div></div>
+
+<script>
+const SUPABASE_URL='https://jvqjoenaungubpoegyvf.supabase.co';
+const SUPABASE_KEY='sb_publishable_J4MYTdJJyEaWe-GadpwdYA_upPT2rKw';
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const NUM=n=>(+n||0).toLocaleString('en-NZ');
+const CAT_LABEL={mattress:'Mattresses',base:'Bed bases',protector:'Mattress protectors',pillow:'Pillows'};
+const CAT_ORDER=['mattress','base','protector','pillow'];
+const IGNORE_PRODUCTS=new Set(['Delivery fee']);   // never a stock item
+
+// Payment cadence + arrears, mirrored from payments-risk.html so "in arrears" means the
+// same thing across the app. Returns how many payments behind an order is (0 if current).
+const PERIODS={weekly:{per:7,total:156},fortnightly:{per:14,total:78},monthly:{per:30.44,total:36}};
+function periodsBehindOf(o){
+  const contract=o.contract_value!=null?Number(o.contract_value):null;
+  const paid=o.amount_paid_to_date!=null?Number(o.amount_paid_to_date):0;
+  const freq=PERIODS[o.payment_frequency]||PERIODS.weekly;
+  if(contract==null||contract<=0) return 0;              // no contract value → treat as current
+  if(paid>=contract*0.999) return 0;                     // paid up
+  const haveTerms=o.instalment_amount!=null&&Number(o.instalment_amount)>0;
+  const perAmt=haveTerms?Number(o.instalment_amount):contract/freq.total;
+  const startStr=o.schedule_start_date||o.loan_start_date||o.first_payment_date||null;
+  if(!startStr) return 0;                                 // no payment schedule recorded
+  const start=new Date(String(startStr).slice(0,10)+'T00:00:00');
+  const now=new Date();
+  if(start>now) return 0;                                 // schedule starts in the future
+  const dueCount=Math.floor((now-start)/86400000/freq.per)+1;   // the first debit counts
+  const expected=Math.min(contract,perAmt*Math.max(0,dueCount));
+  return perAmt>0?Math.max(0,(expected-paid)/perAmt):0;
+}
+
+let ITEMS=[], MOVES=[], DELIVERED={}, COMMITTED={}, UNMATCHED={}, AS_OF=null;
+let MATTRESS_NAMES=new Set(), MIX={};
+
+// Page past Supabase's 1000-row cap so no delivered order is ever missed.
+async function fetchAllOrders(build){
+  const PAGE=1000; let out=[];
+  for(let from=0;;from+=PAGE){
+    const {data,error}=await build(sb.from('sim_orders')).range(from,from+PAGE-1);
+    if(error){ console.warn('stock orders:',error.message); break; }
+    out=out.concat(data||[]);
+    if(!data||data.length<PAGE) break;
+  }
+  return out;
+}
+
+function addItems(map,rows,unmatchedInto){
+  rows.forEach(o=>{
+    (o.sim_order_items||[]).forEach(it=>{
+      const name=it.product_name; if(!name||IGNORE_PRODUCTS.has(name)) return;
+      const q=+it.quantity||0;
+      map[name]=(map[name]||0)+q;
+      if(unmatchedInto && !ITEM_NAMES.has(name)) unmatchedInto[name]=(unmatchedInto[name]||0)+q;
+    });
+  });
+}
+
+let ITEM_NAMES=new Set();
+
+async function load(){
+  // 1) tracked items + opening figures
+  const {data:items,error:e1}=await sb.from('sim_stock_items').select('*').eq('active',true).order('sort');
+  if(e1){
+    $('state').innerHTML=`<div class="text-amber-300 max-w-lg mx-auto">Stock tables aren't set up yet.<br><span class="k">Run <b>stock-setup.sql</b> in the Supabase SQL editor, then refresh this page.</span><br><span class="k mt-2 inline-block">(${esc(e1.message)})</span></div>`;
+    return;
+  }
+  ITEMS=items||[];
+  ITEM_NAMES=new Set(ITEMS.map(i=>i.product_name));
+  MATTRESS_NAMES=new Set(ITEMS.filter(i=>i.category==='mattress').map(i=>i.product_name));
+  AS_OF=ITEMS.reduce((m,i)=>!m||i.as_of<m?i.as_of:m, null);   // earliest opening date
+  const asOfIso=(AS_OF||'2000-01-01')+'T00:00:00';
+
+  // 2) movements ledger
+  const {data:moves}=await sb.from('sim_stock_movements').select('*').order('created_at',{ascending:false});
+  MOVES=moves||[];
+
+  // 3) delivered items since as_of (by delivered_at) — deducted from on-hand
+  const delivered=await fetchAllOrders(q=>q
+    .select('id,delivered_at,order_status,sim_order_items(product_name,quantity)')
+    .eq('delivery_status','delivered').gte('delivered_at',asOfIso).neq('order_status','cancelled'));
+
+  // 3b) ALL active orders — Committed now = undelivered AND < 5 payments in arrears
+  // (no longer needs a booked delivery date). The same pass builds the mattress sales-mix.
+  const activeOrders=await fetchAllOrders(q=>q
+    .select('id,delivery_status,order_status,contract_value,amount_paid_to_date,payment_frequency,instalment_amount,schedule_start_date,loan_start_date,first_payment_date,next_payment_date,sim_order_items(product_name,quantity,cancelled,delivered)')
+    .eq('order_status','active'));
+
+  DELIVERED={}; COMMITTED={}; UNMATCHED={}; MIX={};
+  addItems(DELIVERED,delivered,UNMATCHED);
+
+  activeOrders.forEach(o=>{
+    const undelivered=(o.delivery_status||'')!=='delivered';
+    const committedOrder = undelivered && periodsBehindOf(o) < 5;   // worst case: assume none cancel
+    (o.sim_order_items||[]).forEach(it=>{
+      const name=it.product_name; if(!name||IGNORE_PRODUCTS.has(name)||it.cancelled) return;
+      const q=+it.quantity||0;
+      if(ITEM_NAMES.has(name)) MIX[name]=(MIX[name]||0)+q;                  // per-product qty across all current orders
+      if(committedOrder && !it.delivered) COMMITTED[name]=(COMMITTED[name]||0)+q;
+    });
+  });
+
+  await loadUnpack();      // needs MATTRESS_NAMES + ITEMS, both set above
+  render();
+}
+
+function movementSum(name){ return MOVES.filter(m=>m.product_name===name).reduce((s,m)=>s+(+m.qty||0),0); }
+function onHand(it){ return (+it.opening_qty||0)+movementSum(it.product_name)-(DELIVERED[it.product_name]||0); }
+
+function renderForward(){
+  const CATS=[['mattress','Mattresses'],['base','Bed bases'],['protector','Protectors']];
+  let out='';
+  CATS.forEach(([cat,label])=>{
+    const items=ITEMS.filter(i=>i.category===cat);
+    if(!items.length) return;
+    const catTot=items.reduce((s,it)=>s+(MIX[it.product_name]||0),0);
+    const rows=items.map(it=>{
+      const name=it.product_name, oh=onHand(it), cm=COMMITTED[name]||0, mix=MIX[name]||0;
+      return {name,oh,cm,mix,short:Math.max(0,cm-oh),pct:catTot>0?mix/catTot*100:0};
+    }).sort((a,b)=>b.cm-a.cm||b.mix-a.mix);
+    const tOh=rows.reduce((s,r)=>s+r.oh,0),tCm=rows.reduce((s,r)=>s+r.cm,0),tSh=rows.reduce((s,r)=>s+r.short,0);
+    out+=`<div class="card mb-3" style="padding:0;overflow:hidden">
+      <div class="lbl" style="padding:12px 14px 6px">${esc(label)} to deliver — worst case${cat==='mattress'?' &nbsp;<span class="k" style="text-transform:none;letter-spacing:normal">(every current order under 5 payments in arrears, none cancel)</span>':''}</div>
+      <table><thead><tr><th>${esc(label)}</th><th class="num">On hand</th><th class="num">To deliver</th><th class="num">Shortfall</th><th class="num">% mix</th></tr></thead><tbody>`;
+    rows.forEach(r=>{ out+=`<tr>
+      <td class="text-slate-100">${esc(r.name)}</td>
+      <td class="num text-slate-400">${NUM(r.oh)}</td>
+      <td class="num"><span class="pillc" style="color:#7dd3fc;border-color:#24425a">${NUM(r.cm)}</span></td>
+      <td class="num" style="color:${r.short>0?'#f87171':'#4ade80'};font-weight:600">${r.short>0?NUM(r.short):'—'}</td>
+      <td class="num text-slate-400">${r.pct.toFixed(1)}%</td>
+    </tr>`; });
+    out+=`<tr style="border-top:2px solid #334155;font-weight:700">
+      <td class="text-slate-100">Total</td>
+      <td class="num text-slate-400">${NUM(tOh)}</td>
+      <td class="num" style="color:#7dd3fc">${NUM(tCm)}</td>
+      <td class="num" style="color:${tSh>0?'#f87171':'#4ade80'}">${tSh>0?NUM(tSh):'—'}</td>
+      <td class="num text-slate-400">${catTot?'100%':'—'}</td>
+    </tr></tbody></table></div>`;
+  });
+  $('forward').innerHTML=out;
+}
+
+/* ── Unpack now ───────────────────────────────────────────────────────────
+   The warehouse needs THREE WEEKS to get a mattress out of its vacuum pack and
+   let it expand before it can go on a truck. The trap is that a booked delivery
+   date gives no warning at all: the office only rings to book AFTER a customer
+   clears the payment gate, so by the time a date exists the mattress is needed
+   in days, not weeks.
+
+   So this list is built from CLEARANCE, not from delivery dates:
+     · already booked                      — a date exists, it is coming
+     · cleared and waiting to be booked    — the office could ring today
+     · clears on its own within 21 days    — will be ringable inside the window
+   Mattresses only. Bases and protectors don't need unpacking, so listing them
+   here would only bury the thing that does. */
+const UNPACK_DAYS = 21;
+let UNPACK = { rows:[], totals:{} };
+
+async function loadUnpack(){
+  const today = new Date(new Intl.DateTimeFormat('en-CA',{timeZone:'Pacific/Auckland'}).format(new Date())+'T00:00:00');
+  const horizon = new Date(today); horizon.setDate(horizon.getDate()+UNPACK_DAYS);
+  const hIso = horizon.toISOString().slice(0,10);
+
+  const {data:clr,error}=await sb.from('v_delivery_clearance')
+    .select('order_id,cleared,booked,clears_on,payments_to_go');
+  if(error){ console.warn('clearance:',error.message); return; }
+
+  const keep={};
+  (clr||[]).forEach(c=>{
+    let why=null, ord=9;
+    if(c.booked)                                    { why='Booked';        ord=0; }
+    else if(c.cleared)                              { why='Ready to book'; ord=1; }
+    else if(c.clears_on && c.clears_on<=hIso)       { why='Clears '+c.clears_on; ord=2; }
+    if(why) keep[c.order_id]={why,ord,clears_on:c.clears_on,toGo:c.payments_to_go};
+  });
+  const ids=Object.keys(keep);
+  if(!ids.length){ UNPACK={rows:[],totals:{}}; return; }
+
+  const rows=[];
+  for(let i=0;i<ids.length;i+=100){
+    const {data}=await sb.from('sim_orders')
+      .select('id,delivery_date,delivery_status,customer_id,sim_order_items(product_name,quantity,cancelled,delivered)')
+      .in('id',ids.slice(i,i+100)).eq('order_status','active').neq('delivery_status','delivered');
+    (data||[]).forEach(o=>rows.push(o));
+  }
+  // customer names, so the warehouse can match a pack to a job
+  const cids=[...new Set(rows.map(o=>o.customer_id).filter(Boolean))];
+  const NM={};
+  for(let i=0;i<cids.length;i+=200){
+    const {data:cs}=await sb.from('sim_customers').select('id,first_name,last_name').in('id',cids.slice(i,i+200));
+    (cs||[]).forEach(c=>NM[c.id]=[c.first_name,c.last_name].filter(Boolean).join(' ')||'(no name)');
+  }
+
+  const out=[], totals={};
+  rows.forEach(o=>{
+    const mats=(o.sim_order_items||[]).filter(it=>
+      it.product_name && MATTRESS_NAMES.has(it.product_name) && !it.cancelled && !it.delivered);
+    if(!mats.length) return;                       // no mattress on it → nothing to unpack
+    mats.forEach(it=>{ totals[it.product_name]=(totals[it.product_name]||0)+(+it.quantity||0); });
+    const k=keep[o.id];
+    out.push({ id:o.id, name:NM[o.customer_id]||'(no customer)', why:k.why, ord:k.ord,
+               when:o.delivery_date||k.clears_on||null, toGo:k.toGo,
+               items:mats.map(it=>({name:it.product_name, qty:+it.quantity||0})) });
+  });
+  out.sort((a,b)=>a.ord-b.ord || String(a.when||'').localeCompare(String(b.when||'')) || a.name.localeCompare(b.name));
+  UNPACK={rows:out, totals};
+}
+
+// 21 Sep — Nigel: "On each Monday, I want to know what we need to unpack so we
+// always have a minimum of 3 weeks deliveries unpacked... I want 2 more of every
+// type than we expect to need over the next 3 weeks unpacked at all times."
+//
+// ⚠ WHAT THIS REPLACED. The old "To unpack" column was the 21-day NEED, set
+// against On hand — the WHOLE warehouse, packed and unpacked together. With 20
+// Super Kings already expanded and 24 due it said unpack 24; the job was 4.
+// Nothing recorded what was unpacked, so it could not have known.
+// Now: To unpack = (needed + 2) − already unpacked, never below zero, and never
+// more than is actually sitting there PACKED. The label stays "To unpack" on
+// Nigel's instruction — it is the job that needs doing this week.
+const UNPACK_SPARE = 2;        // "2 more of every type" — every type, including ones with nothing due
+const COUNT_STALE_DAYS = 7;    // a count older than this is last week's answer, and says so
+
+function unpackRow(it){
+  const need   = UNPACK.totals[it.product_name] || 0;
+  const target = need + UNPACK_SPARE;
+  const oh     = onHand(it);
+  const onOrder= +it.on_order || 0;
+  // NULL IS NOT ZERO. Never counted must not read as "none unpacked", or the page
+  // would tell the warehouse to unpack stock that is already unpacked.
+  if(it.unpacked_qty === null || it.unpacked_qty === undefined)
+    return { name:it.product_name, need, target, oh, up:null, job:null, short:0, over:false, onOrder };
+  const up     = +it.unpacked_qty;
+  const packed = Math.max(0, oh - up);
+  const want   = Math.max(0, target - up);
+  const job    = Math.min(want, packed);          // cannot unpack what is not there
+  return { name:it.product_name, need, target, oh, up, job, short: want - job,
+           over: up > oh,                         // the count is the truth; if it beats the
+           onOrder };                             // stock figure, the stock figure needs checking
+}
+
+function renderUnpack(){
+  const {rows}=UNPACK;
+  const mats = ITEMS.filter(i=>i.category==='mattress');          // ALL active types, in stock order
+  const R    = mats.map(unpackRow);
+
+  // how old is the count? the OLDEST type decides, so one stale row can't hide behind fresh ones
+  const stamps  = mats.map(i=>i.unpacked_counted_at).filter(Boolean).map(d=>new Date(d).getTime());
+  const uncount = R.filter(r=>r.up===null).length;
+  const oldest  = stamps.length ? Math.min(...stamps) : null;
+  const ageDays = oldest===null ? null : Math.floor((Date.now()-oldest)/864e5);
+  const stale   = uncount>0 || ageDays===null || ageDays>COUNT_STALE_DAYS;
+  const whoRow  = mats.find(i=>i.unpacked_counted_at && new Date(i.unpacked_counted_at).getTime()===oldest);
+  const when    = oldest===null ? '' : new Date(oldest).toLocaleDateString('en-NZ',{weekday:'short',day:'numeric',month:'short'});
+
+  const totJob = R.reduce((a,r)=>a+(r.job||0),0);
+  const badge=$('unpackCount');
+  if(badge) badge.textContent = stale ? '!' : (totJob ? String(totJob) : '');
+
+  const countLine = uncount===R.length
+      ? `<span style="color:#f87171;font-weight:600">Not counted yet.</span> Enter how many of each are already unpacked before using this list.`
+    : uncount>0
+      ? `<span style="color:#f87171;font-weight:600">${uncount} type${uncount===1?' has':'s have'} never been counted.</span> Their row says "count first".`
+    : ageDays>COUNT_STALE_DAYS
+      ? `<span style="color:#f87171;font-weight:600">Last counted ${ageDays} days ago (${when}).</span> Count again before unpacking — these figures are last week's.`
+      : `Counted ${when}${whoRow&&whoRow.unpacked_counted_by?' by '+esc(whoRow.unpacked_counted_by):''}.`;
+
+  let html=`<div class="card mb-4" style="padding:0;overflow:hidden">
+    <div class="flex items-start justify-between gap-3" style="padding:12px 14px 6px">
+      <div>
+        <div class="lbl">Unpack now — three weeks of deliveries, plus ${UNPACK_SPARE} of every type</div>
+        <div class="k" style="margin-top:4px">${countLine}</div>
+      </div>
+      <div class="flex gap-2" style="white-space:nowrap">
+        <button class="btn" onclick="window.print()">Print list</button>
+        <button class="btn gold" onclick="openCount()">Enter this week's count</button>
+      </div>
+    </div>
+    <div class="k" style="padding:0 14px 10px">Needed is everything booked, cleared and waiting for the office to ring, or clearing on its own inside ${UNPACK_DAYS} days.
+      Target is that plus ${UNPACK_SPARE}. To unpack is the target less what is already unpacked. Bases and protectors aren't listed — they don't need the lead time.</div>
+    <table><thead><tr><th>Mattress</th><th class="num">Needed (${UNPACK_DAYS} days)</th><th class="num">Target</th><th class="num">Unpacked</th><th class="num">To unpack</th></tr></thead><tbody>`;
+
+  let tN=0,tT=0,tU=0;
+  R.forEach(r=>{
+    tN+=r.need; tT+=r.target; if(r.up!==null) tU+=r.up;
+    let jobCell;
+    if(r.up===null)       jobCell=`<span class="k">count first</span>`;
+    else if(r.job>0)      jobCell=`<span class="pillc" style="color:#fbbf24;border-color:#5a4a24">${NUM(r.job)}</span>`;
+    else                  jobCell=`<span style="color:#4ade80;font-weight:600">—</span>`;
+    const notes=[];
+    if(r.short>0) notes.push(`<span style="color:#f87171">${NUM(r.short)} short — ${r.oh<=0?'none in the warehouse':'only '+NUM(Math.max(0,r.oh-(r.up||0)))+' packed'}${r.onOrder?', '+NUM(r.onOrder)+' on order':''}</span>`);
+    if(r.over)    notes.push(`<span style="color:#fbbf24">counted ${NUM(r.up)}, but the system holds ${NUM(r.oh)} — the stock figure needs checking</span>`);
+    html+=`<tr><td class="text-slate-100">${esc(r.name)}${notes.length?`<div class="k" style="margin-top:3px">${notes.join('<br>')}</div>`:''}</td>
+      <td class="num text-slate-300">${NUM(r.need)}</td>
+      <td class="num text-slate-400">${NUM(r.target)}</td>
+      <td class="num text-slate-300">${r.up===null?'<span class="k">—</span>':NUM(r.up)}</td>
+      <td class="num">${jobCell}</td></tr>`;
+  });
+  html+=`<tr style="border-top:2px solid #334155;font-weight:700">
+      <td class="text-slate-100">Total</td>
+      <td class="num text-slate-300">${NUM(tN)}</td>
+      <td class="num text-slate-400">${NUM(tT)}</td>
+      <td class="num text-slate-300">${NUM(tU)}</td>
+      <td class="num" style="color:${totJob>0?'#fbbf24':'#4ade80'}">${totJob>0?NUM(totJob):'—'}</td>
+    </tr></tbody></table></div>`;
+
+  // ── THE PRINTED SHEET, 23 Sep ───────────────────────────────────────────
+  // Built from R - the SAME rows as the table above - so paper and screen can
+  // never show different numbers. Hidden on screen, visible only when printed.
+  const pj = R.filter(r=>r.job>0).reduce((a,r)=>a+r.job,0);
+  const printed = new Date().toLocaleDateString('en-NZ',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  let ph=`<div id="printArea">
+    <h1>Unpack list — three weeks of deliveries, plus ${UNPACK_SPARE} of every type</h1>
+    <div class="sub">Printed ${printed}. ${
+      uncount===R.length ? '<b>NOT COUNTED YET — these figures cannot be relied on.</b>'
+      : uncount>0 ? `<b>${uncount} type${uncount===1?'':'s'} never counted</b> — shown as "count first".`
+      : ageDays>COUNT_STALE_DAYS ? `<b>Last counted ${ageDays} days ago (${when}) — count again before unpacking.</b>`
+      : `Counted ${when}${whoRow&&whoRow.unpacked_counted_by?' by '+esc(whoRow.unpacked_counted_by):''}.`}</div>
+    <table><thead><tr>
+      <th>Mattress</th><th>Needed (${UNPACK_DAYS} days)</th><th>Target</th>
+      <th>Already unpacked</th><th>TO UNPACK</th><th>Done</th>
+    </tr></thead><tbody>`;
+  R.forEach(r=>{
+    const note = r.up===null ? 'count this one first'
+      : r.short>0 ? `${NUM(r.short)} short — ${r.oh<=0?'none in the warehouse':'only '+NUM(Math.max(0,r.oh-r.up))+' packed'}${r.onOrder?', '+NUM(r.onOrder)+' on order':''}`
+      : r.over ? `counted ${NUM(r.up)} but the system holds ${NUM(r.oh)} — check the stock figure` : '';
+    ph+=`<tr><td>${esc(r.name)}${note?`<div class="note">${note}</div>`:''}</td>
+      <td>${NUM(r.need)}</td><td>${NUM(r.target)}</td>
+      <td>${r.up===null?'—':NUM(r.up)}</td>
+      <td class="job">${r.up===null?'?':(r.job>0?NUM(r.job):'—')}</td>
+      <td>${r.job>0?'<span class="tick"></span>':''}</td></tr>`;
+  });
+  ph+=`<tr class="tot"><td>Total</td><td>${NUM(tN)}</td><td>${NUM(tT)}</td><td>${NUM(tU)}</td><td>${pj>0?NUM(pj):'—'}</td><td></td></tr>
+    </tbody></table>
+    <div class="foot">Needed is everything booked, cleared and waiting for the office to ring, or clearing on its own inside ${UNPACK_DAYS} days.
+      Target is that plus ${UNPACK_SPARE}. To unpack is the target less what is already unpacked, and never more than is actually there packed.</div>
+  </div>`;
+  html += ph;
+
+  // the orders behind it — only when there are any; the table above always shows,
+  // because every type has a target of at least ${UNPACK_SPARE}
+  if(!rows.length){ $('paneUnpack').innerHTML=html; return; }
+
+  html+=`<div class="card" style="padding:0;overflow:hidden">
+    <div class="lbl" style="padding:12px 14px 6px">The ${rows.length} order${rows.length===1?'':'s'} behind that</div>
+    <table><thead><tr><th>Customer</th><th>Mattress</th><th>Why it's here</th></tr></thead><tbody>`;
+  rows.forEach(r=>{
+    const when=r.why==='Booked'&&r.when?('Booked '+r.when):r.why;
+    const colour=r.ord===0?'#7dd3fc':r.ord===1?'#4ade80':'#fbbf24';
+    html+=`<tr>
+      <td class="text-slate-100">${esc(r.name)}</td>
+      <td class="text-slate-300">${r.items.map(i=>esc(i.name)+(i.qty>1?' ×'+i.qty:'')).join('<br>')}</td>
+      <td><span class="pillc" style="color:${colour};border-color:#2a3a55">${esc(when)}</span>${
+        r.ord===2&&r.toGo?`<span class="k" style="margin-left:8px">${r.toGo} payment${r.toGo===1?'':'s'} to go</span>`:''}</td>
+    </tr>`;
+  });
+  html+='</tbody></table></div>';
+  $('paneUnpack').innerHTML=html;
+}
+
+function setTab(t){
+  const stock=t==='stock';
+  $('paneStock').classList.toggle('hidden',!stock);
+  $('paneUnpack').classList.toggle('hidden',stock);
+  $('tabStock').classList.toggle('on',stock);
+  $('tabUnpack').classList.toggle('on',!stock);
+}
+
+function render(){
+  $('state').classList.add('hidden');
+  renderForward();
+  renderUnpack();
+
+  // summary totals per category
+  const totals={}; CAT_ORDER.forEach(c=>totals[c]=0);
+  ITEMS.forEach(it=>{ totals[it.category]=(totals[it.category]||0)+onHand(it); });
+  const grand=Object.values(totals).reduce((a,b)=>a+b,0);
+  const stat=(l,v,extra='')=>`<div class="card" style="padding:1rem"><div class="lbl">${l}</div><div class="text-2xl font-bold mt-1">${NUM(v)}</div>${extra?`<div class="k mt-1">${extra}</div>`:''}</div>`;
+  $('summary').innerHTML='<div class="grid grid-cols-2 md:grid-cols-4 gap-3">'
+    + stat('Mattresses on hand', totals.mattress)
+    + stat('Bed bases on hand', totals.base)
+    + stat('Protectors on hand', totals.protector)
+    + stat('Total units', grand)
+    + '</div>';
+
+  const asOfTxt = AS_OF ? new Date(AS_OF+'T12:00:00').toLocaleDateString('en-NZ',{day:'2-digit',month:'long',year:'numeric'}) : '—';
+  $('asofnote').innerHTML=`On hand = opening count (as of <b>${asOfTxt}</b>) + stock received &amp; adjustments − items on delivered orders since then. <span style="color:#7dd3fc">Committed</span> = undelivered orders under 5 payments in arrears — stock we're on the hook to deliver.`;
+
+  // tables by category
+  let html='';
+  CAT_ORDER.forEach(cat=>{
+    const rows=ITEMS.filter(i=>i.category===cat);
+    if(!rows.length) return;
+    html+=`<div class="card mb-4" style="padding:0;overflow:hidden">
+      <div class="lbl" style="padding:12px 14px 6px">${CAT_LABEL[cat]||cat}</div>
+      <table><thead><tr>
+        <th>Product</th>
+        <th class="num brk">Opening</th>
+        <th class="num brk">+ Recv/adj</th>
+        <th class="num brk">− Delivered</th>
+        <th class="num">On hand</th>
+        <th class="num">Committed</th>
+        <th></th>
+      </tr></thead><tbody>`;
+    rows.forEach(it=>{
+      const mv=movementSum(it.product_name), dl=DELIVERED[it.product_name]||0, cm=COMMITTED[it.product_name]||0;
+      const oh=onHand(it);
+      const ohColor = oh<=0?'#f87171':(oh<=5?'#fbbf24':'#e2e8f0');
+      html+=`<tr>
+        <td class="text-slate-100">${esc(it.product_name)}</td>
+        <td class="num brk text-slate-400">${NUM(it.opening_qty)}</td>
+        <td class="num brk" style="color:${mv>0?'#4ade80':(mv<0?'#f87171':'#64748b')}">${mv>0?'+':''}${NUM(mv)}</td>
+        <td class="num brk text-slate-400">${dl?('−'+NUM(dl)):'—'}</td>
+        <td class="num onhand" style="color:${ohColor}">${NUM(oh)}</td>
+        <td class="num">${cm?`<span class="pillc" style="color:#7dd3fc;border-color:#24425a">${NUM(cm)}</span>`:'<span class="k">—</span>'}</td>
+        <td class="num" style="white-space:nowrap">
+          <button class="btn" onclick="openMove('${esc(it.product_name).replace(/'/g,"\\'")}','received')">+ Receive</button>
+          <button class="btn" onclick="openMove('${esc(it.product_name).replace(/'/g,"\\'")}','adjustment')">Adjust</button>
+        </td>
+      </tr>`;
+    });
+    html+='</tbody></table></div>';
+  });
+
+  // any delivered product that isn't a tracked SKU (name mismatch or untracked item like pillows)
+  const un=Object.keys(UNMATCHED).filter(n=>!ITEM_NAMES.has(n));
+  if(un.length){
+    html+=`<div class="card mb-4" style="border-color:#8a5a12">
+      <div class="lbl" style="color:#e6c260">Delivered but not tracked as stock</div>
+      <p class="k mt-1">These appeared on delivered orders since ${esc(AS_OF)} but don't match a tracked SKU (a name difference, or an untracked item like pillows). They are <b>not</b> deducted from any stock line.</p>
+      <div class="mt-2 text-sm text-slate-300">${un.sort().map(n=>`${esc(n)} <span class="k">×${NUM(UNMATCHED[n])}</span>`).join(' &nbsp;·&nbsp; ')}</div>
+    </div>`;
+  }
+  $('body').innerHTML=html;
+
+  // recent movements
+  const recent=MOVES.slice(0,30);
+  $('movlog').innerHTML = recent.length ? `<div class="card">
+    <div class="lbl mb-2">Recent stock movements</div>
+    <table><thead><tr><th>When</th><th>Product</th><th>Type</th><th class="num">Qty</th><th>By</th><th>Note</th></tr></thead><tbody>`
+    + recent.map(m=>`<tr>
+        <td class="k" style="white-space:nowrap">${new Date(m.created_at).toLocaleDateString('en-NZ',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
+        <td class="text-slate-200">${esc(m.product_name)}</td>
+        <td>${m.reason==='received'?'<span style="color:#4ade80">Received</span>':'<span style="color:#fbbf24">Adjustment</span>'}</td>
+        <td class="num" style="color:${(+m.qty||0)>=0?'#4ade80':'#f87171'}">${(+m.qty||0)>0?'+':''}${NUM(m.qty)}</td>
+        <td class="k">${esc(m.created_by||'')}</td>
+        <td class="k">${esc(m.note||'')}</td>
+      </tr>`).join('')
+    + '</tbody></table></div>' : '';
+}
+
+// ── movement modal ──────────────────────────────────────────────────────────
+let mvProduct=null, mvType='received';
+window.openMove=(product,type)=>{
+  mvProduct=product; setMoveType(type||'received');
+  $('ovwho').textContent=product;
+  $('mvqty').value=''; $('mvnote').value=''; $('mverr').textContent='';
+  $('ov').classList.add('show'); setTimeout(()=>$('mvqty').focus(),50);
+};
+window.closeOv=()=>{$('ov').classList.remove('show');mvProduct=null;};
+window.setMoveType=(t)=>{
+  mvType=t;
+  $('tabReceived').classList.toggle('on',t==='received');
+  $('tabAdjust').classList.toggle('on',t==='adjustment');
+  $('ovtitle').textContent = t==='received'?'Stock received':'Stock adjustment';
+  $('qtyLabel').textContent = t==='received'?'Quantity received':'Adjustment (+ up / − down)';
+  $('qtyHint').textContent = t==='received'
+    ? 'How many units arrived. Adds to stock on hand.'
+    : 'Use a negative number to reduce (damage, write-off, count down) or positive to add.';
+};
+window.saveMove=async()=>{
+  const raw=$('mvqty').value.trim();
+  let qty=parseInt(raw,10);
+  if(isNaN(qty)||qty===0){ $('mverr').textContent='Enter a non-zero quantity.'; return; }
+  if(mvType==='received' && qty<0){ $('mverr').textContent='Received quantity must be positive (use Adjustment to reduce).'; return; }
+  const by=(window.SIMTEC_USER&&(window.SIMTEC_USER.full_name||window.SIMTEC_USER.email))||null;
+  const btn=document.querySelector('#ov .gold'); if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  const {error}=await sb.from('sim_stock_movements').insert({
+    product_name:mvProduct, qty, reason:mvType, note:($('mvnote').value.trim()||null), created_by:by
+  });
+  if(btn){btn.disabled=false;btn.textContent='Save';}
+  if(error){ $('mverr').textContent=error.message; return; }
+  closeOv(); await load();
+};
+
+// ── unpacked count, 21 Sep ────────────────────────────────────────────────
+// ⚠ LAST WEEK'S FIGURE IS A PLACEHOLDER, NOT A VALUE. Pre-filling it would let
+// somebody press Save without counting, stamp last week's numbers with today's
+// date, and defeat the staleness check completely.
+window.openCount=()=>{
+  const mats=ITEMS.filter(i=>i.category==='mattress');
+  $('ovcRows').innerHTML=mats.map(it=>{
+    const last=(it.unpacked_qty===null||it.unpacked_qty===undefined)?'':String(it.unpacked_qty);
+    return `<label class="flex items-center justify-between gap-3" style="padding:6px 0;border-bottom:1px solid #24324a">
+      <span class="text-slate-200" style="font-size:.9rem">${esc(it.product_name)}</span>
+      <input type="number" min="0" step="1" inputmode="numeric" class="inp" style="width:6rem;text-align:right"
+             data-name="${esc(it.product_name)}" placeholder="${last?'last '+last:'—'}">
+    </label>`;
+  }).join('');
+  $('ovcErr').textContent='';
+  $('ovc').classList.add('show');
+  const first=$('ovcRows').querySelector('input'); if(first) first.focus();
+};
+window.closeCount=()=>{ $('ovc').classList.remove('show'); };
+window.saveCount=async()=>{
+  const counts={}, bad=[];
+  $('ovcRows').querySelectorAll('input').forEach(inp=>{
+    const raw=inp.value.trim();
+    if(raw==='') return;                                   // empty = keep last time's figure
+    if(!/^\d+$/.test(raw)){ bad.push(inp.dataset.name); return; }
+    counts[inp.dataset.name]=parseInt(raw,10);             // a NUMBER — the database refuses text
+  });
+  if(bad.length){ $('ovcErr').textContent='Whole numbers only: '+bad.join(', ')+'.'; return; }
+  if(!Object.keys(counts).length){ $('ovcErr').textContent='Nothing entered.'; return; }
+  const by=(window.SIMTEC_USER&&(window.SIMTEC_USER.full_name||window.SIMTEC_USER.email))||null;
+  const btn=$('ovcSave'); btn.disabled=true; btn.textContent='Saving…';
+  // all-or-nothing in the database: if any one is refused, none of them is saved
+  const {error}=await sb.rpc('set_unpacked_counts',{p_counts:counts,p_by:by});
+  btn.disabled=false; btn.textContent='Save count';
+  if(error){ $('ovcErr').textContent=error.message; return; }
+  closeCount(); await load();
+};
+
+// live.js?v=3: refresh on data change / focus / once a minute
+window.SIMTEC_RELOAD=function(){ load(); };
+load();
+</script>
+</body>
+</html>
