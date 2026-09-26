@@ -1541,7 +1541,7 @@ let TURN=null, draft='', turnBusy=false, wrongOpen=false, whatDraft='';
    shown to her. */
 const finishedMem=m=>!!(m&&m.turn&&m.turn.done&&m.turn.finished);
 async function closeOnServer(m,how){
-  try{ const r=await rpc('close_memory',{p_token:TOKEN,p_chapter:m.id,p_how:how,...(ASK?{p_person:ASK.person_id}:{})}); if(!r||r.error) throw new Error((r&&r.error)||'close_memory failed'); return true; }
+  try{ const r=ASK?await rpc('close_memory_for',{p_token:TOKEN,p_chapter:m.id,p_how:how}):await rpc('close_memory',{p_token:TOKEN,p_chapter:m.id,p_how:how}); if(!r||r.error) throw new Error((r&&r.error)||'close_memory failed'); return true; }
   catch(e){ report('close_memory',e,{group:m.title,how}); return false; }
 }
 function fromEngine(j){
@@ -1550,8 +1550,14 @@ function fromEngine(j){
   return {done:false,turn_id:j.turn_id,seq:n,level:n,stage:j.stage||j.gap||'',question:j.question||'',asset_id:j.asset_id??null,
     photos_set:!!j.photos_set,because_of:j.because_of||null,looked_up:j.looked_up||null,total:n,answered:n-1};
 }
+/* A skip. An answerer's goes through answer_turn_for, which checks the turn
+   was asked of HER (from her token) before it saves anything. */
+function skipOnServer(t){
+  return ASK?rpc('answer_turn_for',{p_token:TOKEN,p_turn:t.turn_id,p_answer:null,p_skip:true})
+            :rpc('answer_memory_turn',{p_token:TOKEN,p_turn:t.turn_id,p_skip:true});
+}
 async function readTurn(m){                                  // where a memory is up to; generates nothing
-  try{ const t=await rpc('next_memory_turn',{p_token:TOKEN,p_chapter:m.id,...(ASK?{p_person:ASK.person_id}:{})});
+  try{ const t=ASK?await rpc('turn_for',{p_token:TOKEN,p_chapter:m.id}):await rpc('next_memory_turn',{p_token:TOKEN,p_chapter:m.id});
     if(t&&!t.error) return t.done?t:{...t,level:+t.level||+t.seq||1,asset_id:t.asset_id??null,photos_set:!!t.photos_set};
     report('next_memory_turn',new Error((t&&t.error)||'bad reply'),{group:m.title});
     if(ASK) throw new Error('next_memory_turn refused for an answerer'); }
@@ -1604,10 +1610,10 @@ async function showAnswer(){
   page='answer'; screen='answer';
   plain('<p class="load">Loading your photos…</p>');
   try{
-    let d=await api('load',{});
+    let d=ASK?await answerLoad():await api('load',{});
     A=d.assets.filter(a=>a.url);
     name=ASK?ASK.name:((d.collection&&d.collection.owner_name)||'');
-    try{ const cs=await rpc('clip_state',{p_token:TOKEN}); CLIPS={}; (cs&&cs.clips||[]).forEach(c=>{ CLIPS[c.id]=c; }); }catch(_){}
+    if(!ASK) try{ const cs=await rpc('clip_state',{p_token:TOKEN}); CLIPS={}; (cs&&cs.clips||[]).forEach(c=>{ CLIPS[c.id]=c; }); }catch(_){}
     /* An answerer is asked about the memories on HER list, in its order. */
     const mine=ASK&&Array.isArray(ASK.memories)?[...ASK.memories].sort((x,y)=>(x.seq??0)-(y.seq??0)):null;
     const chs=mine?mine.map(x=>{ const c=(d.chapters||[]).find(c=>c.id===x.chapter_id); return {...(c||{}),id:x.chapter_id,title:x.title||(c&&c.title)||''}; })
@@ -1743,7 +1749,7 @@ async function answerTurn(skip){
     const before=$('nav').querySelector('.before'); if(before) before.textContent="That didn't go through. Please press Next again."; };
   let nt;
   try{
-    if(skip){ const r=await rpc('answer_memory_turn',{p_token:TOKEN,p_turn:t.turn_id,p_skip:true}); if(!r||r.error) throw new Error((r&&r.error)||'answer_memory_turn failed'); nt=await askEngine(m); }
+    if(skip){ const r=await skipOnServer(t); if(!r||r.error) throw new Error((r&&r.error)||'answer_memory_turn failed'); nt=await askEngine(m); }
     else nt=await askEngine(m,t.turn_id,text);
   }catch(e){ report(skip?'skip turn':'answer turn',e,{group:m.title,level:t.level}); fail(); return; }
   if(page!=='answer') return;
@@ -2152,6 +2158,17 @@ async function routeAnswering(){
   $('helpline').classList.remove('hide');
   if(w.finished) return showAnswered();
   return showAnswer();
+}
+/* answer_load {p_answer_token} → {person_id, name, memories:[{chapter_id, title, seq, finished, photos}]}
+   — no notes, no music, no owner fields. Put in the shape the answer page reads. */
+async function answerLoad(){
+  const L=await rpc('answer_load',{p_answer_token:ANSWER});
+  if(!L||L.error||!Array.isArray(L.memories)) throw new Error((L&&L.error)||'answer_load: bad reply');
+  ASK.memories=L.memories;
+  const assets=[], chapters=[];
+  L.memories.forEach(x=>{ chapters.push({id:x.chapter_id,title:x.title||''});
+    (x.photos||[]).forEach((p,i)=>assets.push({...p,id:p.id||p.asset_id,chapter_id:x.chapter_id,sort_index:p.sort_index??i})); });
+  return {assets,chapters,collection:{}};
 }
 async function finishAnswering(b){
   try{ const r=await rpc('finish_answering',{p_answer_token:ANSWER}); if(r&&r.error) throw new Error(r.error); }
