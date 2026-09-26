@@ -261,8 +261,10 @@ async function setStage(stage){
    swallowed it. Every catch in this page reports. Never throws. */
 function report(what,e,detail){
   try{
-    fetch(FN+'/flow',{method:'POST',keepalive:true,headers:HDR,
-      body:JSON.stringify({token:TOKEN,action:'report_error',page:'index.html',
+    /* An answerer's token is refused by flow; answer-flow takes it and files
+       the error against the right collection. */
+    fetch(FN+(ASK?'/answer-flow':'/flow'),{method:'POST',keepalive:true,headers:HDR,
+      body:JSON.stringify({token:TOKEN,action:'report_error',page:'index.html',at:what,
         what, message:(e&&e.message)||String(e||''), detail:detail||null,
         url:location.href, user_agent:navigator.userAgent})}).catch(()=>{});
   }catch(_){}
@@ -2159,11 +2161,13 @@ async function routeAnswering(){
   if(w.finished) return showAnswered();
   return showAnswer();
 }
-/* answer_load {p_answer_token} → {person_id, name, memories:[{chapter_id, title, seq, finished, photos}]}
-   — no notes, no music, no owner fields. Put in the shape the answer page reads. */
+/* answer-flow {token, action:'load'} → {person_id, name, photos (a count),
+     memories:[{chapter_id, title, seq, finished, photos:[{id, is_clip, url, thumb_url}]}]}
+   — signed links, no notes, no music, no owner fields. ⚠ 503 when nothing
+   could be signed: that is a fault, never "no photographs". Put in the shape the answer page reads. */
 async function answerLoad(){
-  const L=await rpc('answer_load',{p_answer_token:ANSWER});
-  if(!L||L.error||!Array.isArray(L.memories)) throw new Error((L&&L.error)||'answer_load: bad reply');
+  const {ok,status,j:L}=await post('answer-flow',{action:'load'});
+  if(!ok||!L||L.error||!Array.isArray(L.memories)) throw new Error((L&&L.error)||('answer-flow load HTTP '+status));
   ASK.memories=L.memories;
   const assets=[], chapters=[];
   L.memories.forEach(x=>{ chapters.push({id:x.chapter_id,title:x.title||''});
