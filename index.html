@@ -213,7 +213,14 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
 const FN=SB+'/functions/v1';
 const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
-const TOKEN=new URLSearchParams(location.search).get('t')||'';
+let TOKEN=new URLSearchParams(location.search).get('t')||'';
+/* ?a=<answer token> — somebody else answering the same memories (on a film
+   with two people, BOTH accounts go in the song). whos_answering turns it into
+   the collection's token and who they are; everything after that is asked AS
+   THEM (p_person / person_id) and sees only their own turns. ⚠⚠ They must
+   never see the other person's answers — shown his, she would simply agree. */
+const ANSWER=new URLSearchParams(location.search).get('a')||'';
+let ASK=null;        // {person_id, name, relation, collection_id, finished} while someone is answering
 const HDR={'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY};
 
 const $=id=>document.getElementById(id);
@@ -262,7 +269,7 @@ function report(what,e,detail){
 }
 window.addEventListener('error', ev => report('uncaught', ev.error||ev.message));
 window.addEventListener('unhandledrejection', ev => report('unhandled promise', ev.reason));
-const prog=o=>api('save_progress',{progress:o}).catch(e=>report('save progress',e));
+const prog=o=>ASK?Promise.resolve():api('save_progress',{progress:o}).catch(e=>report('save progress',e));   // progress is the builder's; an answerer never moves it
 
 let J={};            // what journey told us: name, stage, photos, described, owner_name …
 let page='';         // which page is showing
@@ -272,6 +279,7 @@ function plain(html){ $('stage').innerHTML=html; $('stage').className='';
 
 /* ═══ ROUTER ═════════════════════════════════════════════════════ */
 async function route(){
+  if(ANSWER) return routeAnswering();
   if(!TOKEN){
     plain(`<h1>This link is missing its code</h1>
       <p class="do">Please open the full link you were sent — the long one, with everything after <b>?t=</b>.</p>`);
@@ -1533,7 +1541,7 @@ let TURN=null, draft='', turnBusy=false, wrongOpen=false, whatDraft='';
    shown to her. */
 const finishedMem=m=>!!(m&&m.turn&&m.turn.done&&m.turn.finished);
 async function closeOnServer(m,how){
-  try{ const r=await rpc('close_memory',{p_token:TOKEN,p_chapter:m.id,p_how:how}); if(!r||r.error) throw new Error((r&&r.error)||'close_memory failed'); return true; }
+  try{ const r=await rpc('close_memory',{p_token:TOKEN,p_chapter:m.id,p_how:how,...(ASK?{p_person:ASK.person_id}:{})}); if(!r||r.error) throw new Error((r&&r.error)||'close_memory failed'); return true; }
   catch(e){ report('close_memory',e,{group:m.title,how}); return false; }
 }
 function fromEngine(j){
@@ -1543,14 +1551,18 @@ function fromEngine(j){
     photos_set:!!j.photos_set,because_of:j.because_of||null,looked_up:j.looked_up||null,total:n,answered:n-1};
 }
 async function readTurn(m){                                  // where a memory is up to; generates nothing
-  try{ const t=await rpc('next_memory_turn',{p_token:TOKEN,p_chapter:m.id});
+  try{ const t=await rpc('next_memory_turn',{p_token:TOKEN,p_chapter:m.id,...(ASK?{p_person:ASK.person_id}:{})});
     if(t&&!t.error) return t.done?t:{...t,level:+t.level||+t.seq||1,asset_id:t.asset_id??null,photos_set:!!t.photos_set};
-    report('next_memory_turn',new Error((t&&t.error)||'bad reply'),{group:m.title}); }
-  catch(e){ report('next_memory_turn',e,{group:m.title}); }
+    report('next_memory_turn',new Error((t&&t.error)||'bad reply'),{group:m.title});
+    if(ASK) throw new Error('next_memory_turn refused for an answerer'); }
+  catch(e){ report('next_memory_turn',e,{group:m.title});
+    /* ⚠⚠ Fail closed. "Nothing asked yet" here would have the engine write
+       her questions from a turn list that may include his. */
+    if(ASK) throw e; }
   return {done:true,total:0,answered:0};
 }
 async function askEngine(m,turn_id,answer){                 // the next question, or done — a model call, a few seconds
-  const body={chapter_id:m.id}; if(turn_id){ body.turn_id=turn_id; body.answer=answer; }
+  const body={chapter_id:m.id,...(ASK?{person_id:ASK.person_id}:{})}; if(turn_id){ body.turn_id=turn_id; body.answer=answer; }
   const {ok,status,j}=await post('interview',body);
   if(!ok||!j||j.error) throw new Error((j&&j.error)||('interview HTTP '+status));
   if(j.waiting){ const t=await readTurn(m); if(!t.done) return t; throw new Error('interview: waiting, but no open turn'); }
@@ -1569,7 +1581,7 @@ async function openTurn(m){
   const t=await readTurn(m);
   if(!t.done) return t;
   if(t.finished) return t;
-  if(!(+t.total)){ try{ const {ok,status,j}=await post('brief',{chapter_id:m.id}); if(!ok||!j||j.error) throw new Error((j&&j.error)||('brief HTTP '+status)); m.brief=j.brief||null; }
+  if(!(+t.total)){ try{ const {ok,status,j}=await post('brief',{chapter_id:m.id,...(ASK?{person_id:ASK.person_id}:{})}); if(!ok||!j||j.error) throw new Error((j&&j.error)||('brief HTTP '+status)); m.brief=j.brief||null; }
     catch(e){ report('brief',e,{group:m.title}); } }          // the interview still opens without it
   return askEngine(m);
 }
@@ -1594,9 +1606,13 @@ async function showAnswer(){
   try{
     let d=await api('load',{});
     A=d.assets.filter(a=>a.url);
-    name=d.collection.owner_name||'';
+    name=ASK?ASK.name:((d.collection&&d.collection.owner_name)||'');
     try{ const cs=await rpc('clip_state',{p_token:TOKEN}); CLIPS={}; (cs&&cs.clips||[]).forEach(c=>{ CLIPS[c.id]=c; }); }catch(_){}
-    const all=d.chapters.map(c=>({id:c.id,title:c.title||'',register:c.register||'warm',story:c.story||'',
+    /* An answerer is asked about the memories on HER list, in its order. */
+    const mine=ASK&&Array.isArray(ASK.memories)?[...ASK.memories].sort((x,y)=>(x.seq??0)-(y.seq??0)):null;
+    const chs=mine?mine.map(x=>{ const c=(d.chapters||[]).find(c=>c.id===x.chapter_id); return {...(c||{}),id:x.chapter_id,title:x.title||(c&&c.title)||''}; })
+                  :(d.chapters||[]);
+    const all=chs.map(c=>({id:c.id,title:c.title||'',register:c.register||'warm',story:ASK?'':(c.story||''),
       photos:A.filter(a=>a.chapter_id===c.id&&!a.excluded).sort((x,y)=>(x.sort_index??0)-(y.sort_index??0))}));
     if(!all.length){ report('answer with no chapters',new Error('no chapters'));
       plain(`<h1>One moment</h1><p class="do">We can't find your groups. Please try the link again in a little while.</p>`); return; }
@@ -1612,7 +1628,7 @@ async function showAnswer(){
     if(need<0){
       /* Everything answered. She may have been on the music page, or be back
          to press Finished. */
-      if(pr.screen==='genre'){ cur=M.length-1; showGenre(); return; }
+      if(pr.screen==='genre'&&!ASK){ cur=M.length-1; showGenre(); return; }
       cur=M.length-1; paintAllDone(); scrollTo(0,0); return; }
     cur=need; draft='';
     await arrive();
@@ -1703,11 +1719,13 @@ function paintAllDone(){
   atEnd=true;
   $('stage').innerHTML=`<div class="step">Group ${M.length} of ${M.length}</div>
     <h1>That\u2019s all the questions</h1>
-    <p class="do">You\u2019ve told us about every group. Press Finished and we\u2019ll make your film from your photos and your words.</p>
+    <p class="do">${ASK?'You\u2019ve told us about every group. Press Finished and your memories go into the song.'
+      :'You\u2019ve told us about every group. Press Finished and we\u2019ll make your film from your photos and your words.'}</p>
     <p class="lede">Want to change something? Use \u2190 to go back through the groups.</p>`;
   $('stage').className='';
   nav('<button class="go" id="tomusic">Finished</button>',`${M.length} of ${M.length} groups done`,true,
-      'When you press Finished, that\u2019s everything — your film is made from your photos and your words.');
+      ASK?'When you press Finished, that’s everything from you.'
+         :'When you press Finished, that\u2019s everything — your film is made from your photos and your words.');
   $('sheet').classList.add('hide');
 }
 function countUp(){ const c=$('cnt'); if(!c) return;
@@ -1792,6 +1810,7 @@ async function toMusic(){
      comes once more, on its own, before Finished. */
   const b=$('tomusic'); if(!b) return;
   b.disabled=true; b.textContent='One moment…';
+  if(ASK){ await finishAnswering(b); return; }            // she is answering, not building: no music, no stage
   await loadMusic();
   if(page!=='answer') return;
   if(G.chosen&&G.chosen.confirmed){ await finishFilm(b); return; }
@@ -2109,6 +2128,43 @@ function showThanks(){
     <p class="do">You’ll see the words before we record anything, and you can change any line.</p>
     ${photos?`<p class="lede">${plural(photos,'photo')}${groups?` · ${plural(groups,'group')}`:''}</p>`:''}
     <p class="lede">If anything’s wrong — a name said the wrong way, a photograph in the wrong place — tell us and we’ll fix it. That’s not an extra, it’s part of it.</p>`);
+}
+
+/* ═══ SOMEBODY ELSE ANSWERING (?a=) ══════════════════════════════
+   Straight to the questions: no upload, no sorting, no people, no music.
+     rpc whos_answering   {p_answer_token} → {person_id, name, relation, collection_id, film, occasion, finished,
+                                             memories:[{chapter_id, title, seq, finished}]}  — HER verdicts, not his
+     rpc finish_answering {p_answer_token} → marks her done (her answers are already saved, turn by turn) */
+async function routeAnswering(){
+  let w;
+  try{ w=await rpc('whos_answering',{p_answer_token:ANSWER}); }
+  catch(e){ report('whos_answering',e);
+    plain(`<h1>Couldn't open your questions</h1>
+      <p class="do">Something didn't connect. Please try the link again in a moment.</p>
+      <button class="big" id="retryRoute">Try again</button>`); return; }
+  if(!w||w.error||!w.person_id){
+    plain(`<h1>This link isn't right</h1>
+      <p class="do">Please open the full link you were sent, exactly as it came.</p>`); return; }
+  /* ⚠⚠ Her answer token is the ONLY key this page holds. The builder's token
+     opens the photographs, the sorting, the music — an answerer needs none of
+     it, so the server no longer hands it out. Every call below goes with hers. */
+  ASK=w; TOKEN=ANSWER; name=w.name||'';
+  $('helpline').classList.remove('hide');
+  if(w.finished) return showAnswered();
+  return showAnswer();
+}
+async function finishAnswering(b){
+  try{ const r=await rpc('finish_answering',{p_answer_token:ANSWER}); if(r&&r.error) throw new Error(r.error); }
+  catch(e){ report('finish_answering',e,{person:ASK&&ASK.person_id});
+    b.disabled=false; b.textContent='Finished';
+    const before=$('nav').querySelector('.before'); if(before) before.textContent="That didn't go through. Please press Finished again."; return; }
+  ASK.finished=true; showAnswered();
+}
+function showAnswered(){
+  page='thanks';
+  plain(`<h1>Thank you${ASK&&ASK.name?', '+esc(ASK.name):''}</h1>
+    <p class="do">That’s everything we need from you. Your memories go into the song.</p>
+    <p class="lede">You can close this page now.</p>`);
 }
 
 /* ═══ interaction ════════════════════════════════════════════════ */
