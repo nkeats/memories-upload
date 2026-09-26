@@ -325,8 +325,26 @@ let exifr=null, queue=[], inSoFar=0;
    a client-side memory of server state is wrong every time the two diverge,
    and it gave a confident wrong answer with no way to override it. Gone,
    and purged from any browser that still has one. */
-let inHashes=[];
+/* ⚠⚠⚠ "Already added" means THE SAME FILE — the same bytes, by SHA-256 —
+   and nothing else. It used to mean the same perceptual hash, and a blurred
+   frame has exactly the same 8×8 hash as the sharp one (measured 26 Sep: 0
+   bits apart; a smile doesn't move it either). So in a burst, whichever frame
+   went up second was refused as "already added" and lost, before anybody could
+   see the pictures. A look-alike is a BURST now: it goes in, the server links
+   it to its twin (same_look_as), and she chooses on the "Which one?" screen. */
+let inHashes=[];                     // SHA-256s, not perceptual hashes
 function remember(h){ if(h&&!inHashes.includes(h)) inHashes.push(h); }
+/* SHA-256 of the file's own bytes. Taken from the ORIGINAL before a HEIC is
+   converted, so the same iPhone file chosen twice still matches. Null for a
+   file too big to hash in the browser — it still goes in, and the server
+   decides. */
+async function shaOf(file){
+  try{
+    if(!crypto.subtle||file.size>300*1024*1024) return null;
+    const d=new Uint8Array(await crypto.subtle.digest('SHA-256',await file.arrayBuffer()));
+    return Array.from(d,b=>b.toString(16).padStart(2,'0')).join('');
+  }catch(e){ report('sha256',e,{file:file.name,size:file.size}); return null; }
+}
 try{ Object.keys(localStorage).filter(k=>k.startsWith('memories.phash.')).forEach(k=>localStorage.removeItem(k)); }catch(_){}
 
 /* Perceptual hash, in the browser, at upload. The browser has already decoded
@@ -456,27 +474,48 @@ async function speechIn(file){
 
 /* A 1280-px JPEG of a photograph, drawn here. describe prefers the thumb to
    the original (a full-resolution JPEG is ~48 MB decoded), and the grids
-   load faster. Null when the browser can't decode the file; never fatal. */
+   load faster. The same bitmap gives the sharpness and brightness used to
+   choose between near-identical frames (see sharpOf). Nulls when the browser
+   can't decode the file; never fatal. */
 async function thumbOf(file){
+  const none={blob:null,sharpness:null,brightness:null};
   let bmp=null;
   try{ bmp=await createImageBitmap(file,{resizeWidth:1280,resizeQuality:'high',imageOrientation:'from-image'}); }
-  catch(_){ return null; }
+  catch(_){ return none; }
   try{
     const c=document.createElement('canvas'); c.width=bmp.width; c.height=bmp.height;
     c.getContext('2d').drawImage(bmp,0,0);
-    return await new Promise(r=>c.toBlob(r,'image/jpeg',0.85));
-  }catch(_){ return null; }
+    let m={sharpness:null,brightness:null};
+    try{ m=sharpOf(c); }catch(e){ report('sharpness',e,{file:file.name}); }
+    return {blob:await new Promise(r=>c.toBlob(r,'image/jpeg',0.85)),...m};
+  }catch(_){ return none; }
   finally{ if(bmp&&bmp.close) bmp.close(); }
 }
+/* Sharpness = variance of the 3×3 Laplacian over a greyscale copy about
+   256 px on its long side; brightness = mean grey, 0–255. ⚠ RELATIVE
+   measures: only comparable between photos measured the same way, which is
+   all a burst needs ("which of these four is sharpest?"). A blurred frame
+   has little edge energy, so its Laplacian is flat and the variance low. */
+function sharpOf(src){
+  const k=256/Math.max(src.width,src.height,1), W=Math.max(3,Math.round(src.width*Math.min(1,k))), H=Math.max(3,Math.round(src.height*Math.min(1,k)));
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const cx=cv.getContext('2d',{willReadFrequently:true}); cx.drawImage(src,0,0,W,H);
+  const d=cx.getImageData(0,0,W,H).data, g=new Float32Array(W*H);
+  let sum=0;
+  for(let i=0;i<W*H;i++){ g[i]=0.299*d[i*4]+0.587*d[i*4+1]+0.114*d[i*4+2]; sum+=g[i]; }
+  let n=0, s=0, s2=0;
+  for(let y=1;y<H-1;y++) for(let x=1;x<W-1;x++){
+    const i=y*W+x, l=g[i-W]+g[i+W]+g[i-1]+g[i+1]-4*g[i];
+    n++; s+=l; s2+=l*l; }
+  const mean=s/n;
+  return {sharpness:Math.round((s2/n-mean*mean)*10)/10, brightness:Math.round(sum/(W*H)*10)/10};
+}
 
-/* "Already in" means the same picture: the same file twice, or the same photo
-   after a messaging app has re-saved it (measured: 0 bits moved). ⚠ Two
-   different pictures with the same composition can sit 1–2 bits apart, and
-   refusing one of those loses her a photo. The server refuses an exact match
-   only (measured 19 Sep), and this pre-check must never be stricter than the
-   authority — near-misses are the sort page's "same photo twice?" to decide. */
-const SAME=0;
-const alreadyIn=h=>!!h&&inHashes.some(x=>hamming(x,h)<=SAME);
+/* "Already in" means the same FILE (see inHashes). A re-saved copy from a
+   messaging app, a shaken frame, a frame with a different smile — all go in
+   as look-alikes, and she chooses between them. This pre-check must never be
+   stricter than the server, which is the authority. */
+const alreadyIn=s=>!!s&&inHashes.includes(s);     // s is a SHA-256
 
 /* ═══ 0 · WHO — before anything else ═══════════════════════════
    Names first: the song has to say them properly, the questions can use
@@ -927,11 +966,12 @@ async function pick(files){
   $('picked').classList.remove('hide'); $('send').textContent='Add these'; $('prog').style.width='0';
   $('send').disabled=true;                                 // until every new file is read and hashed
   paintQueue();
-  const batch=queue.filter(q=>q.phash&&q.status!=='dup').map(q=>q.phash);   // so the same photo chosen twice is caught too
+  const batch=queue.filter(q=>q.sha&&q.status!=='dup').map(q=>q.sha);   // so the same file chosen twice is caught too
   let heicNote=false;
   for(const item of fresh){
     if(run!==pickRun) return;                              // she picked again — that pick carries on from here
     const d=await dateOf(item.file); item.at=d.at; item.src=d.src; item.device=d.device;
+    item.sha=await shaOf(item.file);                      // before any conversion: the file as she has it
     if(isHeicFile(item.file)){
       item.status='converting'; item.heic=true; if(!heicNote){ heicNote=true; paintQueue(); }
       try{ item.file=await toJpeg(item.file); }
@@ -945,9 +985,10 @@ async function pick(files){
       item.duration=pv.duration; item.thumb=pv.frame; item.has_speech=pv.has_speech; item.noFrame=pv.frameFailed;
       if(pv.frameFailed) report('video frame',new Error('no frame'),{file:item.file.name,type:item.file.type,size:item.file.size});
       item.phash=item.thumb?await phashOf(new File([item.thumb],'frame.jpg',{type:'image/jpeg'})):null;
-    }else{ item.phash=await phashOf(item.file); item.thumb=await thumbOf(item.file); }
-    if(item.phash&&(alreadyIn(item.phash)||batch.some(x=>hamming(x,item.phash)<=SAME))) item.status='dup';
-    else { item.status='ready'; if(item.phash) batch.push(item.phash); }
+    }else{ item.phash=await phashOf(item.file); const th=await thumbOf(item.file);
+      item.thumb=th.blob; item.sharpness=th.sharpness; item.brightness=th.brightness; }
+    if(item.sha&&(alreadyIn(item.sha)||batch.includes(item.sha))) item.status='dup';
+    else { item.status='ready'; if(item.sha) batch.push(item.sha); }
     paintQueue();
   }
   if(run!==pickRun) return;
@@ -981,7 +1022,7 @@ async function send(){
     if(q.status==='done'){done++;continue;}
     /* Last look before it goes: something with the same hash may have gone in
        moments ago from this very batch, or from another device on the same link. */
-    if(!q.force&&alreadyIn(q.phash)){ q.status='dup'; paintQueue(); continue; }
+    if(!q.force&&alreadyIn(q.sha)){ q.status='dup'; paintQueue(); continue; }
     q.status='adding'; paintQueue();
     try{
       /* A retry after a dropped connection reuses the signed URL it already
@@ -990,12 +1031,12 @@ async function send(){
          clears abandoned ones, so a retry after a reload works too.) */
       if(!q.signed_url){
         const {ok,status,j}=await post('upload',{action:'sign',filename:q.file.name,mime:mimeOf(q.file),
-          size:q.file.size,taken_at:q.at,date_source:q.src,uploaded_by:who,phash:q.phash,device:q.device,
+          size:q.file.size,taken_at:q.at,date_source:q.src,uploaded_by:who,phash:q.phash,sha256:q.sha,device:q.device,
           ...(q.video?{duration_s:q.duration,has_speech:q.has_speech,frame_ok:!!q.thumb}:{})});
         /* The server is the authority on "already in": it answers
            {duplicate:true, of:<filename>, message} instead of a signed URL. It
            knows about every device; the page's own list only knows this one. */
-        if(j.duplicate){ q.status='dup'; q.err=j.message||''; q.of=j.of||''; remember(q.phash); paintQueue(); continue; }
+        if(j.duplicate){ q.status='dup'; q.err=j.message||''; q.of=j.of||''; remember(q.sha); paintQueue(); continue; }
         if(!ok&&/unsupported file type|mime/i.test(j.error||'')){ const ext=(q.file.name.split('.').pop()||'').toLowerCase();
           const e=new Error(`we can't take .${ext} files — photos and short videos only`); e.detail={http:status,server:j.error,mime:mimeOf(q.file)}; throw e; }
         /* ⚠ 409 "This one is finished": she has already said that's everything
@@ -1018,11 +1059,12 @@ async function send(){
         const e=new Error(plainWhy); e.detail={http:put.status,server:body.slice(0,300),mime:mimeOf(q.file),ext,size:q.file.size};
         throw e; }
       if(q.thumb) await sendThumb(q);
-      const c=await post('upload',{action:'confirm',asset_id:q.asset_id,phash:q.phash,device:q.device,
-        ...(q.video?{duration_s:q.duration,has_speech:q.has_speech,frame_ok:!!q.thumb,thumb_path:q.thumb_path||null}:{})});
+      const c=await post('upload',{action:'confirm',asset_id:q.asset_id,phash:q.phash,sha256:q.sha,device:q.device,
+        ...(q.video?{duration_s:q.duration,has_speech:q.has_speech,frame_ok:!!q.thumb,thumb_path:q.thumb_path||null}
+                   :{sharpness:q.sharpness??null,brightness:q.brightness??null})});
       if(!c.ok) throw new Error(c.j.error||'confirm failed');
       q.status='done';
-      remember(q.phash);
+      remember(q.sha);
     }catch(e){ q.status='failed'; q.err="didn't go in — "+e.message; report('upload',e,{file:q.file.name,size:q.file.size,mime:mimeOf(q.file),heic:!!q.heic,...(e.detail||{})}); }
     done++; $('prog').style.width=Math.round(done/Math.max(1,todo.length)*100)+'%'; paintQueue();
   }
@@ -1063,11 +1105,12 @@ async function look(){
   if(page!=='upload') return;
   if(!ok){ $('sofarP').textContent="Couldn't check what's in. It will show once you add some."; report('gallery',new Error(j.error||'gallery failed')); return; }
   inSoFar=j.stats.total;
-  /* The hashes of everything already in, so a second copy is caught before it
-     is sent. gallery may not carry phash; flow load always does. */
-  let hs=j.assets.map(a=>a.phash).filter(Boolean);
+  GAL={}; (j.assets||[]).forEach(a=>{ if(a.id) GAL[a.id]=a; });   // the burst screen's pictures
+  /* The SHA-256s of everything already in, so the same file a second time is
+     caught before it is sent. gallery may not carry them; flow load may. */
+  let hs=j.assets.map(a=>a.sha256).filter(Boolean);
   if(!hs.length&&inSoFar){
-    try{ const d=await api('load',{}); hs=d.assets.map(a=>a.phash).filter(Boolean); }
+    try{ const d=await api('load',{}); hs=d.assets.map(a=>a.sha256).filter(Boolean); }
     catch(e){ report('load hashes',e); }
     if(page!=='upload') return;
   }
@@ -1096,12 +1139,73 @@ function askAllIn(){
 }
 async function finishUpload(){
   const b=$('allinYes'); b.disabled=true; b.textContent='One moment…';
+  const groups=await findBursts();
+  if(page!=='upload') return;
+  if(groups.length){ $('sheet').classList.add('hide'); BZ={on:true,groups,i:0,keep:groups.map(g=>new Set(g.photos.filter(p=>p.pick).map(p=>p.id))),sending:false,failed:false}; paintBurst(); scrollTo(0,0); return; }
+  await toDescribing(0,()=>{ b.disabled=false; b.textContent='Yes, that’s all of them';
+    $('sheet').querySelector('p').textContent="That didn't go through. Please try again."; });
+}
+async function toDescribing(left,fail){
   try{ await setStage('describing'); }
-  catch(e){ report('set_stage describing',e); b.disabled=false; b.textContent='Yes, that’s all of them';
-    $('sheet').querySelector('p').textContent="That didn't go through. Please try again."; return; }
-  J.photos=inSoFar; J.progress_n=0; J.progress_of=inSoFar; J.progress='';   // journey's words are for the upload stage; the loop fetches fresh ones
+  catch(e){ report('set_stage describing',e); fail(); return; }
+  BZ.on=false;
+  J.photos=inSoFar; J.progress_n=0; J.progress_of=inSoFar-left; J.progress='';   // journey's words are for the upload stage; the loop fetches fresh ones
   prog({screen:'describing'});
   showDescribing();
+}
+
+/* ═══ 1b · WHICH ONE? — near-identical photographs ══════════════════
+   AFTER upload, BEFORE describe: describing is a model call per photograph
+   (400 ≈ 27 minutes), and cutting the bursts first costs nothing.
+     rpc find_bursts     {p_token}         → groups anything taken within 40 s
+     rpc burst_groups    {p_token}         → each group, our pick first, sharpness on each
+     rpc keep_from_burst {p_token, p_keep} → the ids she keeps, sent once at the end
+   ⚠⚠⚠ NOTHING IS DELETED. The ones she doesn't pick stay in the collection
+   and go in the bonus film, and the screen says so, or people refuse to
+   choose. Most customers have no bursts and never see this screen. If
+   finding them fails she is not stopped: every photo goes on to be described,
+   which costs time, not photographs. */
+let GAL={}, BZ={on:false,groups:[],i:0,keep:[]};
+async function findBursts(){
+  try{
+    const f=await rpc('find_bursts',{p_token:TOKEN}); if(f&&f.error) throw new Error(f.error);
+    const g=await rpc('burst_groups',{p_token:TOKEN}); if(g&&g.error) throw new Error(g.error);
+    const list=Array.isArray(g)?g:((g&&(g.groups||g.bursts))||[]);
+    return list.map(x=>{
+      const ph=(Array.isArray(x)?x:(x.photos||x.assets||x.photographs||[])).map(p=>({...(GAL[p.id||p.asset_id]||{}),...p,id:p.id||p.asset_id}));
+      const flagged=ph.some(p=>p.pick===true||p.our_pick===true||p.is_pick===true);
+      ph.forEach((p,i)=>{ p.pick=flagged?(p.pick===true||p.our_pick===true||p.is_pick===true):i===0; });   // "our pick first"
+      return {id:x.id||x.burst_id||null,photos:ph.filter(p=>p.id)};
+    }).filter(x=>x.photos.length>1);
+  }catch(e){ report('bursts',e); return []; }
+}
+function paintBurst(){
+  const g=BZ.groups[BZ.i], keep=BZ.keep[BZ.i], n=g.photos.length, N=BZ.groups.length;
+  let h=`<div class="step">Similar photos${N>1?` · <b>${BZ.i+1}</b> of ${N}`:''}</div>
+    <h1>Which would you like in your film?</h1>
+    <p class="do">Here are ${n} very similar photos taken around the same time — which would you like in the final film? Tap to choose. You can pick more than one.</p>
+    <p class="lede">We’ve ticked the one we’d choose. Nothing is thrown away — the rest stay in your full album.</p>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));margin-bottom:14px">`;
+  g.photos.forEach(p=>{ const on=keep.has(p.id), src=p.thumb_url||p.url;
+    h+=`<div class="c${on?' sel':''}" data-burst="${esc(p.id)}" role="checkbox" aria-checked="${on}" tabindex="0">
+      ${src?`<img src="${esc(src)}" alt="" style="aspect-ratio:auto;object-fit:contain">`:`<div class="ph">no preview</div>`}
+      ${on?'<div class="tag">In the film</div>':''}${p.pick?'<div class="n" style="width:auto;padding:0 8px;border-radius:4px">our pick</div>':''}</div>`; });
+  h+=`</div><p class="lede"><button class="chip" id="bzall" type="button" ${BZ.sending?'disabled':''}>Keep them all</button></p>`;
+  $('stage').innerHTML=h; $('stage').className='';
+  nav(`<button class="go" id="bznext" ${!keep.size||BZ.sending?'disabled':''}>${BZ.sending?'One moment…':'Next →'}</button>`,
+      keep.size?`${keep.size} of ${n} in the film`:'Tap at least one',true,
+      BZ.failed?"That didn't go through. Please press Next again.":'');
+  $('sheet').classList.add('hide');
+}
+async function burstNext(){
+  if(!BZ.keep[BZ.i].size||BZ.sending) return;
+  if(BZ.i<BZ.groups.length-1){ BZ.i++; paintBurst(); scrollTo(0,0); return; }
+  BZ.sending=true; BZ.failed=false; paintBurst();
+  const keep=BZ.keep.flatMap(s=>[...s]);
+  const left=BZ.groups.reduce((a,g,i)=>a+g.photos.length-BZ.keep[i].size,0);
+  try{ const r=await rpc('keep_from_burst',{p_token:TOKEN,p_keep:keep}); if(r&&r.error) throw new Error(r.error); }
+  catch(e){ report('keep_from_burst',e,{keep:keep.length,left}); BZ.sending=false; BZ.failed=true; paintBurst(); return; }
+  await toDescribing(left,()=>{ BZ.sending=false; BZ.failed=true; paintBurst(); });
 }
 
 /* ═══ 2 · WHILE WE LOOK — the music page ══════════════════════════
@@ -1224,12 +1328,16 @@ function detectSkew(){
   const med=g[Math.floor(g.length/2)], r=Math.round(med);
   return (Math.abs(med-r)<0.4&&Math.abs(r)>=1)?r:null;
 }
-/* duplicate pairs: near-identical hash, not the same moment */
+/* duplicate pairs: near-identical hash, not the same moment.
+   ⚠ Never a pair she has already answered for on the "Which one?" screen —
+   two photos in the same burst (flow load's burst_id) were put to her there,
+   and asking again here is asking the same question twice (walked 26 Sep). */
 function findDups(){
   const out=[]; const seen=new Set();
   for(let i=0;i<A.length;i++) for(let j=i+1;j<A.length;j++){
     const a=A[i],b=A[j];
     if(!a.phash||!b.phash||seen.has(b.id)) continue;
+    if(a.burst_id!=null&&a.burst_id===b.burst_id) continue;
     if(hamming(a.phash,b.phash)<=6){ out.push([a,b]); seen.add(b.id); }
   }
   return out;
@@ -1291,7 +1399,7 @@ async function showSort(){
   plain('<p class="load">Loading your photos…</p>');
   try{
     const d=await api('load',{});
-    A=d.assets.filter(a=>a.url);
+    A=d.assets.filter(a=>a.url&&a.in_film!==false);   // a burst frame she didn't pick stays in her full album, not in the film
     if(!A.length){
       plain(`<h1>No photos yet</h1><p class="do">We couldn't find any photos in your film. Please get in touch with whoever sent you this link.</p>`);
       report('sort with no assets',new Error('no assets')); return; }
@@ -1613,7 +1721,7 @@ async function showAnswer(){
   plain('<p class="load">Loading your photos…</p>');
   try{
     let d=ASK?await answerLoad():await api('load',{});
-    A=d.assets.filter(a=>a.url);
+    A=d.assets.filter(a=>a.url&&a.in_film!==false);   // a burst frame she didn't pick stays in her full album, not in the film
     name=ASK?ASK.name:((d.collection&&d.collection.owner_name)||'');
     if(!ASK) try{ const cs=await rpc('clip_state',{p_token:TOKEN}); CLIPS={}; (cs&&cs.clips||[]).forEach(c=>{ CLIPS[c.id]=c; }); }catch(_){}
     /* An answerer is asked about the memories on HER list, in its order. */
@@ -2189,6 +2297,10 @@ function showAnswered(){
 }
 
 /* ═══ interaction ════════════════════════════════════════════════ */
+document.addEventListener('keydown',e=>{               // a burst photo is a checkbox: Space or Enter ticks it
+  const bz=e.target.closest&&e.target.closest('[data-burst]');
+  if(bz&&(e.key===' '||e.key==='Enter')){ e.preventDefault(); bz.click(); }
+});
 document.addEventListener('click',async e=>{
   const t=e.target;
   if(t.id==='retryRoute'){ route(); return; }
@@ -2221,6 +2333,10 @@ document.addEventListener('click',async e=>{
   if(t.id==='allin'){ askAllIn(); return; }
   if(t.id==='allinNo'){ $('sheet').classList.add('hide'); return; }
   if(t.id==='allinYes'){ finishUpload(); return; }
+  if(t.id==='bznext'){ burstNext(); return; }
+  if(t.id==='bzall'){ BZ.keep[BZ.i]=new Set(BZ.groups[BZ.i].photos.map(p=>p.id)); burstNext(); return; }
+  const bz=t.closest('[data-burst]');
+  if(bz&&BZ.on&&!BZ.sending){ const k=BZ.keep[BZ.i], id=bz.dataset.burst; if(k.has(id)) k.delete(id); else k.add(id); BZ.failed=false; paintBurst(); return; }
 
   /* sort */
   if(t.id==='start'){ name=($('who')||{}).value||'';
@@ -2246,6 +2362,7 @@ document.addEventListener('click',async e=>{
   if(t.dataset.reg){ M[cur].register=t.dataset.reg; queueSave(); paint(); return; }
   if(t.id==='onext'){ cur++; sel=null; picking=false; saveGroups(); prog({screen:'organise',part:cur+1}); paint(); scrollTo(0,0); return; }
   if(t.id==='back'){
+    if(page==='upload'&&BZ.on){ if(BZ.sending) return; if(BZ.i>0){ BZ.i--; paintBurst(); } else { BZ.on=false; showUploadPage(); } scrollTo(0,0); return; }
     if(page==='upload'&&P.mode==='say'){ if(others().length) paintRel(); else paintOthers(); scrollTo(0,0); return; }
     if(page==='upload'&&P.mode==='rel'){ paintOthers(); scrollTo(0,0); return; }
     if(page==='upload'&&P.mode==='others'){ paintMe(); scrollTo(0,0); return; }
