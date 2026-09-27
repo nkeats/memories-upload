@@ -553,7 +553,7 @@ async function showUpload(){
   if(people.some(x=>!x.sound_ok)){                                          // names in, not settled yet
     if(people.some(x=>!x.is_you&&!x.relation)){ paintOthers(); return; }    // may not have finished adding
     await sayNames(); return; }
-  showUploadPage();
+  afterPeople();
 }
 /* The instructions, in context: short bullets beside the photographs on
    every screen (Nigel's suggestion — better than a wall up front nobody
@@ -820,7 +820,47 @@ async function finishSay(){
   }
   P.people.forEach(x=>{ x.sound_ok=true; const y=P.say.find(z=>z.name===x.name); if(y) x.said_as=y.answer==='no'?y.typed.trim():y.said_as; });
   prog({screen:'upload',people:P.people.length});
+  afterPeople();
+}
+/* 27 Sep - "IS THIS A GIFT?" Asked once, after the people are in (set_gift
+   counts them). It decides whose voice the song is in: a gift is sung ABOUT
+   the people in it; the couple's own keepsake is sung in THEIR voices ("we").
+   Nigel, on weddings: "If it's somebody buying it for the couple it's one way,
+   if it's them buying a memento of the special day then it needs to be their
+   voices." The database already switched on this (set_gift -> song_voice);
+   no page ever asked it, so every film was treated as not a gift. */
+function afterPeople(){
+  if(J.is_gift===null||J.is_gift===undefined){ paintGift(); return; }
   showUploadPage();
+}
+function giftFor(){
+  const subs=P.people.filter(x=>!x.is_you&&x.is_subject).map(x=>x.name);
+  const names=subs.length?subs:others().map(x=>x.name);
+  return names.length>1?names.slice(0,-1).join(', ')+' and '+names[names.length-1]:(names[0]||'');
+}
+function paintGift(busy){
+  page='upload'; const st=$('stage'); st.className=''; $('sheet').classList.add('hide'); $('nav').classList.add('hide');
+  const who=giftFor();
+  st.innerHTML=`<div class="step">First \u00b7 the people</div><h1>Is this film a gift?</h1>
+    <p class="do">It decides whose voice the song is written in.</p>
+    <div class="card">
+      <p style="margin:0 0 14px"><button class="big" id="giftNo" ${busy?'disabled':''}>No \u2014 it\u2019s ours, a keepsake</button></p>
+      <p class="lede" style="margin:0 0 22px">Sung in your own voice${P.people.length>1?'s \u2014 \u201cwe\u201d':''}.</p>
+      <p style="margin:0 0 14px"><button class="big" id="giftYes" ${busy?'disabled':''}>Yes \u2014 it\u2019s a gift${who?' for '+esc(who):''}</button></p>
+      <p class="lede" style="margin:0">Sung about ${who?esc(who):'the people in it'}, from you.</p>
+      <p class="note bad" id="giftwarn" style="display:none;margin:14px 0 0;font-size:14px"></p>
+    </div>`;
+}
+async function saveGift(isGift){
+  paintGift(true);
+  try{
+    const r=await rpc('set_gift',{p_token:TOKEN,p_is_gift:isGift,p_for:isGift?(giftFor()||null):null});
+    if(!r||r.error) throw new Error((r&&r.error)||'set_gift failed');
+    J.is_gift=isGift; J.song_voice=r.song_voice||null;
+  }catch(e){ report('set_gift',e,{is_gift:isGift}); paintGift();
+    const w=$('giftwarn'); if(w){ w.textContent="That didn\u2019t go through \u2014 please try again."; w.style.display=''; } return; }
+  prog({screen:'upload',gift:isGift});
+  showUploadPage(); scrollTo(0,0);
 }
 
 /* §4 — scanning old prints. Before the picker, not after: by the time
@@ -2319,6 +2359,7 @@ document.addEventListener('click',async e=>{
   if(t.id==='pme'){ addMe(); return; }
   if(t.id==='pnotme'){ paintMe(); scrollTo(0,0); return; }
   if(t.id==='preldone'){ saveRelations(); return; }
+  if(t.id==='giftNo'||t.id==='giftYes'){ saveGift(t.id==='giftYes'); return; }
   if(t.id==='printsGo'||t.id==='printsSkip'){ showUploadPage(); scrollTo(0,0); return; }
   /* who */
   if(t.id==='padd'){ addPerson(); return; }

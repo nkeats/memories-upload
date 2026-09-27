@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>The words to your song</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<!--
+  lyrics.html?t=<the film owner's token> - 27 Sep 2026.
+  The customer reads the lyric, changes any line, and approves it. NOTHING is sung until they do
+  (memory-film-customer: lyric approval is the category's #1 missing feature, and it catches our
+  fact errors). Approving sets lyrics.status = 'approved'; the PC worker then makes the song.
+  RPCs: get_lyric, edit_lyric_line, approve_lyric - all check the token and answer HTTP 200 with
+  {"error": ...} on a refusal, so every body is read. Only the owner's token opens this page;
+  a second answerer's link does not (the lyric is the buyer's to approve).
+-->
+<style>
+:root{--ink:#0C0D10;--panel:#15171C;--p2:#1D1F26;--line:#2A2E37;--l2:#3C414C;
+  --fg:#F4F1EA;--fg2:#9BA0AB;--fg3:#6B707A;--brass:#D4A24C;--green:#5E8C6A;--red:#B4543A}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--ink);color:var(--fg);font-family:"Public Sans",sans-serif;
+  font-size:17px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding:20px 16px calc(170px + env(safe-area-inset-bottom))}
+h1{font-family:"Newsreader",serif;font-weight:300;font-size:clamp(28px,7vw,38px);margin:10px 0 8px;line-height:1.18}
+p.do{font-size:clamp(19px,4.6vw,23px);line-height:1.5;margin:0 0 14px;max-width:56ch}
+p.lede{color:var(--fg2);font-size:16.5px;line-height:1.6;margin:0 0 26px;max-width:56ch}
+.sec{margin:0 0 26px}
+.sec h3{font-size:13px;color:var(--fg3);letter-spacing:.06em;text-transform:uppercase;font-weight:500;margin:0 0 8px}
+.ln{display:block;width:100%;text-align:left;background:none;border:1px solid transparent;border-radius:7px;
+  color:var(--fg);font-family:"Newsreader",serif;font-size:clamp(19px,4.8vw,22px);line-height:1.45;
+  padding:7px 10px;margin:0 -10px;cursor:pointer}
+.ln{text-decoration:underline dotted var(--l2);text-underline-offset:6px;text-decoration-thickness:1px}
+.ln:hover,.ln:focus{border-color:var(--line);outline:none}
+.ln.readonly{text-decoration:none}
+.ln.edited{border-left:3px solid var(--green);border-radius:0 7px 7px 0}
+.ln.readonly{cursor:default}
+.ln.readonly:hover{border-color:transparent}
+.ed{margin:4px 0 12px}
+.ed textarea{width:100%;background:var(--panel);border:1px solid var(--brass);border-radius:8px;color:var(--fg);
+  font-family:"Newsreader",serif;font-size:20px;line-height:1.45;padding:12px 14px;min-height:64px;resize:vertical}
+.ed .row{display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap}
+.ed .hint{font-size:14px;color:var(--fg3);flex-basis:100%;margin-top:4px}
+.ed .hint.warn{color:var(--brass)}
+.q{background:#241F18;border:1px solid var(--brass);border-radius:8px;padding:10px 13px;margin:2px 0 10px;
+  font-size:15.5px;line-height:1.5;color:var(--fg)}
+.q b{color:var(--brass);font-weight:600}
+button.b{background:none;border:1px solid var(--line);color:var(--fg);border-radius:7px;padding:12px 18px;
+  font:inherit;font-size:16px;cursor:pointer}
+button.b.go{background:var(--brass);border-color:var(--brass);color:#20180A;font-weight:600}
+button:disabled{opacity:.35;cursor:default}
+.nav{position:fixed;left:0;right:0;bottom:0;background:rgba(12,13,16,.97);backdrop-filter:blur(12px);
+  border-top:1px solid var(--line);padding:13px 16px calc(14px + env(safe-area-inset-bottom));z-index:30}
+.nin{max-width:720px;margin:0 auto;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.nin .tally{font-size:13.5px;color:var(--fg3);line-height:1.4;flex:1;min-width:160px}
+.nin .tally b{color:var(--fg)}
+.confirm{flex-basis:100%;font-size:15.5px;color:var(--fg2);line-height:1.5}
+.msg{padding:28px 0;color:var(--fg2);line-height:1.6}
+.err{color:var(--red);font-size:14.5px;margin-top:6px}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="stage"><p class="msg">Opening your song…</p></div>
+</div>
+<div class="nav hide" id="nav"><div class="nin" id="nin"></div></div>
+
+<script>
+const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
+const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
+const HDR={'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY};
+const TOKEN=new URLSearchParams(location.search).get('t')||'';
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const words=s=>s&&s.trim()?s.trim().split(/\s+/).length:0;
+
+async function rpc(name,args){
+  const r=await fetch(`${SB}/rest/v1/rpc/${name}`,{method:'POST',headers:HDR,body:JSON.stringify(args)});
+  if(!r.ok) throw new Error(`${name}: HTTP ${r.status}`);
+  const t=await r.text(); return t?JSON.parse(t):null;
+}
+// A caught error that is not reported is a silent failure.
+function report(what,e){
+  try{ fetch(SB+'/functions/v1/flow',{method:'POST',keepalive:true,headers:HDR,
+    body:JSON.stringify({token:TOKEN,action:'report_error',page:'lyrics.html',at:what,what,
+      message:(e&&e.message)||String(e||''),url:location.href,user_agent:navigator.userAgent})}).catch(()=>{}); }catch(_){}
+}
+window.addEventListener('error',ev=>report('uncaught',ev.error||ev.message));
+window.addEventListener('unhandledrejection',ev=>report('unhandled promise',ev.reason));
+
+let L=null;          // the lyric: {lyric_id, version, status, lines:[{id,section,seq,text,words_was,question,edited}]}
+let open=null;       // id of the line being edited
+let confirming=false;
+
+// "[Verse 1]" / "verse_1" / "Chorus" -> "Verse 1"
+const secName=s=>{ s=String(s||'').replace(/[\[\]_]/g,' ').replace(/\s+/g,' ').trim();
+  return s? s.charAt(0).toUpperCase()+s.slice(1) : ''; };
+
+function paint(){
+  const done=L.status==='approved';
+  const changed=L.lines.filter(l=>l.edited).length;
+  const asks=L.lines.filter(l=>l.question&&!l.edited).length;
+  let h=`<h1>The words to your song</h1>`;
+  h+= done
+    ? `<p class="do">Thank you — these are the words we are singing.</p>
+       <p class="lede">We're making your song now. You don't need to do anything else.</p>`
+    : `<p class="do">Read the words to your song. Tap any line that isn't right and change it.</p>
+       <p class="lede">Nothing is sung until you say the words are right. It's your story — if we've got a detail wrong, you're the one who knows.${asks?` Where we weren't sure of something, we've asked you under the line.`:''}</p>`;
+  let sec=null;
+  for(const l of L.lines){
+    if(l.section!==sec){ if(sec!==null) h+='</div>'; sec=l.section; h+=`<div class="sec"><h3>${esc(secName(sec))}</h3>`; }
+    if(open===l.id){
+      const was=l.words_was||words(l.text);
+      h+=`<div class="ed"><textarea id="ta" aria-label="Change this line">${esc(l.text)}</textarea>
+          <div class="row"><button class="b go" data-save="${l.id}">Save this line</button>
+          <button class="b" data-cancel="1">Cancel</button>
+          <div class="hint" id="hint">Keep it about ${was} words so it still fits the tune.</div>
+          <div class="err hide" id="err"></div></div></div>`;
+    }else{
+      h+=`<button class="ln${l.edited?' edited':''}${done?' readonly':''}" ${done?'tabindex="-1"':`data-line="${l.id}"`}>${esc(l.text)}</button>`;
+    }
+    if(l.question && !l.edited && !done) h+=`<div class="q"><b>Is this right?</b> ${esc(l.question)} If not, tap the line above and change it.</div>`;
+  }
+  if(sec!==null) h+='</div>';
+  $('stage').innerHTML=h;
+
+  if(done){ $('nav').classList.add('hide'); return; }
+  $('nav').classList.remove('hide');
+  $('nin').innerHTML = confirming
+    ? `<div class="confirm">Once you say yes, we start singing these words. ${changed?`You've changed ${changed} line${changed===1?'':'s'}.`:'You haven\'t changed anything.'}</div>
+       <button class="b" data-back="1">Not yet</button>
+       <button class="b go" data-approve="1">Yes — make my song</button>`
+    : `<div class="tally">${changed?`<b>${changed}</b> line${changed===1?'':'s'} changed`:'No changes yet'}</div>
+       <button class="b go" data-ready="1" ${open?'disabled':''}>These words are right</button>`;
+  const ta=$('ta');
+  if(ta){ ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length); ta.addEventListener('input',hint); hint(); }
+}
+
+function hint(){
+  const l=L.lines.find(x=>x.id===open); const n=words($('ta').value); const was=l.words_was||words(l.text);
+  const el=$('hint'); const off=Math.abs(n-was);
+  if(off>=3){ el.className='hint warn';
+    el.textContent=`This line is now ${n>was?'longer':'shorter'} (${n} words, it was ${was}). It may be sung ${n>was?'faster':'slower'} than the lines around it.`; }
+  else { el.className='hint'; el.textContent=`Keep it about ${was} words so it still fits the tune.`; }
+}
+
+async function save(id){
+  const l=L.lines.find(x=>x.id===id); const text=$('ta').value.trim();
+  const err=$('err');
+  if(!text){ err.textContent='A line can’t be empty — if it should go, change it to something shorter instead.'; err.classList.remove('hide'); return; }
+  if(text===l.text){ open=null; paint(); return; }
+  try{
+    const r=await rpc('edit_lyric_line',{p_token:TOKEN,p_line:id,p_text:text});
+    if(r&&r.error) throw new Error(r.error);
+    await load(); open=null; paint();
+  }catch(e){ report('save line',e); err.textContent='That didn’t save. Please try again.'; err.classList.remove('hide'); }
+}
+
+async function approve(){
+  try{
+    const r=await rpc('approve_lyric',{p_token:TOKEN});
+    if(r&&r.error) throw new Error(r.error);
+    await load(); confirming=false; paint(); window.scrollTo(0,0);
+  }catch(e){ report('approve',e); confirming=false; paint();
+    $('nin').insertAdjacentHTML('afterbegin','<div class="err" style="flex-basis:100%">That didn’t go through. Please try again.</div>'); }
+}
+
+document.addEventListener('click',ev=>{
+  const t=ev.target.closest('button'); if(!t) return;
+  if(t.dataset.line){ open=t.dataset.line; confirming=false; paint(); }
+  else if(t.dataset.cancel){ open=null; paint(); }
+  else if(t.dataset.save){ t.disabled=true; save(t.dataset.save); }
+  else if(t.dataset.ready){ confirming=true; paint(); }
+  else if(t.dataset.back){ confirming=false; paint(); }
+  else if(t.dataset.approve){ t.disabled=true; approve(); }
+});
+
+async function load(){
+  const r=await rpc('get_lyric',{p_token:TOKEN});
+  if(r&&r.error) throw Object.assign(new Error(r.error),{refusal:r.error});
+  L=r;
+}
+
+(async()=>{
+  if(!TOKEN){ $('stage').innerHTML='<p class="msg">This link is missing its code. Please open the link we sent you again.</p>'; return; }
+  try{ await load(); paint(); }
+  catch(e){
+    if(e.refusal==='no lyric yet'){ $('stage').innerHTML='<h1>The words to your song</h1><p class="msg">We’re still writing them. We’ll let you know when they’re ready to read.</p>'; return; }
+    if(e.refusal==='unknown token'){ $('stage').innerHTML='<p class="msg">We couldn’t find your film from this link. Please open the link we sent you again.</p>'; return; }
+    report('load',e); $('stage').innerHTML='<p class="msg">Something went wrong opening your song. Please try again in a minute.</p>';
+  }
+})();
+</script>
+</body>
+</html>
