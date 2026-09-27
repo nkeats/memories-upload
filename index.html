@@ -1677,8 +1677,9 @@ async function readTurn(m){                                  // where a memory i
     if(ASK) throw e; }
   return {done:true,total:0,answered:0};
 }
-async function askEngine(m,turn_id,answer){                 // the next question, or done — a model call, a few seconds
+async function askEngine(m,turn_id,answer,skipThread){      // the next question, or done — a model call, a few seconds
   const body={chapter_id:m.id,...(ASK?{person_id:ASK.person_id}:{})}; if(turn_id){ body.turn_id=turn_id; body.answer=answer; }
+  if(turn_id&&skipThread) body.skip_thread=true;            // "Ask me about something else": the server skips it AND drops the subject
   const {ok,status,j}=await post('interview',body);
   if(!ok||!j||j.error) throw new Error((j&&j.error)||('interview HTTP '+status));
   if(j.waiting){ const t=await readTurn(m); if(!t.done) return t; throw new Error('interview: waiting, but no open turn'); }
@@ -1799,6 +1800,7 @@ function paintTurn(){
       <textarea id="ans" class="beside" placeholder="Tell us what happened, not how it felt. The feeling comes with it.">${esc(draft)}</textarea>
       <div class="count" id="cnt"></div>
       <p class="lede" style="margin-top:6px"><button class="chip" id="askip" type="button" ${turnBusy?'disabled':''}>Skip this one</button>
+        ${(+t.level||0)>=3?`<button class="chip" id="aelse" type="button" ${turnBusy?'disabled':''}>Ask me about something else</button>`:''}
         <button class="chip" id="aenough" type="button" ${turnBusy?'disabled':''}>That\u2019s enough about this one</button>
         ${turnPhotos(m,t).mode==='about'?`<button class="quiet" id="awrong" type="button" ${turnBusy?'disabled':''} aria-expanded="${wrongOpen?'true':'false'}">That’s not what’s in that photo</button>`:''}</p>
       ${wrongOpen?`<div class="card" id="wrongcard"><label for="what">What is it?</label>
@@ -1850,7 +1852,7 @@ function countUp(){ const c=$('cnt'); if(!c) return;
   c.className='count'+(w>=25?' good':''); }
 /* answer → the engine writes the next question from it (a model call, a few
    seconds; the button says so). skip → answer_memory_turn, then the engine. */
-async function answerTurn(skip){
+async function answerTurn(skip,thread){
   const m=M[cur], t=TURN; if(!m||!t||turnBusy) return;
   const text=(draft||'').trim();
   if(!skip&&!text){ const ta=$('ans'); if(ta) ta.focus(); return; }
@@ -1859,9 +1861,10 @@ async function answerTurn(skip){
     const before=$('nav').querySelector('.before'); if(before) before.textContent="That didn't go through. Please press Next again."; };
   let nt;
   try{
-    if(skip){ const r=await skipOnServer(t); if(!r||r.error) throw new Error((r&&r.error)||'answer_memory_turn failed'); nt=await askEngine(m); }
+    if(thread) nt=await askEngine(m,t.turn_id,'',true);     // one call: skip_thread checks the turn is hers, marks it declined, writes the next
+    else if(skip){ const r=await skipOnServer(t); if(!r||r.error) throw new Error((r&&r.error)||'answer_memory_turn failed'); nt=await askEngine(m); }
     else nt=await askEngine(m,t.turn_id,text);
-  }catch(e){ report(skip?'skip turn':'answer turn',e,{group:m.title,level:t.level}); fail(); return; }
+  }catch(e){ report(thread?'skip thread':skip?'skip turn':'answer turn',e,{group:m.title,level:t.level}); fail(); return; }
   if(page!=='answer') return;
   turnBusy=false; draft=''; wrongOpen=false; whatDraft='';
   m.turn=nt; TURN=nt;
@@ -2415,6 +2418,7 @@ document.addEventListener('click',async e=>{
     if(TURN&&TURN.done){ const next=M.findIndex((x,i)=>i>cur&&!finishedMem(x)); if(next>=0) gotoGroup(next); else paintAllDone(); scrollTo(0,0); return; }
     answerTurn(false); return; }
   if(t.id==='askip'){ answerTurn(true); return; }
+  if(t.id==='aelse'){ answerTurn(true,true); return; }
   if(t.id==='aenough'){ closeMemory(); return; }
   if(t.id==='agroupnext'){ cur=+t.dataset.next; draft=''; arrive(); return; }
   if(t.id==='awrong'){ wrongOpen=!wrongOpen; paintTurn(); if(wrongOpen){ const f=$('what'); if(f) f.focus(); } return; }
