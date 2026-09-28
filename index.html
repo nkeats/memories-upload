@@ -1378,6 +1378,11 @@ function findDups(){
     const a=A[i],b=A[j];
     if(!a.phash||!b.phash||seen.has(b.id)) continue;
     if(a.burst_id!=null&&a.burst_id===b.burst_id) continue;
+    /* ⚠ 28 Sep: an 8x8 hash cannot tell one person-in-the-middle photo from another.
+       On an anniversary set it paired 14 photos taken 8 days to 8 years apart, and
+       none was a duplicate. Only ask about two photos taken at the same moment. */
+    const ta=Date.parse(a.taken_at), tb=Date.parse(b.taken_at);
+    if(!Number.isFinite(ta)||!Number.isFinite(tb)||Math.abs(ta-tb)>10*60*1000) continue;
     if(hamming(a.phash,b.phash)<=6){ out.push([a,b]); seen.add(b.id); }
   }
   return out;
