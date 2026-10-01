@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="build" content="2026-10-01b">
+<meta name="build" content="2026-10-01c">
 <title>Your film</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -222,7 +222,7 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
 const FN=SB+'/functions/v1';
 const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
-const BUILD='2026-10-01b';                                 // bump on every change (1 Oct: there was no stamp before)
+const BUILD='2026-10-01c';                                 // bump on every change (1 Oct: there was no stamp before)
 document.documentElement.dataset.build=BUILD;
 let TOKEN=new URLSearchParams(location.search).get('t')||'';
 /* ?a=<answer token> — somebody else answering the same memories (on a film
@@ -326,10 +326,14 @@ async function route(){
 }
 
 /* ═══ 1 · UPLOAD ═════════════════════════════════════════════════ */
-let exifr=null, queue=[], inSoFar=0;
+let exifr=null, queue=[], inSoFar=0, COUNTED=0;
 /* SONG LENGTH GUIDE (1 Oct): one live line from rpc estimate_film(p_photos) - its numbers and its label, never ours (they
    may change). TIER is the collection's tier when the server sends it (gallery's collection.tier); a film that needs a
-   quote stops taking photos unless its tier is already 'custom'. Photos already in stay. */
+   quote stops taking photos unless its tier is already 'custom'. Photos already in stay.
+   ⚠ (1 Oct, gallery v10) The number sent to estimate_film is the SERVER's stats.counted - confirmed photos that are
+   not duplicates (dup_of) - never a count kept here. Mid-batch the page adds what it has just confirmed to the last
+   counted figure, and the moment that says "quote" it asks gallery again: the stop is only ever decided on the
+   server's figure (a repeat confirmed this batch may since have been marked dup_of). */
 let QUOTE=false, TIER=null, GUIDE_N=-1;
 /* Every hash already in this collection, AS THE SERVER HAS IT RIGHT NOW,
    plus what went in during this visit — so she is told "already added"
@@ -942,15 +946,25 @@ async function songGuide(n){
   QUOTE=!!e.needs_quote&&TIER!=='custom';
   if(QUOTE){
     const over=String(e.label||'').split(/\s+[\u2014-]\s+/)[0];          // "Over 10 minutes - priced individually" -> "Over 10 minutes"
-    el.innerHTML=`<b>${esc(over)}? Contact us for a quote.</b> The ${plural(n,'photo')} already in stay in your film.`;
+    el.innerHTML=`<b>${esc(over)}? Contact us for a quote.</b> The ${plural(Math.max(n,inSoFar),'photo')} already in stay in your film.`;   // what she sees in, not the counted figure
+  }else if(e.needs_quote){                                   // tier 'custom': a price is agreed, so photos keep coming
+    const mins=Math.max(1,Math.round((+e.estimated_seconds||0)/60));
+    el.textContent=`Your ${plural(n,'photo')} make${n===1?'s':''} a song of about ${mins} minute${mins===1?'':'s'}. `+
+      `Your film is priced individually, so add as many as you like.`+(inSoFar>n?` (Repeats aren't counted.)`:'');
   }else{
     const mins=Math.max(1,Math.round((+e.estimated_seconds||0)/60));
     const lbl=String(e.label||'').replace(/^./,c=>c.toLowerCase());     // "Up to 5 minutes" -> "the up to 5 minutes film"
     el.textContent=`Your ${n} photo${n===1?'':'s'} make${n===1?'s':''} a song of about ${mins} minute${mins===1?'':'s'}: `+
-      `the ${lbl} film. Photos beyond what the song can hold go into your bonus film; nothing is lost.`;
+      `the ${lbl} film. Photos beyond what the song can hold go into your bonus film; nothing is lost.`+
+      (inSoFar>n?` (Repeats aren't counted.)`:'');
   }
   lockForQuote();
   return e;
+}
+async function countedNow(){                                // the server's figure: gallery's stats.counted + tier
+  try{ const {ok,j}=await post('gallery',{}); if(!ok||!j.stats) throw new Error(j.error||'gallery failed');
+    return {counted:Number.isFinite(+j.stats.counted)?+j.stats.counted:j.stats.total, tier:(j.collection&&j.collection.tier)||null}; }
+  catch(err){ report('gallery counted',err); return null; }
 }
 function lockForQuote(){
   const d=$('drop'), f=$('file');
@@ -1041,7 +1055,7 @@ const CLS={exif:'exif',filename:'',modified:'',none:'none'};
    stay where she can see them. */
 let pickRun=0;
 async function pick(files){
-  if(QUOTE){ songGuide(inSoFar); return; }                // over the long tier: nothing more until a price is agreed
+  if(QUOTE){ songGuide(COUNTED); return; }                // over the long tier: nothing more until a price is agreed
   const run=++pickRun;
   const fresh=[...files].map(f=>({file:f,status:'reading'}));
   if(!fresh.length) return;
@@ -1151,8 +1165,9 @@ async function send(){
       if(!c.ok) throw new Error(c.j.error||'confirm failed');
       q.status='done';
       remember(q.sha);
-      inSoFar++;
-      const e=await songGuide(inSoFar);
+      inSoFar++; COUNTED++;                                 // provisional until gallery says otherwise
+      let e=await songGuide(COUNTED);
+      if(e&&QUOTE){ const s=await countedNow(); if(s){ COUNTED=s.counted; TIER=s.tier; e=await songGuide(COUNTED); } }
       if(e&&QUOTE){                                         // stop here: the rest are not sent, the ones in stay
         queue.forEach(x=>{ if(x.status==='ready'||x.status==='failed'||x.status==='adding') { x.status='held'; x.err='not added — over the longest film; contact us for a quote'; } });
         paintQueue(); break; }
@@ -1196,6 +1211,7 @@ async function look(){
   if(page!=='upload') return;
   if(!ok){ $('sofarP').textContent="Couldn't check what's in. It will show once you add some."; report('gallery',new Error(j.error||'gallery failed')); return; }
   inSoFar=j.stats.total;
+  COUNTED=Number.isFinite(+j.stats.counted)?+j.stats.counted:j.stats.total;   // gallery < v10 had no counted
   GAL={}; (j.assets||[]).forEach(a=>{ if(a.id) GAL[a.id]=a; });   // the burst screen's pictures
   /* The SHA-256s of everything already in, so the same file a second time is
      caught before it is sent. gallery may not carry them; flow load may. */
@@ -1207,7 +1223,7 @@ async function look(){
   }
   inHashes=inSoFar?[...new Set(hs)]:[];
   TIER=(j.collection&&j.collection.tier)||null;
-  songGuide(inSoFar);
+  songGuide(COUNTED);
   $('sofarH').textContent=inSoFar?`${plural(inSoFar,'photo')} in so far`:'Nothing in yet';
   $('sofarP').textContent=inSoFar
     ?(j.stats.undated?`${j.stats.undated} with no date — you'll place those by hand later.`:'All of them have a date.')
