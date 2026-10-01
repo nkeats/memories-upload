@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="build" content="2026-10-02a">
+<meta name="build" content="2026-10-02b">
 <title>Your film</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -234,7 +234,7 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
 const FN=SB+'/functions/v1';
 const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
-const BUILD='2026-10-02a';                                 // bump on every change (1 Oct: there was no stamp before)
+const BUILD='2026-10-02b';                                 // bump on every change (1 Oct: there was no stamp before)
 document.documentElement.dataset.build=BUILD;
 let TOKEN=new URLSearchParams(location.search).get('t')||'';
 /* ?a=<answer token> — somebody else answering the same memories (on a film
@@ -2025,13 +2025,12 @@ function repaintAnswer(){
    answered, asset_id null) gets one light step before Finished: her own words, the group's photos, one tap.
      rpc stories_without_photo {p_token} → {ok, stories:[{turn_id, chapter_id, memory, said}]} — the caller's own only
      rpc link_story_photo {p_token, p_turn, p_asset} → {ok:true}
-   ⚠ Both are NEW server functions (D:\Memories\Song\server-wanted-2026-10-02.sql, for Claude in chat). Until they exist the step is skipped - reported
-   once, never shown broken. */
-let STP={list:null,done:false,missing:false};
+   Both LIVE since 2 Oct (verified on the TEST wedding, builder and ?a= links). Any failure is reported and the step is
+   skipped - never shown broken. (The 404 "server function not there yet" fallback was removed once they were live.) */
+let STP={list:null,done:false};
 async function loadStories(){
-  STP={list:[],done:false,missing:false};
+  STP={list:[],done:false};
   try{ const r=await fetch(`${SB}/rest/v1/rpc/stories_without_photo`,{method:'POST',headers:HDR,body:JSON.stringify({p_token:TOKEN})});
-    if(r.status===404){ STP.missing=true; report('stories_without_photo',new Error('server function not there yet')); return; }
     const j=await r.json(); if(!r.ok||!j||j.error||!j.ok) throw new Error((j&&(j.error||j.message))||('HTTP '+r.status));
     STP.list=(j.stories||[]).map(s=>({...s,m:M.find(m=>m.id===s.chapter_id)})).filter(s=>s.m&&s.m.photos.length); }
   catch(e){ report('stories_without_photo',e); STP.list=[]; }
@@ -2078,7 +2077,7 @@ async function showAnswer(){
       plain(`<h1>One moment</h1><p class="do">We can't find your groups. Please try the link again in a little while.</p>`); return; }
     for(const m of M) m.turn=await readTurn(m);
     if(page!=='answer') return;
-    await loadInvite(); STP={list:null,done:false,missing:false};
+    await loadInvite(); STP={list:null,done:false};
     FQ.pr=(d.collection&&d.collection.progress)||{};
     /* Story-first films ask about the two of them before any group. Every
        other occasion gets [] and nothing changes. ⚠ If the list can't be read
