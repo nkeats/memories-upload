@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
+<meta name="build" content="2026-10-01d">
 <title>The words to your song</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,6 +17,10 @@
   RPCs: get_lyric, edit_lyric_line, approve_lyric - all check the token and answer HTTP 200 with
   {"error": ...} on a refusal, so every body is read. Only the owner's token opens this page;
   a second answerer's link does not (the lyric is the buyer's to approve).
+  1 Oct: THE CARDS above the lyric - "Your film opens with... and ends with..." - from get_lyric's cards {start, finish,
+  start_suggested, finish_suggested}. The customer changes the words (start <= 60, finish <= 90 characters) or removes a
+  card; set_cards(p_token, p_start, p_finish): "" = no card, null = use our suggestion. approve_lyric writes the cards
+  shown into the film. Nothing is put on screen in their film that they have not seen here.
 -->
 <style>
 :root{--ink:#0C0D10;--panel:#15171C;--p2:#1D1F26;--line:#2A2E37;--l2:#3C414C;
@@ -60,6 +65,19 @@ button:disabled{opacity:.35;cursor:default}
 .msg{padding:28px 0;color:var(--fg2);line-height:1.6}
 .err{color:var(--red);font-size:14.5px;margin-top:6px}
 .hide{display:none}
+.cards{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:14px 16px;margin:0 0 30px}
+.cards h2{font-family:"Newsreader",serif;font-weight:400;font-size:21px;margin:0 0 4px}
+.cards p.sub{color:var(--fg2);font-size:15px;line-height:1.5;margin:0 0 12px}
+.card{border-top:1px solid var(--line);padding:12px 0 4px}
+.card .lab{font-size:13px;color:var(--fg3);letter-spacing:.06em;text-transform:uppercase;font-weight:500;margin:0 0 4px}
+.card .words{font-family:"Newsreader",serif;font-size:clamp(20px,5vw,24px);line-height:1.35;margin:0 0 6px;overflow-wrap:anywhere}
+.card .none{color:var(--fg3);font-style:italic;font-size:17px;margin:0 0 6px}
+.card .tag{font-size:13px;color:var(--fg3);margin:0 0 8px}
+.card .row{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 6px}
+.card button.b{padding:9px 14px;font-size:15px}
+.card textarea{width:100%;background:var(--ink);border:1px solid var(--brass);border-radius:8px;color:var(--fg);
+  font-family:"Newsreader",serif;font-size:20px;line-height:1.4;padding:10px 12px;min-height:52px;resize:vertical}
+.card .count{font-size:13.5px;color:var(--fg3);margin:4px 0 0}
 </style>
 </head>
 <body>
@@ -109,6 +127,7 @@ function paint(){
        <p class="lede">We're making your song now. You don't need to do anything else.</p>`
     : `<p class="do">Read the words to your song. Tap any line that isn't right and change it.</p>
        <p class="lede">Nothing is sung until you say the words are right. It's your story — if we've got a detail wrong, you're the one who knows.${asks?` Where we weren't sure of something, we've asked you under the line.`:''}</p>`;
+  h+=cardsHTML(done);
   let sec=null;
   for(const l of L.lines){
     if(l.section!==sec){ if(sec!==null) h+='</div>'; sec=l.section; h+=`<div class="sec"><h3>${esc(secName(sec))}</h3>`; }
@@ -134,9 +153,49 @@ function paint(){
        <button class="b" data-back="1">Not yet</button>
        <button class="b go" data-approve="1">Yes — make my song</button>`
     : `<div class="tally">${changed?`<b>${changed}</b> line${changed===1?'':'s'} changed`:'No changes yet'}</div>
-       <button class="b go" data-ready="1" ${open?'disabled':''}>These words are right</button>`;
+       <button class="b go" data-ready="1" ${open||cardOpen?'disabled':''}>These words are right</button>`;
   const ta=$('ta');
   if(ta){ ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length); ta.addEventListener('input',hint); hint(); }
+  const cta=$('cta');
+  if(cta){ cta.focus(); cta.setSelectionRange(cta.value.length,cta.value.length); cta.addEventListener('input',ccount); ccount(); }
+}
+
+/* THE CARDS (1 Oct). One card at a time is open for editing (cardOpen 'start' | 'finish'). */
+let cardOpen=null;
+const CARD={start:{lab:'Your film opens with',max:60,none:'No opening card',remove:'No opening card',add:'Add an opening card'},
+            finish:{lab:'and ends with',max:90,none:'No closing card',remove:'No closing card',add:'Add a closing card'}};
+const cardOf=k=>{ const c=(L&&L.cards)||{}; const t=c[k]; return {text:(t==null?'':String(t)), suggested:!!c[k+'_suggested']}; };
+function cardsHTML(done){
+  let h=`<div class="cards"><h2>The words on screen</h2>
+    <p class="sub">${done?'These are the words at the start and the end of your film.':'Your film opens and closes on a photograph with a few words over it. Change them, or take a card away if you would rather not have one.'}</p>`;
+  for(const k of ['start','finish']){
+    const c=cardOf(k), m=CARD[k];
+    h+=`<div class="card"><p class="lab">${m.lab}…</p>`;
+    if(cardOpen===k&&!done){
+      h+=`<textarea id="cta" maxlength="${m.max}" aria-label="${esc(m.lab)}">${esc(c.text)}</textarea>
+          <p class="count" id="ccount"></p>
+          <div class="row"><button class="b go" data-csave="${k}">Save</button><button class="b" data-ccancel="1">Cancel</button></div>
+          <div class="err hide" id="cerr"></div>`;
+    }else if(c.text){
+      h+=`<p class="words">${esc(c.text)}</p>${c.suggested&&!done?`<p class="tag">Our suggestion, from what you told us.</p>`:''}`;
+      if(!done) h+=`<div class="row"><button class="b" data-cedit="${k}">Change the words</button><button class="b" data-cremove="${k}">${m.remove}</button></div>`;
+    }else{
+      h+=`<p class="none">${m.none}</p>`;
+      if(!done) h+=`<div class="row"><button class="b" data-cedit="${k}">${m.add}</button></div>`;
+    }
+    h+=`</div>`;
+  }
+  return h+`</div>`;
+}
+function ccount(){ const ta=$('cta'); if(!ta) return; $('ccount').textContent=`${ta.value.length} of ${CARD[cardOpen].max} letters`; }
+/* set_cards takes both: the one being changed, and the other AS SHOWN ("" = no card). ⚠ 1 Oct: null was specified as
+   "keep our suggestion" but the server wrote '' (no card) for it - so the other card's shown words are sent instead. */
+async function setCard(k,value){
+  const cur=kk=>cardOf(kk).text;
+  const args={p_token:TOKEN,p_start:k==='start'?value:cur('start'),p_finish:k==='finish'?value:cur('finish')};
+  const r=await rpc('set_cards',args);
+  if(r&&r.error) throw new Error(r.error);
+  await load();
 }
 
 function hint(){
@@ -159,6 +218,8 @@ async function save(id){
   }catch(e){ report('save line',e); err.textContent='That didn’t save. Please try again.'; err.classList.remove('hide'); }
 }
 
+function alertLine(msg){ $('nin').insertAdjacentHTML('afterbegin',`<div class="err" style="flex-basis:100%">${esc(msg)}</div>`); }
+
 async function approve(){
   try{
     const r=await rpc('approve_lyric',{p_token:TOKEN});
@@ -170,7 +231,19 @@ async function approve(){
 
 document.addEventListener('click',ev=>{
   const t=ev.target.closest('button'); if(!t) return;
-  if(t.dataset.line){ open=t.dataset.line; confirming=false; paint(); }
+  if(t.dataset.cedit){ cardOpen=t.dataset.cedit; open=null; confirming=false; paint(); return; }
+  if(t.dataset.ccancel){ cardOpen=null; paint(); return; }
+  if(t.dataset.csave||t.dataset.cremove){
+    const k=t.dataset.csave||t.dataset.cremove;
+    const v=t.dataset.cremove?'':($('cta').value||'').trim().slice(0,CARD[k].max);   // an emptied card is no card
+    t.disabled=true;
+    setCard(k,v).then(()=>{ cardOpen=null; paint(); })
+      .catch(e=>{ report('set cards',e); t.disabled=false; const er=$('cerr');
+        if(er){ er.textContent='That didn’t save. Please try again.'; er.classList.remove('hide'); }
+        else alertLine('That didn’t save. Please try again.'); });
+    return;
+  }
+  if(t.dataset.line){ open=t.dataset.line; cardOpen=null; confirming=false; paint(); }
   else if(t.dataset.cancel){ open=null; paint(); }
   else if(t.dataset.save){ t.disabled=true; save(t.dataset.save); }
   else if(t.dataset.ready){ confirming=true; paint(); }
