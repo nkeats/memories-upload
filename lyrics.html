@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="build" content="2026-10-01d">
+<meta name="build" content="2026-10-01e">
 <title>The words to your song</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -188,10 +188,10 @@ function cardsHTML(done){
   return h+`</div>`;
 }
 function ccount(){ const ta=$('cta'); if(!ta) return; $('ccount').textContent=`${ta.value.length} of ${CARD[cardOpen].max} letters`; }
-/* set_cards takes both: the one being changed, and the other AS SHOWN ("" = no card). ⚠ 1 Oct: null was specified as
-   "keep our suggestion" but the server wrote '' (no card) for it - so the other card's shown words are sent instead. */
+/* set_cards takes both: the one being changed, and the other as it stands - "" = no card, null = keep our suggestion
+   (1 Oct: the server now keeps null as the suggestion; the earlier workaround of sending its words is gone) */
 async function setCard(k,value){
-  const cur=kk=>cardOf(kk).text;
+  const cur=kk=>{ const c=cardOf(kk); return c.suggested? null : c.text; };
   const args={p_token:TOKEN,p_start:k==='start'?value:cur('start'),p_finish:k==='finish'?value:cur('finish')};
   const r=await rpc('set_cards',args);
   if(r&&r.error) throw new Error(r.error);
