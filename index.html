@@ -234,7 +234,7 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
 const FN=SB+'/functions/v1';
 const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
-const BUILD='2026-10-02d';                                 // bump on every change (1 Oct: there was no stamp before)
+const BUILD='2026-10-02e';                                 // bump on every change (1 Oct: there was no stamp before)
 document.documentElement.dataset.build=BUILD;
 let TOKEN=new URLSearchParams(location.search).get('t')||'';
 /* ?a=<answer token> — somebody else answering the same memories (on a film
@@ -1955,7 +1955,12 @@ async function askEngine(m,turn_id,answer,skipThread,storyAsset){      // the ne
   const t=fromEngine(j);
   if(t.done){
     if(t.capped) report('interview capped',new Error('capped at six'),{group:m.title,have:t.have,why:t.why});
-    await closeOnServer(m,t.finished);                       // the verdict lives on the chapter, nowhere else
+    /* ⚠⚠ 2 Oct: opening Leisa's answer link CLOSED the reopened "Party" group on load - the engine said done before
+       she had seen a single question, and this closed it. A group is closed only once its questions have been SHOWN
+       in this visit (m.shown, set by paintTurn) or by her own button (closeMemory). A load never closes anything.
+       Test: Song/pipeline/page_tests.py "NEVER CLOSE ON LOAD". */
+    if(m.shown) await closeOnServer(m,t.finished);           // the verdict lives on the chapter, nowhere else
+    else report('engine done on arrival - left open',new Error('not shown in this visit'),{group:m.title});
   }
   return t;
 }
@@ -2003,7 +2008,7 @@ function inviteCard(){
   return `<div class="card invite" style="margin:0 0 16px">${INV.people.map(nm=>{ const l=INV.links[nm];
     return l?`<p class="lede" style="margin:0 0 8px"><b>${esc(nm)}’s link</b> — send it to ${esc(nm)}. Their answers go in the song too; they won’t see yours.</p>
       <input type="text" readonly value="${esc(l)}" onfocus="this.select()" style="width:100%;margin-bottom:8px">
-      <div class="acts"><button type="button" data-copyinv="${esc(nm)}">${INV.copied===nm?'Copied':'Copy the link'}</button>
+      <div class="acts"><button type="button" data-copyinv="${esc(nm)}">${INV.copied===nm?'Copied':'Copy the message'}</button>
       ${navigator.share?`<button type="button" data-shareinv="${esc(nm)}">Share…</button>`:''}</div>`
       :`<p class="lede" style="margin:0 0 8px">Would ${esc(nm)} like to answer too? Two people remember different things.</p>
       <div class="acts"><button class="yes" type="button" data-invite="${esc(nm)}" ${INV.busy===nm?'disabled':''}>${INV.busy===nm?'One moment…':'Invite '+esc(nm)+' to answer'}</button></div>`; }).join('<hr style="border:0;border-top:1px solid var(--line,#ddd);margin:12px 0">')}
@@ -2017,8 +2022,12 @@ async function inviteTo(nm){
   catch(e){ report('invite_to_answer',e,{name:nm}); flash(false); }
   INV.busy=null; repaintAnswer();
 }
-async function copyInvite(nm){ try{ await navigator.clipboard.writeText(INV.links[nm]); INV.copied=nm; }catch(e){ report('copy invite',e); } repaintAnswer(); }
-async function shareInvite(nm){ try{ await navigator.share({title:'Your questions for the film',text:`${nm}, here are your questions for our film:`,url:INV.links[nm]}); }catch(_){} }
+/* 2 Oct (Nigel's pasted link was not clickable in his email): the message carries the FULL https:// link on a line of
+   its own, so mail and text apps turn it into a link. Share sends it as text only - with a separate url many apps glue
+   the link straight onto the sentence ("film:https://…") or drop one of the two. */
+const inviteMessage=nm=>`${nm}, here are your questions for our film:\n\n${INV.links[nm]}\n`;
+async function copyInvite(nm){ try{ await navigator.clipboard.writeText(inviteMessage(nm)); INV.copied=nm; }catch(e){ report('copy invite',e); } repaintAnswer(); }
+async function shareInvite(nm){ try{ await navigator.share({title:'Your questions for the film',text:inviteMessage(nm)}); }catch(e){ if(e&&e.name!=='AbortError') report('share invite',e); } }
 function repaintAnswer(){
   if(page!=='answer') return;
   if(screen==='film'){ paintFilmQ(); return; }
@@ -2117,7 +2126,8 @@ async function toGroups(){
   await arrive();
 }
 /* ═══ THE FILM QUESTIONS (story-first occasions) ═══
-     rpc film_questions {p_token} → {ok, name, questions:[{key, part, question, answer, skipped, done}]}
+     rpc film_questions {p_token} → {ok, name, questions:[{key, part, question, hint, answer, skipped, done}]}
+       hint (2 Oct): a prompt shown under its question in smaller grey text; null = nothing shown
      rpc answer_film_question {p_token, p_key, p_answer} → {ok:true}; '' = skipped; again = replaces
    One per screen, its part as the heading. Next and Skip both save; a save
    that fails says so and stays put — never on to the next as if it had gone. */
@@ -2132,6 +2142,7 @@ function paintFilmQ(){
   const q=FQ.list[FQ.i]; if(!q) return;
   $('stage').innerHTML=`<div class="step">${esc(q.part||'')} · <b>${FQ.i+1}</b> of ${FQ.list.length}</div>
     <h2 style="margin-top:14px">${esc(q.question||'')}</h2>
+    ${q.hint?`<p class="fqhint" style="color:var(--fg2);font-size:15px;line-height:1.5;margin:-4px 0 12px;max-width:56ch">${esc(q.hint)}</p>`:''}
     <textarea id="fqans" placeholder="Tell us what happened — a few sentences is plenty." ${FQ.busy?'disabled':''}>${esc(FQ.draft)}</textarea>
     <p class="lede" style="margin-top:10px"><button class="chip" id="fqskip" type="button" ${FQ.busy?'disabled':''}>Skip</button></p>
     <div style="margin-top:22px">${inviteCard()}</div>`;
@@ -2192,6 +2203,7 @@ function photosStripAll(m){
 function paintTurn(){
   atEnd=false;
   const m=M[cur], t=TURN; if(!m||!t||t.done) return;
+  m.shown=true;                                             // she has seen this group's questions in this visit (see closeOnServer)
   if(isPick(t)){ paintPick(); return; }
   /* ⚠ No "question n of N": there is no N. It stops when it has enough. */
   let h=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')}</div>`;
