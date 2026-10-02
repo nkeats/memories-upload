@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="build" content="2026-10-02c">
+<meta name="build" content="2026-10-02d">
 <title>Your film</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -234,7 +234,7 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
 const FN=SB+'/functions/v1';
 const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
-const BUILD='2026-10-02c';                                 // bump on every change (1 Oct: there was no stamp before)
+const BUILD='2026-10-02d';                                 // bump on every change (1 Oct: there was no stamp before)
 document.documentElement.dataset.build=BUILD;
 let TOKEN=new URLSearchParams(location.search).get('t')||'';
 /* ?a=<answer token> — somebody else answering the same memories (on a film
@@ -1155,7 +1155,7 @@ async function send(){
            her here. Stop the batch, say so in the server's words, and take her
            to where she actually is. */
         if(status===409){ finished(j.detail||j.error||"You've already told us that's everything, so we can't add more photos to this film."); return; }
-        /* the server's plain explanation (a finished video, a file over 50MB) is `detail`; `error` is its code word */
+        /* the server's plain explanation (a finished video; a photo over 25MB or a video over 50MB - upload 413, checked live 2 Oct) is `detail`; `error` is its code word */
         if(!ok){ const e=new Error(j.detail||j.error||'rejected'); e.detail={http:status,server:j.error||null}; throw e; }
         q.signed_url=j.signed_url; q.asset_id=j.asset_id;
       }
