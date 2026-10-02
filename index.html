@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="build" content="2026-10-02b">
+<meta name="build" content="2026-10-02c">
 <title>Your film</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -234,7 +234,7 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
 const FN=SB+'/functions/v1';
 const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
-const BUILD='2026-10-02b';                                 // bump on every change (1 Oct: there was no stamp before)
+const BUILD='2026-10-02c';                                 // bump on every change (1 Oct: there was no stamp before)
 document.documentElement.dataset.build=BUILD;
 let TOKEN=new URLSearchParams(location.search).get('t')||'';
 /* ?a=<answer token> — somebody else answering the same memories (on a film
@@ -268,8 +268,8 @@ async function post(fn,body){
   return {ok:r.ok, status:r.status, j};
 }
 async function api(action,extra){                       // the flow function, throws on failure
-  const {ok,j}=await post('flow',{action,...extra});
-  if(!ok) throw new Error(j.error||'save failed');
+  const {ok,status,j}=await post('flow',{action,...extra});
+  if(!ok) throw Object.assign(new Error(j.error||'save failed'),{status,body:j});   // 2 Oct: callers read a 409's groups/message
   return j;
 }
 async function setStage(stage){
@@ -1411,10 +1411,11 @@ let A=[], M=[], dups=[], screen='welcome', cur=0, sel=null, picking=false,
    SUG — rpc suggested_groups {p_token} → {ok, occasion, groups:[{title, hint}]}. An occasion with suggestions (a
          wedding has 7) sorts on THE BOARD: every photo and every suggested group on one screen, tap a photo then a
          group (or drag it), "Add your own group". An occasion with none keeps the date grouping (propose()).
-   ANSWERED — the groups already have answers. ⚠⚠ flow save_groups (tested 2 Oct) DELETES every chapter and makes new
-         ones on every save, and the answers go with them. Until the server keeps chapter ids, a film with answers
-         never saves its groups from this page: the groups are locked and the page says why. */
-let UN=[], SUG=[], ANSWERED=false, BSEL=null, UNASK=false;
+   2 Oct (flow v14 + save_groups, LIVE): groups are updated IN PLACE by id (else by title) and answers are never deleted,
+         so the page's lock is gone - rename, reorder, move and remove all save. Removing a group that holds answers is
+         refused by the server: HTTP 409 {error:'answered_groups', groups:[titles], message} with nothing changed. The
+         page then shows that message and the names (refusedNote) and reloads the groups from the server. */
+let UN=[], SUG=[], BSEL=null, UNASK=false;
 
 const secs=m=>m.photos.filter(p=>!p.excluded)
   .reduce((t,p)=>t+REG[m.register]+(p.faces==null?0:p.faces>=4?1.5:p.faces>=2?0.5:p.faces?0:-0.5),0);
@@ -1427,24 +1428,28 @@ function flash(ok){ const s=$('saved'); if(!s) return;
   s.style.color=ok?'var(--green)':'var(--red)';
   s.classList.add('on'); if(ok) setTimeout(()=>s.classList.remove('on'),1400); }
 const hasPhotos=m=>!!(m&&m.photos.some(p=>!p.excluded));
-/* Has ANYONE answered anything in these groups? rpc both_accounts {p_token} → [{memory, accounts:[{who, said}]|null}] -
-   every person's answers (a second answerer's too; next_memory_turn only sees the builder's - that let a regroup through
-   on the 2 Oct test and deleted Leisa's TEST answer). Used as yes / no only; nothing of it is shown. Unknown = yes. */
-async function anyAnswers(){
-  try{ const r=await rpc('both_accounts',{p_token:TOKEN}); if(!Array.isArray(r)) throw new Error((r&&r.error)||'both_accounts: bad reply');
-    return r.some(x=>Array.isArray(x.accounts)&&x.accounts.some(a=>(a.said||'').trim())); }
-  catch(e){ report('answers check',e); return true; }
-}
-function queueSave(){ if(ANSWERED) return; dirty=true; editN++; clearTimeout(saveTimer); saveTimer=setTimeout(saveGroups,1200); }
+/* A save the server REFUSED (409 answered_groups): nothing changed there. Say why, with the groups' names, and put the
+   page back to the server's groups. Shared by the grouping screens and the help assistant. */
+const isRefusal=e=>!!(e&&e.status===409&&e.body&&e.body.error==='answered_groups');
+function refusedNote(body){ const s=$('sheet'); const g=Array.isArray(body&&body.groups)?body.groups:[];
+  s.innerHTML=`<div class="in"><h3>That group can’t be removed</h3>
+    <p class="lede" style="margin:6px 0 10px">${esc((body&&body.message)||'These groups already have answers, so they can’t be removed.')}</p>
+    ${g.length?`<p class="lede" style="margin:0 0 14px"><b>${g.map(esc).join(', ')}</b></p>`:''}
+    <p class="lede" style="margin:0 0 14px">Nothing has changed — your groups are back as they were.</p>
+    <button class="done" id="cancel">OK</button></div>`; s.classList.remove('hide'); }
+let refused=false;
+function queueSave(){ dirty=true; editN++; clearTimeout(saveTimer); saveTimer=setTimeout(saveGroups,1200); }
 async function saveGroups(){
   if(!dirty) return;
   /* ⚠ A save already in flight must not clear `dirty` for edits made after its
      payload was built — that lost the last group's name once. Remember which
      edit this save carries, and only call it clean if nothing came after. */
-  if(ANSWERED){ dirty=false; report('save groups refused',new Error('the groups have answers - save_groups would delete them'),{memories:M.length}); return; }
   const n=editN, snap=M.filter(hasPhotos);        // 2 Oct: an empty group is never saved (and never asks for a name)
   M.forEach(m=>{ if(!hasPhotos(m)) m.id=null; });
-  const payload={ groups:snap.map(m=>({...(m.id?{id:m.id}:{}),title:m.title,register:m.register,story:m.story||'',
+  /* 2 Oct: NO 'story' in a regroup. load's story is her words + the answers; sending it back made the server (which
+     writes a story only when the key is sent) compare it with her own words and, where she had typed some, copy the
+     answers into them. These screens never edit a story, so they never send one. */
+  const payload={ groups:snap.map(m=>({...(m.id?{id:m.id}:{}),title:m.title,register:m.register,
       assets:m.photos.filter(p=>!p.excluded).map(p=>p.id),
       hero:(m.photos.find(p=>p.is_hero)||{}).id||null})),
     excluded:A.filter(p=>p.excluded).map(p=>p.id) };
@@ -1455,7 +1460,13 @@ async function saveGroups(){
     failed=false; flash(true);
     if(editN===n) dirty=false;
     else { clearTimeout(saveTimer); saveTimer=setTimeout(saveGroups,300); }   // newer edits — go again
-  }catch(e){ dirty=true; failed=true; flash(false); report('save groups',e,{memories:M.length,photos:onCount()});
+  }catch(e){
+    if(isRefusal(e)){                                    // refused, nothing changed: never retried; back to the server's groups
+      dirty=false; failed=false; refused=true; clearTimeout(saveTimer);
+      report('save groups refused (409)',e,{groups:e.body.groups});
+      try{ await showSort(); }catch(e2){ report('reload after 409',e2); }
+      refusedNote(e.body); return; }
+    dirty=true; failed=true; flash(false); report('save groups',e,{memories:M.length,photos:onCount()});
     setTimeout(saveGroups,4000); }
 }
 
@@ -1553,7 +1564,7 @@ async function showSort(){
     A.sort((a,b)=>new Date(a.taken_at)-new Date(b.taken_at));
     name=d.collection.owner_name||'';
     skew=detectSkew();
-    UN=[]; BSEL=null; UNASK=false; ANSWERED=false;
+    UN=[]; BSEL=null; UNASK=false;
     try{ const sg=await rpc('suggested_groups',{p_token:TOKEN});
       SUG=(sg&&sg.ok&&Array.isArray(sg.groups))?sg.groups.filter(g=>g&&(g.title||'').trim()):[];
       if(sg&&sg.error) throw new Error(sg.error); }
@@ -1593,8 +1604,6 @@ async function showSort(){
       const firstAt=m=>m.photos.length?new Date(m.photos[0].taken_at).getTime():Infinity;
       M.sort((a,b)=>firstAt(a)-firstAt(b));
       /* (no save needed: nothing was moved) */
-      ANSWERED=await anyAnswers();
-      if(ANSWERED){ dirty=false; }
       screen='organise';
       const need=M.findIndex(m=>hasPhotos(m)&&!(m.title||'').trim());   // ⚠ never drop someone at the end
       cur=need>=0?need:0;
@@ -1642,21 +1651,16 @@ function takeOut(id){                                   // a photo out of wherev
   return p;
 }
 function putIn(id,j){ const p=takeOut(id); if(!p) return; if(j==='un'){ UN.push(p); UN.sort(byTime); } else { M[j].photos.push(p); M[j].photos.sort(byTime); } }
-/* REMOVE A GROUP (every occasion): its photos go back to "not in a group yet"; nothing is lost. A film whose groups
-   already have answers keeps its groups (see ANSWERED) - she is told why, nothing is changed. */
+/* REMOVE A GROUP (every occasion): its photos go back to "not in a group yet"; nothing is lost. A group that holds
+   answers is refused by the server (409) - refusedNote says so and the page reloads the server's groups. */
 function removeGroup(j){
   const m=M[j]; if(!m) return false;
-  if(ANSWERED){ lockedNote(); return false; }
   if(screen==='organise'&&hasPhotos(m)&&M.filter(hasPhotos).length<=1){ const sh=$('sheet');   // the film needs one group
     sh.innerHTML=`<div class="in"><h3>This is your only group</h3><p class="lede" style="margin:6px 0 14px">A film needs at least one group. Rename it instead, or move photos into a new group first.</p><button class="done" id="cancel">OK</button></div>`;
     sh.classList.remove('hide'); return false; }
   m.photos.filter(p=>!p.excluded).forEach(p=>{ UN.push(p); }); UN.sort(byTime);
   M.splice(j,1); cur=Math.max(0,Math.min(cur,M.length-1)); sel=null; picking=false; queueSave(); return true;
 }
-function lockedNote(){ const s=$('sheet');
-  s.innerHTML=`<div class="in"><h3>These groups already have your answers</h3>
-    <p class="lede" style="margin:6px 0 14px">Changing the groups now would lose what you’ve told us, so they stay as they are. If something really needs to move, use “Something not right?” and tell us — we’ll do it without losing anything.</p>
-    <button class="done" id="cancel">OK</button></div>`; s.classList.remove('hide'); }
 function dropEmptyAt(i){                                 // a group with nothing in the film: dropped, its left-out photos listed
   if(!M[i]||hasPhotos(M[i])) return false;
   M[i].photos.forEach(p=>{ p.excluded=false; UN.push(p); }); UN.sort(byTime);
@@ -1755,7 +1759,6 @@ function paintOrg(){
       It looks about ${Math.abs(skew)} hours ${skew>0?'ahead of':'behind'} the other,
       so some photos are out of order. Shall we put that right?
       <div class="row"><button id="fixclock">Yes, fix it</button><button class="no" id="skipclock">Leave it</button></div></div>`;
-  if(ANSWERED) h+=`<div class="clock"><b>These groups already have your answers.</b><br>They stay as they are, so nothing you’ve told us is lost. Use “Something not right?” if something must move.</div>`;
   h+=`<div class="step">Group <b>${cur+1}</b> of ${M.length}</div>
     ${tips('sort')}`;
   if(!inn.length){                                       // 2 Oct: an empty group never asks for a name
@@ -1764,7 +1767,7 @@ function paintOrg(){
     h+=unsortedStrip();
     $('stage').innerHTML=h; orgNav(); sheet(); return; }
   h+=`<h2>What do you call this group?</h2>
-    <input type="text" id="nm" class="beside" value="${esc(m.title)}" placeholder="Anything you like" autocomplete="off" ${ANSWERED?'readonly':''}>
+    <input type="text" id="nm" class="beside" value="${esc(m.title)}" placeholder="Anything you like" autocomplete="off">
     <p class="do" style="font-size:16.5px;margin:9px 0 22px;color:var(--fg2)">
       ${plural(inn.length,'photo')} · about ${mmss(secs(m))} of film · tap a photo to move it, or leave it out</p>
     <div class="chips"><span class="lab">How did this time feel?</span>
@@ -1851,7 +1854,9 @@ async function finishSort(){
   /* She may press Done a second after typing the last name, while that save
      is still queued or in flight. Wait for it — up to a few tries — rather
      than bounce the button and leave her wondering. */
+  refused=false;
   for(let i=0;i<6&&dirty;i++){ await saveGroups(); if(dirty) await sleep(400); }
+  if(refused) return;                                    // 409: the page reloaded the server's groups and said why
   if(dirty||failed||M.some(m=>hasPhotos(m)&&!m.id)){ b.disabled=false; b.textContent='Done'; flash(false);
     const before=$('nav').querySelector('.before'); if(before) before.textContent="Still saving — please press Done again in a moment.";
     return; }
@@ -2590,10 +2595,12 @@ async function groupsNow(){
   return {d,chapters,assets:d.assets};
 }
 async function saveGroupsNow(g){
-  /* ⚠⚠ 2 Oct: flow save_groups deletes every chapter and its answers on each save. Once anything is answered, the
-     help flow refuses to regroup rather than lose them (until the server keeps chapter ids). */
-  if(ASK||await anyAnswers()){ const e=Object.assign(new Error('has answers'),{answers:true}); report('help regroup refused',e,{groups:g.chapters.length}); throw e; }
-  const payload={groups:g.chapters.map(m=>({title:m.title,register:m.register,story:m.story||'',
+  /* 2 Oct: the same save_groups as the grouping screens - EVERY group sent WITH its id, so a rename or move updates the
+     group in place (without ids the server matches by title, and a renamed group with answers would read as removed ->
+     409). A 409 is thrown to applyHelp, which shows the server's message and reloads. An answerer's link cannot regroup
+     (flow refuses her token): she is told so, nothing is sent. */
+  if(ASK) throw Object.assign(new Error('answerer cannot regroup'),{answerer:true});
+  const payload={groups:g.chapters.map(m=>({id:m.id,title:m.title,register:m.register,      // no story: see saveGroups
       assets:m.photos.filter(p=>!p.excluded).map(p=>p.id), hero:(m.photos.find(p=>p.is_hero)||{}).id||null})),
     excluded:g.assets.filter(p=>p.excluded).map(p=>p.id)};
   const r=await api('save_groups',payload);
@@ -2622,8 +2629,11 @@ async function applyHelp(action,d){
       return {ok:false,why:"Thank you \u2014 to fix that one, go to the question it belongs to and press \u201cthat\u2019s not what\u2019s in that photo\u201d under it."};
     }
     if(action==='rename_memory'){
-      const oldN=pickKey(d,/old|from|current/i), newN=pickKey(d,/new|rename/i); const g=await groupsNow(); const c=findChapter(g.chapters,oldN);
-      if(!c||!newN) return {ok:false,why:`We couldn\u2019t find a group called \u201c${oldN}\u201d.`};
+      /* 2 Oct: help's keys vary ({old_name,new_name} one call, {from,to} the next): read both shapes, and say which part
+         was missing - "couldn't find a group" was shown when it was the NEW name that went unread */
+      const oldN=pickKey(d,/old|from|current|^memory|^group/i), newN=pickKey(d,/new|rename|^to$|^to_|target/i); const g=await groupsNow(); const c=findChapter(g.chapters,oldN);
+      if(!c) return {ok:false,why:`We couldn\u2019t find a group called \u201c${oldN}\u201d.`};
+      if(!newN) return {ok:false,why:"We couldn\u2019t tell what the new name should be \u2014 you can type it straight into the group\u2019s name on the grouping screen."};
       c.title=String(newN).trim(); await saveGroupsNow(g); await afterGroupsChanged(); return {ok:true};
     }
     if(action==='move_photo'||action==='remove_photo'||action==='reorder'){
@@ -2661,7 +2671,9 @@ async function applyHelp(action,d){
       return {ok:true};
     }
     return {ok:false,why:"That\u2019s not something we can change from here yet."};
-  }catch(e){ if(e&&e.answers) return {ok:false,why:"Your groups already have answers, and changing them now would lose what you\u2019ve told us \u2014 so we\u2019ve left them as they are and passed your request to a person, who\u2019ll do it without losing anything."};
+  }catch(e){ if(e&&e.answerer) return {ok:false,why:"The groups are changed on the link of the person making the film \u2014 ask them, or tell us and we\u2019ll do it."};
+    if(isRefusal(e)){ report('help regroup refused (409)',e,{action,groups:e.body.groups}); try{ await afterGroupsChanged(); }catch(e2){ report('reload after 409',e2); }
+      return {ok:false,why:`${e.body.message||'Those groups already have answers, so they can\u2019t be removed.'} (${(e.body.groups||[]).join(', ')}) Nothing has changed.`}; }
     report('help apply',e,{action,details:d}); return {ok:false,why:"We tried to make that change and it didn\u2019t go through. Nothing has been altered."}; }
 }
 /* the screen she is on shows the change */
@@ -2795,7 +2807,6 @@ document.addEventListener('click',async e=>{
     A.sort((a,b)=>new Date(a.taken_at)-new Date(b.taken_at));
     skewDone=true; if(screen==='organise'&&!SUG.length) propose(); cur=0; queueSave(); paint(); return; }
   if(t.id==='skipclock'){ skewDone=true; paint(); return; }
-  if(t.dataset.reg&&ANSWERED){ lockedNote(); return; }
   if(t.dataset.reg){ M[cur].register=t.dataset.reg; queueSave(); paint(); return; }
   if(t.id==='onext'){ if(!dropEmptyAt(cur)) cur++; cur=Math.min(cur,M.length-1); sel=null; picking=false; saveGroups(); prog({screen:'organise',part:cur+1}); paint(); scrollTo(0,0); return; }
   if(t.id==='back'){
@@ -2814,23 +2825,22 @@ document.addEventListener('click',async e=>{
   if(t.id==='sortDone'){ finishSort(); return; }
   /* 2 Oct: the board, remove a group, photos in no group */
   if(t.id==='bnext'){ boardNext(); return; }
-  if(t.id==='toboard'){ if(ANSWERED){ lockedNote(); return; } const have=new Set(M.map(m=>m.title));
+  if(t.id==='toboard'){ const have=new Set(M.map(m=>m.title));
     SUG.forEach(g=>{ if(!have.has(g.title)) M.push({title:g.title,hint:g.hint||'',register:'warm',story:'',photos:[]}); });
     screen='board'; BSEL=null; UNASK=false; paint(); scrollTo(0,0); return; }
   if(t.id==='addg'){ const f=$('newg'), v=(f&&f.value||'').trim(); if(!v){ if(f) f.focus(); return; }
-    if(ANSWERED){ lockedNote(); return; }
     M.push({title:v.slice(0,60),hint:'',register:'warm',story:'',photos:[]});
     if(BSEL){ putIn(BSEL,M.length-1); BSEL=null; queueSave(); } paint(); return; }
   if(t.dataset.rmg!==undefined){ removeGroup(+t.dataset.rmg); paint(); return; }
   if(t.id==='rmgroup'){ if(removeGroup(cur)){ paint(); scrollTo(0,0); } return; }
-  if(t.id==='unown'){ $('sheet').classList.add('hide'); if(ANSWERED){ lockedNote(); return; }
+  if(t.id==='unown'){ $('sheet').classList.add('hide');
     M.push({title:'',register:'warm',story:'',photos:UN.splice(0).sort(byTime)}); UNASK=false; queueSave();
     if(screen==='board'){ boardNext(); return; }
     cur=M.length-1; paint(); scrollTo(0,0); return; }
   if(t.id==='unleave'){ $('sheet').classList.add('hide'); UNASK=true; if(screen==='board') boardNext(); else finishSort(); return; }
   if(t.id==='unkeep'){ UNASK=false; $('sheet').classList.add('hide'); return; }
   const unp=t.closest('[data-unput]');
-  if(unp&&screen==='organise'){ if(ANSWERED){ lockedNote(); return; } putIn(unp.dataset.unput,cur); queueSave(); paint(); return; }
+  if(unp&&screen==='organise'){ putIn(unp.dataset.unput,cur); queueSave(); paint(); return; }
   const bp=t.closest('[data-bp]');
   if(bp&&screen==='board'){ BSEL=BSEL===bp.dataset.bp?null:bp.dataset.bp; paintBoard(); return; }
   const bgc=t.closest('[data-bg]');
@@ -2865,7 +2875,6 @@ document.addEventListener('click',async e=>{
     if(a==='out'){ p.excluded=true; sel=null; }
     queueSave(); paint(); return; }
   const back=t.closest('[data-back]');
-  if(back&&ANSWERED){ lockedNote(); return; }
   if(back){ const p=A.find(x=>x.id===back.dataset.back); p.excluded=false; queueSave(); paint(); return; }
 
   /* zoom (sort and answer) */
@@ -2885,7 +2894,6 @@ document.addEventListener('click',async e=>{
     drawZoom(); return; }
   if(t.id==='lb'||t.tagName==='IMG'&&t.closest('#lb')){ zoom=null; drawZoom(); return; }
   const c=t.closest('[data-p]');
-  if(c&&screen==='organise'&&ANSWERED){ lockedNote(); return; }
   if(c&&screen==='organise'){ sel=sel===c.dataset.p?null:c.dataset.p; picking=false; paint(); return; }
 
   /* answer */
