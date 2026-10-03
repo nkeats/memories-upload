@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="build" content="2026-10-01e">
+<meta name="build" content="2026-10-03a">
 <title>The words to your song</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,6 +21,10 @@
   start_suggested, finish_suggested}. The customer changes the words (start <= 60, finish <= 90 characters) or removes a
   card; set_cards(p_token, p_start, p_finish): "" = no card, null = use our suggestion. approve_lyric writes the cards
   shown into the film. Nothing is put on screen in their film that they have not seen here.
+  3 Oct (Nigel): THE CARD PHOTOGRAPHS beside the words - the opening and closing photographs we chose (get_card_photos: {start:
+  {auto, chosen}, finish: {auto, chosen}, choices: [asset ids of the film's photographs that show its people], locked}); "Choose a
+  different photo" opens those; "Use our choice" goes back to ours. set_card_photo(p_token, p_which, p_asset) - null = ours.
+  Pictures come from gallery (signed URLs). No photo answer (an older lyric, the RPC missing) = the words alone, as before.
 -->
 <style>
 :root{--ink:#0C0D10;--panel:#15171C;--p2:#1D1F26;--line:#2A2E37;--l2:#3C414C;
@@ -78,6 +82,17 @@ button:disabled{opacity:.35;cursor:default}
 .card textarea{width:100%;background:var(--ink);border:1px solid var(--brass);border-radius:8px;color:var(--fg);
   font-family:"Newsreader",serif;font-size:20px;line-height:1.4;padding:10px 12px;min-height:52px;resize:vertical}
 .card .count{font-size:13.5px;color:var(--fg3);margin:4px 0 0}
+.cph{display:flex;gap:12px;align-items:center;margin:4px 0 8px}
+.cph img{width:132px;height:88px;object-fit:cover;border-radius:6px;border:1px solid var(--line);flex:none}
+.cph .who{font-size:14px;color:var(--fg2);line-height:1.4}
+.pick{position:fixed;inset:0;background:rgba(12,13,16,.96);z-index:40;overflow:auto;padding:20px 16px 40px}
+.pick .in{max-width:720px;margin:0 auto}
+.pick h2{font-family:"Newsreader",serif;font-weight:400;font-size:24px;margin:6px 0 4px}
+.pick .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:14px 0 18px}
+.pick .grid button{padding:0;border:2px solid transparent;border-radius:8px;background:none;cursor:pointer;position:relative}
+.pick .grid button.now{border-color:var(--brass)}
+.pick .grid img{width:100%;aspect-ratio:3/2;object-fit:cover;border-radius:6px;display:block}
+.pick .grid .tag{position:absolute;left:6px;bottom:6px;background:var(--brass);color:#20180A;font-size:12px;border-radius:4px;padding:2px 6px}
 </style>
 </head>
 <body>
@@ -110,6 +125,9 @@ window.addEventListener('error',ev=>report('uncaught',ev.error||ev.message));
 window.addEventListener('unhandledrejection',ev=>report('unhandled promise',ev.reason));
 
 let L=null;          // the lyric: {lyric_id, version, status, lines:[{id,section,seq,text,words_was,question,edited}]}
+let CP=null;         // 3 Oct: the card photographs {start:{auto,chosen}, finish:{auto,chosen}, choices:[ids], locked} - null = not shown
+let PICS={};         // asset id -> picture URL (gallery)
+let picking=null;    // 'start' | 'finish' while the picker is open
 let open=null;       // id of the line being edited
 let confirming=false;
 
@@ -144,6 +162,7 @@ function paint(){
     if(l.question && !l.edited && !done) h+=`<div class="q"><b>Is this right?</b> ${esc(l.question)} If not, tap the line above and change it.</div>`;
   }
   if(sec!==null) h+='</div>';
+  h+=pickerHTML();
   $('stage').innerHTML=h;
 
   if(done){ $('nav').classList.add('hide'); return; }
@@ -178,6 +197,7 @@ function cardsHTML(done){
           <div class="err hide" id="cerr"></div>`;
     }else if(c.text){
       h+=`<p class="words">${esc(c.text)}</p>${c.suggested&&!done?`<p class="tag">Our suggestion, from what you told us.</p>`:''}`;
+      h+=photoHTML(k,done);
       if(!done) h+=`<div class="row"><button class="b" data-cedit="${k}">Change the words</button><button class="b" data-cremove="${k}">${m.remove}</button></div>`;
     }else{
       h+=`<p class="none">${m.none}</p>`;
@@ -187,6 +207,41 @@ function cardsHTML(done){
   }
   return h+`</div>`;
 }
+/* THE CARD PHOTOGRAPHS (3 Oct). */
+function photoHTML(k,done){
+  if(!CP||!CP[k]) return '';
+  const id=CP[k].chosen||CP[k].auto; if(!id||!PICS[id]) return '';
+  const mine=!!CP[k].chosen, locked=done||CP.locked;
+  return `<div class="cph"><img src="${esc(PICS[id])}" alt="The ${k==='start'?'opening':'closing'} photograph" data-cph="${k}">
+    <div class="who">${mine?'You chose this photograph.':'We chose this photograph of you.'}</div></div>
+    ${locked?'':`<div class="row"><button class="b" data-cpick="${k}">Choose a different photo</button>${mine?`<button class="b" data-creset="${k}">Use our choice</button>`:''}</div>`}`;
+}
+function pickerHTML(){
+  if(!picking) return '';
+  const k=picking, now=CP[k].chosen||CP[k].auto;
+  const ids=(CP.choices||[]).filter(id=>PICS[id]);
+  return `<div class="pick" id="pick"><div class="in"><h2>Choose the ${k==='start'?'opening':'closing'} photograph</h2>
+    <p class="lede" style="margin:0">These are your photographs that show ${esc(CP.people||'the people the film is about')}. Tap one.</p>
+    <div class="grid">${ids.map(id=>`<button data-cphoto="${id}" class="${id===now?'now':''}"><img src="${esc(PICS[id])}" alt="">${id===now?'<span class="tag">Now</span>':''}</button>`).join('')}</div>
+    <div class="err hide" id="perr"></div>
+    <button class="b" data-pclose="1">Cancel</button></div></div>`;
+}
+async function setPhoto(k,id){
+  const r=await rpc('set_card_photo',{p_token:TOKEN,p_which:k,p_asset:id});
+  if(r&&r.error) throw new Error(r.error);
+  await load();
+}
+async function loadPhotos(){
+  try{
+    const r=await rpc('get_card_photos',{p_token:TOKEN});
+    if(!r||r.error) throw new Error((r&&r.error)||'get_card_photos failed');
+    const g=await fetch(`${SB}/functions/v1/gallery`,{method:'POST',headers:HDR,body:JSON.stringify({token:TOKEN})});
+    const j=await g.json();
+    PICS={}; (j.assets||[]).forEach(a=>{ if(a.id&&(a.thumb_url||a.url)) PICS[a.id]=a.url||a.thumb_url; });
+    CP=r;
+  }catch(e){ CP=null; if(!/no lyric yet/.test(String(e&&e.message))) report('card photos',e); }
+}
+
 function ccount(){ const ta=$('cta'); if(!ta) return; $('ccount').textContent=`${ta.value.length} of ${CARD[cardOpen].max} letters`; }
 /* set_cards takes both: the one being changed, and the other as it stands - "" = no card, null = keep our suggestion
    (1 Oct: the server now keeps null as the suggestion; the earlier workaround of sending its words is gone) */
@@ -231,6 +286,18 @@ async function approve(){
 
 document.addEventListener('click',ev=>{
   const t=ev.target.closest('button'); if(!t) return;
+  if(t.dataset.cpick){ picking=t.dataset.cpick; paint(); return; }
+  if(t.dataset.pclose){ picking=null; paint(); return; }
+  if(t.dataset.cphoto||t.dataset.creset){
+    const k=picking||t.dataset.creset, id=t.dataset.cphoto||null;
+    const auto=CP&&CP[k]&&CP[k].auto;
+    t.disabled=true;
+    setPhoto(k, id&&id===auto?null:id).then(()=>{ picking=null; paint(); })   // choosing ours again = "ours"
+      .catch(e=>{ report('set card photo',e); t.disabled=false; const er=$('perr');
+        if(er){ er.textContent='That didn’t save. Please try again.'; er.classList.remove('hide'); }
+        else alertLine('That didn’t save. Please try again.'); });
+    return;
+  }
   if(t.dataset.cedit){ cardOpen=t.dataset.cedit; open=null; confirming=false; paint(); return; }
   if(t.dataset.ccancel){ cardOpen=null; paint(); return; }
   if(t.dataset.csave||t.dataset.cremove){
@@ -255,6 +322,7 @@ async function load(){
   const r=await rpc('get_lyric',{p_token:TOKEN});
   if(r&&r.error) throw Object.assign(new Error(r.error),{refusal:r.error});
   L=r;
+  await loadPhotos();
 }
 
 (async()=>{

@@ -23,6 +23,12 @@ h2{font-family:"Newsreader",serif;font-weight:300;font-size:clamp(22px,5.5vw,30p
 p.do{font-size:clamp(19px,4.6vw,23px);line-height:1.5;margin:0 0 20px;max-width:56ch;color:var(--fg)}
 p.lede{color:var(--fg2);font-size:16.5px;line-height:1.6;margin:0 0 22px;max-width:56ch}
 .step{font-size:13px;color:var(--fg3);letter-spacing:.06em;text-transform:uppercase}
+.consent .cbox{display:flex;gap:12px;align-items:flex-start;margin:0 0 14px;font-size:16.5px;line-height:1.5;cursor:pointer}
+.consent .cbox input{width:22px;height:22px;margin-top:2px;flex:none;accent-color:var(--brass)}
+.consent .cq{font-size:16.5px;margin:6px 0 8px;color:var(--fg)}
+.consent .crow{display:flex;gap:10px;margin:0 0 6px}
+.consent .chip.on{background:var(--brass);border-color:var(--brass);color:#20180A}
+.consent .cin{width:100%;background:var(--ink);border:1px solid var(--line);border-radius:8px;color:var(--fg);font:inherit;padding:11px 12px;margin:0 0 14px}
 .step b{color:var(--brass)}
 
 input[type=text],textarea{width:100%;background:var(--panel);border:1px solid var(--l2);
@@ -215,7 +221,7 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 </style>
 </head>
 <body>
-<div class="wrap"><p class="helpline hide" id="helpline"><button class="quiet" id="helpOpen" type="button">Something not right?</button></p><div id="stage" class="load">Opening your film…</div></div>
+<div class="wrap"><p class="helpline hide" id="helpline"><button class="quiet" id="helpOpen" type="button">Something not right?</button> <a class="quiet hide" id="dataLink" href="#">Your data</a></p><div id="stage" class="load">Opening your film…</div></div>
 <div class="sheet hide" id="sheet"></div>
 <div class="nav hide" id="nav"></div>
 
@@ -234,7 +240,7 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
 const FN=SB+'/functions/v1';
 const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
-const BUILD='2026-10-02e';                                 // bump on every change (1 Oct: there was no stamp before)
+const BUILD='2026-10-03a';                                 // bump on every change (1 Oct: there was no stamp before)
 document.documentElement.dataset.build=BUILD;
 let TOKEN=new URLSearchParams(location.search).get('t')||'';
 /* ?a=<answer token> — somebody else answering the same memories (on a film
@@ -324,6 +330,18 @@ async function route(){
   }
   J=j;
   $('helpline').classList.remove('hide');
+  /* 3 Oct: YOUR DATA - download or delete everything, on the delivery page (film.html#data); the builder's link only */
+  if(!ASK){ const dl=$('dataLink'); dl.href=`film.html?t=${encodeURIComponent(TOKEN)}#data`; dl.classList.remove('hide'); }
+  /* 3 Oct: REFERRAL - a friend's code on the link (?ref=), recorded once against this new film; the checkout applies any
+     discount later. Nothing is asked of the friend and nobody is contacted. */
+  try{
+    const ref=(new URLSearchParams(location.search).get('ref')||localStorage.getItem('mf_ref')||'').trim().toUpperCase();
+    if(ref&&!ASK&&localStorage.getItem('mf_ref_done_'+TOKEN)!==ref){
+      localStorage.setItem('mf_ref',ref);
+      rpc('record_referral',{p_token:TOKEN,p_code:ref}).then(r=>{ if(r&&!r.error) localStorage.setItem('mf_ref_done_'+TOKEN,ref); })
+        .catch(e=>report('record_referral',e));
+    }
+  }catch(e){ report('referral',e); }
   switch(j.stage){
     case 'upload':      return showUpload();
     case 'describing':  return showDescribing();
@@ -912,8 +930,73 @@ function paintPrints(){
     <div class="acts" style="margin-top:22px"><button class="yes" id="printsGo">I’ve got that →</button>
       <button id="printsSkip">My photos are already on my phone or computer</button></div>`;
 }
+/* CONSENT AT UPLOAD (3 Oct 2026, Nigel - UK GDPR standard, every customer). Before the first photograph: (1) REQUIRED - they may
+   share these photographs and the people in them would be happy to be in the film; (2) REQUIRED - are there children (under 18) in
+   them? If yes, their first names and the parent-or-guardian confirmation; (3) OPTIONAL, unticked - a reaction video in our
+   advertising; (4) OPTIONAL, unticked - marketing emails. Each answer is stored by record_consent (server-wanted) with its time,
+   its exact wording and CONSENT_VERSION. Change a wording -> change the version. Test: pipeline/page_tests "CONSENT". */
+const CONSENT_VERSION='2026-10-03.1';
+const CONSENT={
+  share_photos:'I have the right to share these photographs and clips, and the people in them would be happy to be in this film.',
+  children_guardian:'Some of these photographs show children under 18. I am their parent or guardian, or I have their parent\u2019s or guardian\u2019s permission to share them.',
+  ads_reaction_video:'If I send you a video of us watching the film, you may use it in your advertising.',
+  marketing_email:'Send me the occasional email about new films and offers. I can stop them at any time.'};
+let CONSENTED=null, CKIDS=null;
+async function consentGiven(){
+  if(CONSENTED!==null) return CONSENTED;
+  try{ const r=await rpc('get_consents',{p_token:TOKEN}); if(r&&r.error) throw new Error(r.error);
+       CONSENTED=!!(r&&r.share_photos&&r.share_photos.given&&r.children_guardian); }
+  catch(e){ report('get_consents',e); CONSENTED=false; }
+  return CONSENTED;
+}
+function consentReady(){
+  const share=$('c_share')&&$('c_share').checked;
+  const kidsOk=CKIDS==='no'||(CKIDS==='yes'&&$('c_kids')&&$('c_kids').checked&&(($('c_names')||{}).value||'').trim());
+  return !!(share&&kidsOk);
+}
+function paintConsent(){
+  page='upload'; const st=$('stage'); st.className=''; $('sheet').classList.add('hide');
+  st.innerHTML=`<div class="step">Before your photos</div><h1>A few things to agree</h1>
+    <p class="do">Your photographs show real people. Before you add them, please confirm:</p>
+    <div class="card consent">
+      <label class="cbox"><input type="checkbox" id="c_share"> <span>${CONSENT.share_photos}</span></label>
+      <p class="cq">Are any of the people in your photographs children under 18?</p>
+      <p class="crow"><button class="chip${CKIDS==='no'?' on':''}" id="c_kidsno" type="button">No</button>
+        <button class="chip${CKIDS==='yes'?' on':''}" id="c_kidsyes" type="button">Yes</button></p>
+      ${CKIDS==='yes'?`<p class="cq" style="margin-top:14px">Their first names</p>
+        <input id="c_names" class="cin" maxlength="200" placeholder="e.g. Lily, Sam" autocomplete="off">
+        <label class="cbox"><input type="checkbox" id="c_kids"> <span>${CONSENT.children_guardian}</span></label>`:''}
+      <p class="cq" style="margin-top:22px">Only if you would like to (you can say no and still make your film):</p>
+      <label class="cbox"><input type="checkbox" id="c_ads"> <span>${CONSENT.ads_reaction_video}</span></label>
+      <label class="cbox"><input type="checkbox" id="c_email"> <span>${CONSENT.marketing_email}</span></label>
+      <p class="note bad" id="cwarn" style="display:none;margin:14px 0 0;font-size:14px"></p>
+    </div>`;
+  nav(`<button class="go" id="cdone" disabled>Agree and add photos \u2192</button>`,'',false,'');
+  const upd=()=>{ const b=$('cdone'); if(b) b.disabled=!consentReady(); };
+  st.querySelectorAll('input').forEach(i=>i.addEventListener('input',upd)); upd();
+}
+async function saveConsent(){
+  const b=$('cdone'); if(b){ b.disabled=true; b.textContent='One moment\u2026'; }
+  const names=CKIDS==='yes'?(($('c_names')||{}).value||'').trim():'';
+  const rows=[
+    {k:'share_photos',g:true,d:null},
+    {k:'children_guardian',g:CKIDS==='yes',d:{children_under_18:CKIDS==='yes',names:names||null}},
+    {k:'ads_reaction_video',g:!!($('c_ads')&&$('c_ads').checked),d:null},
+    {k:'marketing_email',g:!!($('c_email')&&$('c_email').checked),d:null}];
+  try{
+    for(const r of rows){
+      const wording=r.k==='children_guardian'&&CKIDS==='no'?'Are any of the people in your photographs children under 18? \u2014 No':CONSENT[r.k];
+      const x=await rpc('record_consent',{p_token:TOKEN,p_kind:r.k,p_given:r.g,p_wording:wording,p_version:CONSENT_VERSION,p_detail:r.d});
+      if(!x||x.error) throw new Error((x&&x.error)||'record_consent failed');
+    }
+    CONSENTED=true; prog({screen:'upload',consent:CONSENT_VERSION}); showUploadPage(); scrollTo(0,0);
+  }catch(e){ report('record_consent',e); paintConsent();
+    const w=$('cwarn'); if(w){ w.textContent='That didn\u2019t go through \u2014 please try again.'; w.style.display=''; } }
+}
+
 async function showUploadPage(){
   page='upload';
+  if(!(await consentGiven())){ paintConsent(); return; }                  // 3 Oct: nothing is uploaded before consent
   if(!P.printsSeen&&!(+J.photos||0)){ paintPrints(); return; }
   plain(`<h1>Add your photos</h1>
     ${tips('upload')}
@@ -2776,6 +2859,10 @@ document.addEventListener('click',async e=>{
   if(t.id==='pnotme'){ paintMe(); scrollTo(0,0); return; }
   if(t.id==='preldone'){ saveRelations(); return; }
   if(t.id==='giftNo'||t.id==='giftYes'){ saveGift(t.id==='giftYes'); return; }
+  if(t.id==='c_kidsno'||t.id==='c_kidsyes'){ const keep={share:$('c_share')&&$('c_share').checked,ads:$('c_ads')&&$('c_ads').checked,
+      email:$('c_email')&&$('c_email').checked}; CKIDS=t.id==='c_kidsyes'?'yes':'no'; paintConsent();
+    $('c_share').checked=!!keep.share; $('c_ads').checked=!!keep.ads; $('c_email').checked=!!keep.email; $('cdone').disabled=!consentReady(); return; }
+  if(t.id==='cdone'){ if(consentReady()) saveConsent(); return; }
   if(t.id==='printsGo'||t.id==='printsSkip'){ showUploadPage(); scrollTo(0,0); return; }
   /* who */
   if(t.id==='padd'){ addPerson(); return; }

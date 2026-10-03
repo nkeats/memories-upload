@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="build" content="2026-10-03a">
+<title>Your film</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<!--
+  film.html?t=<the film owner's token> - THE DELIVERY PAGE (3 Oct 2026, Nigel). Until today the customer's journey ended at
+  "submitted" (index.html showThanks) and a finished film was only ever a file on the PC: nothing showed it to the customer.
+  get_delivery(p_token) -> {film_ready, review_url, referral:{code, link}, ads_consent, reaction:{sent}, export:{status, url,
+  expires_at}, erasure:{status}}; the film's signed link and the reaction video's upload link come from the 'delivery' edge function
+  (server-wanted, source beside server-wanted-2026-10-03.sql). Every server call answers HTTP 200 with {"error": ...} on a refusal.
+  REVIEW (the law, not a style): the SAME request to EVERY customer - never asked only of the happy ones (review gating: unlawful
+  under the Australian Consumer Law, and Google forbids it), never paid for or rewarded; shown only when review_url (app_config) is
+  set. The private note beside it is extra, never instead.
+  REFERRAL: their own code and link, which THEY share (text, WhatsApp, their own email). We never collect a friend's address and
+  never email a friend (the Spam Act 2003). Who referred whom is recorded by record_referral; discounts are the checkout's, later.
+  REACTION VIDEO: optional; used in advertising ONLY if they agreed at upload (consent ads_reaction_video) - the page says which.
+  YOUR DATA: download all of it (request_export -> a zip link for 7 days), or delete all of it (request_erasure, two steps, in
+  plain words that it cannot be undone). Linked from the customer's own page too (index.html "Your data").
+-->
+<style>
+:root{--ink:#0C0D10;--panel:#15171C;--p2:#1D1F26;--line:#2A2E37;--l2:#3C414C;
+  --fg:#F4F1EA;--fg2:#9BA0AB;--fg3:#6B707A;--brass:#D4A24C;--green:#5E8C6A;--red:#B4543A}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--ink);color:var(--fg);font-family:"Public Sans",sans-serif;font-size:17px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:760px;margin:0 auto;padding:20px 16px 60px}
+h1{font-family:"Newsreader",serif;font-weight:300;font-size:clamp(28px,7vw,38px);margin:10px 0 8px;line-height:1.18}
+h2{font-family:"Newsreader",serif;font-weight:400;font-size:22px;margin:0 0 6px}
+p.lede{color:var(--fg2);font-size:16.5px;line-height:1.6;margin:0 0 14px;max-width:56ch}
+.box{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:16px 18px;margin:0 0 22px}
+video{width:100%;border-radius:10px;background:#000;display:block;margin:6px 0 10px}
+button.b,a.b{display:inline-block;background:none;border:1px solid var(--line);color:var(--fg);border-radius:7px;padding:11px 16px;
+  font:inherit;font-size:16px;cursor:pointer;text-decoration:none;margin:4px 8px 4px 0}
+button.b.go,a.b.go{background:var(--brass);border-color:var(--brass);color:#20180A;font-weight:600}
+button.b.warn{border-color:var(--red);color:#F1B8A8}
+button:disabled{opacity:.4;cursor:default}
+.code{font-family:ui-monospace,Menlo,monospace;font-size:20px;letter-spacing:.08em;color:var(--brass)}
+textarea{width:100%;background:var(--ink);border:1px solid var(--l2);border-radius:8px;color:var(--fg);font:inherit;padding:12px;min-height:90px}
+.ok{color:#9CCBA6;font-size:15px}.err{color:var(--red);font-size:15px}.small{font-size:14px;color:var(--fg3)}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap"><div id="stage"><p class="lede">Opening your film…</p></div></div>
+<script>
+const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
+const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
+const HDR={'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY};
+const TOKEN=new URLSearchParams(location.search).get('t')||'';
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function rpc(name,args){
+  const r=await fetch(`${SB}/rest/v1/rpc/${name}`,{method:'POST',headers:HDR,body:JSON.stringify(args)});
+  if(!r.ok) throw new Error(`${name}: HTTP ${r.status}`);
+  const t=await r.text(); return t?JSON.parse(t):null;
+}
+async function fn(action,extra){
+  const r=await fetch(`${SB}/functions/v1/delivery`,{method:'POST',headers:HDR,body:JSON.stringify({token:TOKEN,action,...(extra||{})})});
+  let j={}; try{ j=await r.json(); }catch(_){}
+  if(!r.ok||j.error) throw new Error(j.error||('delivery: HTTP '+r.status));
+  return j;
+}
+function report(what,e){
+  try{ fetch(SB+'/functions/v1/flow',{method:'POST',keepalive:true,headers:HDR,body:JSON.stringify({token:TOKEN,action:'report_error',
+    page:'film.html',at:what,what,message:(e&&e.message)||String(e||''),url:location.href,user_agent:navigator.userAgent})}).catch(()=>{}); }catch(_){}
+}
+window.addEventListener('error',ev=>report('uncaught',ev.error||ev.message));
+window.addEventListener('unhandledrejection',ev=>report('unhandled promise',ev.reason));
+
+let D=null, FILM=null, ERASE_STEP=0;
+
+function paint(){
+  let h='';
+  if(D.erasure&&D.erasure.status&&D.erasure.status!=='none'){
+    $('stage').innerHTML=`<h1>Your film is being deleted</h1><p class="lede">You asked us to delete everything. It is being removed now, and this link will stop working. Thank you for making it with us.</p>`;
+    return;
+  }
+  if(D.film_ready){
+    h+=`<h1>Your film</h1>${FILM?`<video id="film" controls playsinline preload="metadata" src="${esc(FILM.url)}"></video>
+        <a class="b go" href="${esc(FILM.download||FILM.url)}" download>Download your film</a>`:`<p class="lede">Getting your film ready to play…</p>`}`;
+    // REVIEW - the same words, the same link, for everyone; hidden while there is no link
+    if(D.review_url) h+=`<div class="box" id="review"><h2>Would you tell others about it?</h2>
+        <p class="lede">If you have a moment, a review helps other families find us.</p>
+        <a class="b" id="reviewlink" href="${esc(D.review_url)}" target="_blank" rel="noopener">Leave a review</a></div>`;
+    h+=`<div class="box" id="feedback"><h2>Anything you’d like to tell us?</h2>
+        <p class="lede">This goes only to us.</p>
+        <textarea id="fbtext" maxlength="2000" placeholder="Something you loved, or something we could do better"></textarea>
+        <p><button class="b" id="fbsend">Send</button> <span id="fbmsg"></span></p></div>`;
+    // REFERRAL - theirs to share; we never contact anyone
+    if(D.referral&&D.referral.code) h+=`<div class="box" id="referral"><h2>Make one for someone you love</h2>
+        <p class="lede">Share your own link with family or friends - by text, WhatsApp or your own email. We never contact them.</p>
+        <p>Your code: <span class="code" id="refcode">${esc(D.referral.code)}</span></p>
+        ${D.referral.link?`<p class="small" id="reflink">${esc(D.referral.link)}</p>
+        <button class="b" id="refcopy">Copy the message</button><button class="b" id="refshare">Share</button> <span id="refmsg"></span>`:''}</div>`;
+    h+=`<div class="box" id="reaction"><h2>Did you film yourselves watching?</h2>
+        <p class="lede">If you’d like to, send it to us.${D.ads_consent?' As you agreed when you started, we may use it in our advertising - if you’ve changed your mind, tell us in the box above.':' We’ll keep it private - it won’t be used in advertising, because you didn’t agree to that.'}</p>
+        ${D.reaction&&D.reaction.sent?`<p class="ok">Thank you - we have it.</p>`:`<input type="file" id="rfile" accept="video/*"> <span id="rmsg"></span>`}</div>`;
+  }else{
+    h+=`<h1>Your film</h1><p class="lede">Your film isn’t ready yet. We’ll let you know when it is.</p>`;
+  }
+  h+=`<div class="box" id="data"><h2>Your data</h2>
+      <p class="lede">Everything you gave us and everything we made from it is yours.</p>
+      ${dataHTML()}</div>`;
+  $('stage').innerHTML=h;
+  const f=$('rfile'); if(f) f.addEventListener('change',sendReaction);
+}
+function dataHTML(){
+  const ex=D.export||{};
+  let h=ex.status==='ready'&&ex.url?`<p><a class="b" href="${esc(ex.url)}" id="exlink">Download all my data</a></p>
+        <p class="small">A zip of your photos, your answers, the words, the song and the film. This link works until ${esc(new Date(ex.expires_at).toLocaleDateString(undefined,{day:'numeric',month:'long'}))}.</p>`
+    : ex.status==='requested'?`<p class="ok" id="exwait">We’re putting your download together - it will appear here, usually within the hour.</p>`
+    : `<p><button class="b" id="exask">Download all my data</button></p>`;
+  if(ERASE_STEP===0) h+=`<p><button class="b warn" id="er1">Delete everything</button></p>`;
+  else if(ERASE_STEP===1) h+=`<div id="er"><p><b>This deletes your film and everything you gave us</b> - your photos, your answers, the words, the song and the film - from everywhere we keep them. <b>It cannot be undone.</b> If you want a copy, download your data first.</p>
+      <p><button class="b" id="erno">Keep everything</button><button class="b warn" id="er2">Yes, I understand - continue</button></p></div>`;
+  else h+=`<div id="er"><p>Last step. Type <b>DELETE</b> below and press the button. Once you do, it’s gone.</p>
+      <input id="ertype" autocomplete="off" style="font:inherit;font-size:18px;padding:10px;border-radius:8px;border:1px solid var(--red);background:var(--ink);color:var(--fg)">
+      <p><button class="b" id="erno">Keep everything</button><button class="b warn" id="er3" disabled>Delete everything now</button> <span id="ermsg"></span></p></div>`;
+  return h;
+}
+async function sendReaction(ev){
+  const file=ev.target.files[0]; if(!file) return;
+  const m=$('rmsg'); m.textContent='Sending…'; m.className='';
+  try{
+    const s=await fn('sign_reaction',{filename:file.name,mime:file.type||'video/mp4',size:file.size});
+    const put=await fetch(s.signed_url,{method:'PUT',headers:{'Content-Type':file.type||'video/mp4'},body:file});
+    if(!put.ok) throw new Error('upload HTTP '+put.status);
+    await fn('reaction_done',{path:s.path});
+    D.reaction={sent:true}; paint();
+  }catch(e){ report('reaction',e); m.textContent='That didn’t send. Please try again.'; m.className='err'; }
+}
+const refMessage=()=>`I made a film of our memories with this - you might like to make one for someone you love. My code: ${D.referral.code}\n\n${D.referral.link}`;
+document.addEventListener('input',ev=>{ if(ev.target.id==='ertype'){ const b=$('er3'); if(b) b.disabled=ev.target.value.trim().toUpperCase()!=='DELETE'; } });
+document.addEventListener('click',async ev=>{
+  const t=ev.target.closest('button'); if(!t) return;
+  try{
+    if(t.id==='fbsend'){ const v=($('fbtext').value||'').trim(); if(!v) return; t.disabled=true;
+      const r=await rpc('send_feedback',{p_token:TOKEN,p_text:v}); if(!r||r.error) throw new Error((r&&r.error)||'send_feedback');
+      $('fbtext').value=''; $('fbmsg').textContent='Thank you - we have it.'; $('fbmsg').className='ok'; t.disabled=false; }
+    if(t.id==='refcopy'){ await navigator.clipboard.writeText(refMessage()); $('refmsg').textContent='Copied.'; $('refmsg').className='ok'; }
+    if(t.id==='refshare'){ if(navigator.share) await navigator.share({text:refMessage()}); else { await navigator.clipboard.writeText(refMessage()); $('refmsg').textContent='Copied.'; } }
+    if(t.id==='exask'){ t.disabled=true; const r=await rpc('request_export',{p_token:TOKEN}); if(!r||r.error) throw new Error((r&&r.error)||'request_export');
+      D.export={status:'requested'}; paint(); }
+    if(t.id==='er1'){ ERASE_STEP=1; paint(); $('er').scrollIntoView({block:'center'}); }
+    if(t.id==='erno'){ ERASE_STEP=0; paint(); }
+    if(t.id==='er2'){ ERASE_STEP=2; paint(); $('ertype').focus(); }
+    if(t.id==='er3'){ t.disabled=true; const r=await rpc('request_erasure',{p_token:TOKEN,p_confirm:'DELETE'});
+      if(!r||r.error) throw new Error((r&&r.error)||'request_erasure'); D.erasure={status:'confirmed'}; paint(); window.scrollTo(0,0); }
+  }catch(e){ report('click '+t.id,e); t.disabled=false;
+    const m=$(t.id==='er3'?'ermsg':t.id==='fbsend'?'fbmsg':'refmsg'); if(m){ m.textContent='That didn’t go through. Please try again.'; m.className='err'; } }
+});
+
+(async()=>{
+  if(!TOKEN){ $('stage').innerHTML='<p class="lede">This link is missing its code. Please open the link we sent you again.</p>'; return; }
+  try{
+    D=await rpc('get_delivery',{p_token:TOKEN});
+    if(!D||D.error){ $('stage').innerHTML='<p class="lede">We couldn’t find your film from this link. Please open the link we sent you again.</p>'; if(D&&D.error!=='unknown token') report('get_delivery',new Error(D&&D.error)); return; }
+    if(D.film_ready){ try{ FILM=await fn('film_url'); }catch(e){ report('film_url',e); } }
+    paint();
+    if(location.hash==='#data'&&$('data')) $('data').scrollIntoView();
+  }catch(e){ report('load',e); $('stage').innerHTML='<p class="lede">Something went wrong opening your film. Please try again in a minute.</p>'; }
+})();
+</script>
+</body>
+</html>
