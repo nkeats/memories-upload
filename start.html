@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="build" content="2026-10-04a">
+<title>Start your film</title>
+<meta name="description" content="Turn your photographs and memories into a film with its own song.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<!--
+  start.html - THE FRONT DOOR (Nigel 4 Oct 2026). A customer starts here with nobody to help: what the occasion is (only
+  occasions marked active), their first name and email, a short plain-English privacy notice, then their own film
+  (index.html?t=<their new token>). A ?ref=<code> on this link is carried through and recorded against the new film.
+  Server (server-wanted-2026-10-04.sql):
+    get_start_config()  -> {occasions:[{slug,label}] (active only), site_base_url, retention:{working_days, film_months}, notice_version}
+    create_film(p_occasion, p_first_name, p_email, p_ref, p_website, p_notice_version) -> {token} | {error}
+      - a clean name ("Wedding — Sam"), owner_name = the first name, collections.email, a fresh 64-hex token;
+      - ABUSE without a CAPTCHA: p_website is a HONEYPOT (a field people never see - a filled one is refused); a limit on new
+        films per email (per 24 hours) and on new films per hour overall (app_config, refused with "too many");
+      - the privacy notice shown is recorded (consents 'privacy_notice', its version); a ?ref= code -> referrals.
+  Every refusal answers HTTP 200 with {"error": ...}, like the other RPCs. No server answer (the RPCs not there yet) = a plain
+  "not open yet" message, never a broken form. The link to their film is shown before they go to it, to keep (until film
+  emails are switched on, nothing else sends it to them). Test: pipeline/page_tests_front "FRONT DOOR"; live: live_pages_check front.
+-->
+<style>
+:root{--ink:#0C0D10;--panel:#15171C;--p2:#1D1F26;--line:#2A2E37;--l2:#3C414C;
+  --fg:#F4F1EA;--fg2:#9BA0AB;--fg3:#6B707A;--brass:#D4A24C;--green:#5E8C6A;--red:#B4543A}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--ink);color:var(--fg);font-family:"Public Sans",sans-serif;font-size:17px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:640px;margin:0 auto;padding:24px 16px 60px}
+h1{font-family:"Newsreader",serif;font-weight:300;font-size:clamp(30px,7.5vw,42px);margin:8px 0 10px;line-height:1.15}
+h2{font-family:"Newsreader",serif;font-weight:400;font-size:21px;margin:0 0 8px}
+p.do{font-size:clamp(18px,4.6vw,21px);line-height:1.5;margin:0 0 22px;max-width:56ch}
+p.lede{color:var(--fg2);font-size:16px;line-height:1.6;margin:0 0 14px;max-width:58ch}
+.box{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:16px 18px;margin:0 0 20px}
+.occ{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.occ button{background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--fg);font:inherit;font-size:16.5px;
+  padding:14px 12px;text-align:left;cursor:pointer;min-height:54px}
+.occ button[aria-pressed=true]{background:var(--brass);border-color:var(--brass);color:#20180A;font-weight:600}
+label{display:block;font-size:15px;color:var(--fg2);margin:14px 0 6px}
+input.t{width:100%;background:var(--ink);border:1px solid var(--l2);border-radius:8px;color:var(--fg);font:inherit;font-size:18px;padding:12px 13px}
+input.t:focus{outline:none;border-color:var(--brass)}
+.hp{position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden}
+.notice{font-size:15px;line-height:1.6;color:var(--fg2)}
+.notice ul{margin:6px 0 10px;padding-left:20px}
+.notice li{margin:0 0 6px}
+.notice b{color:var(--fg)}
+button.go{background:var(--brass);border:1px solid var(--brass);color:#20180A;font:inherit;font-weight:600;font-size:18px;
+  border-radius:8px;padding:14px 20px;cursor:pointer;width:100%}
+button.go:disabled{opacity:.4;cursor:default}
+button.b{background:none;border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:11px 16px;font:inherit;font-size:16px;cursor:pointer}
+.err{color:#F1B8A8;font-size:15px;margin:10px 0 0;line-height:1.5}
+.small{font-size:14px;color:var(--fg3);line-height:1.5}
+.link{font-family:ui-monospace,Menlo,monospace;font-size:13.5px;word-break:break-all;background:var(--ink);border:1px solid var(--line);
+  border-radius:8px;padding:10px 12px;color:var(--fg);margin:8px 0 10px}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap"><div id="stage"><p class="lede">One moment…</p></div></div>
+<script>
+const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
+const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
+const HDR={'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY};
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const REF=(new URLSearchParams(location.search).get('ref')||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,12);
+async function rpc(name,args){
+  const r=await fetch(`${SB}/rest/v1/rpc/${name}`,{method:'POST',headers:HDR,body:JSON.stringify(args||{})});
+  if(!r.ok) throw Object.assign(new Error(`${name}: HTTP ${r.status}`),{status:r.status});
+  const t=await r.text(); return t?JSON.parse(t):null;
+}
+function report(what,e){
+  try{ fetch(SB+'/functions/v1/flow',{method:'POST',keepalive:true,headers:HDR,body:JSON.stringify({token:'',action:'report_error',
+    page:'start.html',at:what,what,message:(e&&e.message)||String(e||''),url:location.origin+location.pathname,user_agent:navigator.userAgent})}).catch(()=>{}); }catch(_){}
+}
+window.addEventListener('error',ev=>report('uncaught',ev.error||ev.message));
+window.addEventListener('unhandledrejection',ev=>report('unhandled promise',ev.reason));
+
+let C=null, OCC=null, BUSY=false;
+const EMAIL=/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+function form(){
+  const r=C.retention||{};
+  $('stage').innerHTML=`<h1>Turn your memories into a film, with its own song</h1>
+    <p class="do">Your photographs, your stories, and a song written from what you tell us. It takes about half an hour, and you can stop and come back.</p>
+    <div class="box"><h2>What is it for?</h2>
+      <div class="occ" role="group" aria-label="The occasion">${C.occasions.map(o=>`<button type="button" data-occ="${esc(o.slug)}" aria-pressed="${OCC===o.slug}">${esc(o.label)}</button>`).join('')}</div></div>
+    <div class="box"><h2>About you</h2>
+      <label for="fname">Your first name</label>
+      <input class="t" id="fname" maxlength="40" autocomplete="given-name" autocapitalize="words">
+      <label for="email">Your email</label>
+      <input class="t" id="email" type="email" maxlength="254" autocomplete="email" inputmode="email">
+      <p class="small" style="margin-top:8px">We use it only for your film — to send you its link and the film itself. Never for anything else unless you ask.</p>
+      <div class="hp" aria-hidden="true"><label for="website">Leave this empty</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
+    </div>
+    <div class="box notice" id="notice"><h2>Your privacy, in plain words</h2>
+      <ul>
+        <li><b>What you give us:</b> your name and email, your photographs and video clips, and your answers to our questions.</li>
+        <li><b>What we do with it:</b> make your film and its song — nothing else. We never sell it or share it for advertising.</li>
+        <li><b>Who helps us make it:</b> Supabase (stores it securely), Anthropic (our AI reads your photos and answers to write the words) and ElevenLabs (sings the song). They work for us under contract and may process it outside Australia.</li>
+        <li><b>How long we keep it:</b> your photos, answers and our working files for ${esc(r.working_days||90)} days after we deliver your film; the finished film and its words for ${esc(r.film_months||12)} months, so you can come back for them. Then we delete them.</li>
+        <li><b>Your choice, always:</b> you can download everything, or delete everything, at any time from your film's page.</li>
+      </ul>
+      <p style="margin:0">Questions? <a href="mailto:hello@singmeamemory.com" style="color:var(--brass)">hello@singmeamemory.com</a></p></div>
+    <button class="go" id="go" disabled>Start my film</button>
+    <p class="err hide" id="err" role="alert"></p>
+    <p class="small" style="margin-top:12px">By starting, you agree we may use what you give us to make your film, as above.</p>`;
+  ['fname','email'].forEach(id=>$(id).addEventListener('input',ready));
+  ready();
+}
+function ready(){
+  const ok=!!OCC && ($('fname').value||'').trim().length>0 && EMAIL.test(($('email').value||'').trim());
+  $('go').disabled=!ok||BUSY; return ok;
+}
+function fail(msg){ const e=$('err'); e.textContent=msg; e.classList.remove('hide'); }
+const SAY={
+  'too many':'You’ve started several films in a short time. Please try again in a little while, or email hello@singmeamemory.com and we’ll help.',
+  'bad email':'That email address doesn’t look right. Please check it.',
+  'bad name':'Please type your first name (letters only).',
+  'unknown occasion':'Please choose what your film is for.',
+  'not accepted':'Something went wrong starting your film. Please try again, or email hello@singmeamemory.com.'};
+async function start(){
+  if(!ready()||BUSY) return;
+  BUSY=true; $('go').disabled=true; $('go').textContent='Starting your film…'; $('err').classList.add('hide');
+  try{
+    const r=await rpc('create_film',{p_occasion:OCC,p_first_name:$('fname').value.trim(),p_email:$('email').value.trim(),
+      p_ref:REF||null,p_website:$('website').value,p_notice_version:C.notice_version||null});
+    if(!r||r.error||!r.token){ BUSY=false; $('go').textContent='Start my film'; ready(); fail(SAY[(r&&r.error)||'']||SAY['not accepted']);
+      if(r&&r.error&&!SAY[r.error]) report('create_film',new Error(r.error)); return; }
+    try{ if(REF) localStorage.setItem('mf_ref_done_'+r.token,REF); }catch(_){}           // recorded by create_film - index.html need not
+    try{ fetch(`${SB}/functions/v1/notify`,{method:'POST',headers:HDR,body:JSON.stringify({action:'welcome',token:r.token})}).catch(()=>{}); }catch(_){}   // the link by email (off until switched on)
+    done(r.token);
+  }catch(e){ report('create_film',e); BUSY=false; $('go').textContent='Start my film'; ready(); fail('That didn’t go through. Please check your connection and try again.'); }
+}
+function done(token){
+  const base=(C.site_base_url||new URL('.',location.href).href).replace(/\/?$/,'/');
+  const link=`${base}index.html?t=${encodeURIComponent(token)}`;
+  $('stage').innerHTML=`<h1>Your film is ready to start</h1>
+    <p class="do">This is your film’s private link. Keep it — it’s the way back to your film, and anyone with it can open it.</p>
+    <div class="link" id="mylink">${esc(link)}</div>
+    <p><button class="b" id="copy">Copy the link</button> <span class="small" id="copied"></span></p>
+    <p class="small" style="margin:6px 0 22px">Tip: bookmark the next page, or email the link to yourself.</p>
+    <button class="go" id="open">Open my film →</button>`;
+  $('open').addEventListener('click',()=>{ location.href=link; });
+  $('copy').addEventListener('click',async()=>{ try{ await navigator.clipboard.writeText(link); $('copied').textContent='Copied.'; }catch(_){ $('copied').textContent='Press and hold the link to copy it.'; } });
+}
+document.addEventListener('click',ev=>{
+  const b=ev.target.closest('button'); if(!b) return;
+  if(b.dataset.occ){ OCC=b.dataset.occ; document.querySelectorAll('[data-occ]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.occ===OCC))); ready(); }
+  if(b.id==='go') start();
+});
+(async()=>{
+  try{
+    C=await rpc('get_start_config');
+    if(!C||C.error||!Array.isArray(C.occasions)||!C.occasions.length) throw new Error((C&&C.error)||'no occasions');
+    form();
+  }catch(e){
+    if(!(e&&e.status===404)) report('get_start_config',e);
+    $('stage').innerHTML=`<h1>We’re not quite open yet</h1><p class="do">Please come back soon, or email <a href="mailto:hello@singmeamemory.com" style="color:var(--brass)">hello@singmeamemory.com</a>.</p>`;
+  }
+})();
+</script>
+</body>
+</html>

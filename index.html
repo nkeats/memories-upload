@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="build" content="2026-10-02d">
+<meta name="build" content="2026-10-04a">
 <title>Your film</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -240,7 +240,7 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
 const FN=SB+'/functions/v1';
 const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
-const BUILD='2026-10-03a';                                 // bump on every change (1 Oct: there was no stamp before)
+const BUILD='2026-10-04a';                                 // bump on every change (1 Oct: there was no stamp before)
 document.documentElement.dataset.build=BUILD;
 let TOKEN=new URLSearchParams(location.search).get('t')||'';
 /* ?a=<answer token> — somebody else answering the same memories (on a film
@@ -970,7 +970,8 @@ function paintConsent(){
       <label class="cbox"><input type="checkbox" id="c_ads"> <span>${CONSENT.ads_reaction_video}</span></label>
       <label class="cbox"><input type="checkbox" id="c_email"> <span>${CONSENT.marketing_email}</span></label>
       <p class="note bad" id="cwarn" style="display:none;margin:14px 0 0;font-size:14px"></p>
-    </div>`;
+    </div>
+    <p class="lede" id="ckeep" style="margin-top:14px;font-size:15px">We delete your photos and answers 90 days after we deliver your film, and the film itself 12 months after. You can download or delete everything sooner, at any time.</p>`;
   nav(`<button class="go" id="cdone" disabled>Agree and add photos \u2192</button>`,'',false,'');
   const upd=()=>{ const b=$('cdone'); if(b) b.disabled=!consentReady(); };
   st.querySelectorAll('input').forEach(i=>i.addEventListener('input',upd)); upd();
@@ -2085,7 +2086,11 @@ async function loadInvite(){
     INV.people=(Array.isArray(r)?r:[]).filter(x=>!x.is_you&&(x.name||'').trim()).map(x=>x.name); }
   catch(e){ report('get_people for invite',e); }
 }
-const inviteUrl=tok=>location.origin+location.pathname+'?a='+encodeURIComponent(tok);
+/* 4 Oct: ONE BASE ADDRESS for every link a page builds to be shared (app_config.site_base_url, from get_start_config) - moving
+   from nkeats.github.io to app.singmeamemory.com is one change on the server. Until it answers: this page's own address. */
+let SITE_BASE=null;
+try{ rpc('get_start_config').then(c=>{ if(c&&c.site_base_url) SITE_BASE=String(c.site_base_url).replace(/\/?$/,'/'); }).catch(()=>{}); }catch(_){}
+const inviteUrl=tok=>(SITE_BASE?SITE_BASE+'index.html':location.origin+location.pathname)+'?a='+encodeURIComponent(tok);
 function inviteCard(){
   if(ASK||INV.hidden||!INV.people.length) return '';
   return `<div class="card invite" style="margin:0 0 16px">${INV.people.map(nm=>{ const l=INV.links[nm];

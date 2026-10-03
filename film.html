@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="build" content="2026-10-03a">
+<meta name="build" content="2026-10-04a">
 <title>Your film</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,6 +23,13 @@
   REACTION VIDEO: optional; used in advertising ONLY if they agreed at upload (consent ads_reaction_video) - the page says which.
   YOUR DATA: download all of it (request_export -> a zip link for 7 days), or delete all of it (request_erasure, two steps, in
   plain words that it cannot be undone). Linked from the customer's own page too (index.html "Your data").
+  4 Oct (Nigel): HOW LONG WE KEEP IT, said plainly in "Your data": photos, answers and working files 90 days after delivery; the
+  film and its words 12 months after delivery (get_delivery.retention {working_days, film_months} - the numbers are the server's,
+  the same as pipeline/retention.json; a test holds them equal); with the dates when the film has been delivered.
+  4 Oct (Nigel): CHILDREN IN REACTION VIDEOS are never used in advertising. Before the file is chosen: "Does anyone under 18
+  appear in it?" Yes / No. The answer goes with reaction_done (child_present true / false / null when unanswered); the server
+  (delivery v2 + a trigger on reaction_videos) records ad_use_allowed = false unless the advertising consent is given AND the
+  answer is No. Shown only when the server says it asks (get_delivery.reaction.asks_child) - until then the page is as before.
 -->
 <style>
 :root{--ink:#0C0D10;--panel:#15171C;--p2:#1D1F26;--line:#2A2E37;--l2:#3C414C;
@@ -94,21 +101,36 @@ function paint(){
         <p><button class="b" id="fbsend">Send</button> <span id="fbmsg"></span></p></div>`;
     // REFERRAL - theirs to share; we never contact anyone
     if(D.referral&&D.referral.code) h+=`<div class="box" id="referral"><h2>Make one for someone you love</h2>
-        <p class="lede">Share your own link with family or friends - by text, WhatsApp or your own email. We never contact them.</p>
+        <p class="lede">Share your own link with family or friends — by text, WhatsApp or your own email. We never contact them.</p>
         <p>Your code: <span class="code" id="refcode">${esc(D.referral.code)}</span></p>
         ${D.referral.link?`<p class="small" id="reflink">${esc(D.referral.link)}</p>
         <button class="b" id="refcopy">Copy the message</button><button class="b" id="refshare">Share</button> <span id="refmsg"></span>`:''}</div>`;
     h+=`<div class="box" id="reaction"><h2>Did you film yourselves watching?</h2>
-        <p class="lede">If you’d like to, send it to us.${D.ads_consent?' As you agreed when you started, we may use it in our advertising - if you’ve changed your mind, tell us in the box above.':' We’ll keep it private - it won’t be used in advertising, because you didn’t agree to that.'}</p>
-        ${D.reaction&&D.reaction.sent?`<p class="ok">Thank you - we have it.</p>`:`<input type="file" id="rfile" accept="video/*"> <span id="rmsg"></span>`}</div>`;
+        <p class="lede">If you’d like to, send it to us.${D.ads_consent?' As you agreed when you started, we may use it in our advertising - if you’ve changed your mind, tell us in the box above.':' We’ll keep it private — it won’t be used in advertising, because you didn’t agree to that.'}</p>
+        ${D.reaction&&D.reaction.sent?`<p class="ok">Thank you — we have it.</p>`:childHTML()+`<input type="file" id="rfile" accept="video/*"> <span id="rmsg"></span>`}</div>`;
   }else{
     h+=`<h1>Your film</h1><p class="lede">Your film isn’t ready yet. We’ll let you know when it is.</p>`;
   }
   h+=`<div class="box" id="data"><h2>Your data</h2>
       <p class="lede">Everything you gave us and everything we made from it is yours.</p>
+      ${keepHTML()}
       ${dataHTML()}</div>`;
   $('stage').innerHTML=h;
   const f=$('rfile'); if(f) f.addEventListener('change',sendReaction);
+}
+/* 4 Oct: how long we keep it - the server's numbers (get_delivery.retention), with dates once the film is delivered */
+function keepHTML(){
+  const r=D.retention; if(!r||!r.working_days||!r.film_months) return '';
+  const fmt=d=>d.toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'});
+  let w='', f='';
+  if(D.delivered_at){
+    const d=new Date(D.delivered_at), wd=new Date(d.getTime()+r.working_days*86400000), fd=new Date(d);
+    fd.setMonth(fd.getMonth()+r.film_months);
+    w=` (on ${fmt(wd)})`; f=` (on ${fmt(fd)})`;
+  }
+  return `<p class="lede" id="keep">We delete your photos, your answers and our working files ${r.working_days} days after we deliver your film${w}.
+    We keep your finished film and its words for ${r.film_months} months after delivery, so you can come back for them${f}, and then we delete those too.
+    You can delete everything sooner, at any time, below.</p>`;
 }
 function dataHTML(){
   const ex=D.export||{};
@@ -124,6 +146,14 @@ function dataHTML(){
       <p><button class="b" id="erno">Keep everything</button><button class="b warn" id="er3" disabled>Delete everything now</button> <span id="ermsg"></span></p></div>`;
   return h;
 }
+/* 4 Oct: children in a reaction video - asked before the file; unanswered counts as "a child may be in it" (never in ads) */
+let CHILD=null;                                                    // 'yes' | 'no' | null (not answered)
+function childHTML(){
+  if(!(D.reaction&&D.reaction.asks_child)) return '';
+  return `<div id="child"><p style="margin:0 0 8px">Does anyone under 18 appear in the video?</p>
+    <p><button class="b${CHILD==='yes'?' go':''}" id="childyes" type="button">Yes</button><button class="b${CHILD==='no'?' go':''}" id="childno" type="button">No</button></p>
+    ${CHILD==='yes'?`<p class="small">Thank you. A video with a child in it is never used in our advertising — it stays private.</p>`:''}</div>`;
+}
 async function sendReaction(ev){
   const file=ev.target.files[0]; if(!file) return;
   const m=$('rmsg'); m.textContent='Sending…'; m.className='';
@@ -131,7 +161,7 @@ async function sendReaction(ev){
     const s=await fn('sign_reaction',{filename:file.name,mime:file.type||'video/mp4',size:file.size});
     const put=await fetch(s.signed_url,{method:'PUT',headers:{'Content-Type':file.type||'video/mp4'},body:file});
     if(!put.ok) throw new Error('upload HTTP '+put.status);
-    await fn('reaction_done',{path:s.path});
+    await fn('reaction_done',{path:s.path,child_present:CHILD==='yes'?true:CHILD==='no'?false:null});
     D.reaction={sent:true}; paint();
   }catch(e){ report('reaction',e); m.textContent='That didn’t send. Please try again.'; m.className='err'; }
 }
@@ -140,9 +170,10 @@ document.addEventListener('input',ev=>{ if(ev.target.id==='ertype'){ const b=$('
 document.addEventListener('click',async ev=>{
   const t=ev.target.closest('button'); if(!t) return;
   try{
+    if(t.id==='childyes'||t.id==='childno'){ CHILD=t.id==='childyes'?'yes':'no'; const c=$('child'); if(c) c.outerHTML=childHTML(); return; }
     if(t.id==='fbsend'){ const v=($('fbtext').value||'').trim(); if(!v) return; t.disabled=true;
       const r=await rpc('send_feedback',{p_token:TOKEN,p_text:v}); if(!r||r.error) throw new Error((r&&r.error)||'send_feedback');
-      $('fbtext').value=''; $('fbmsg').textContent='Thank you - we have it.'; $('fbmsg').className='ok'; t.disabled=false; }
+      $('fbtext').value=''; $('fbmsg').textContent='Thank you — we have it.'; $('fbmsg').className='ok'; t.disabled=false; }
     if(t.id==='refcopy'){ await navigator.clipboard.writeText(refMessage()); $('refmsg').textContent='Copied.'; $('refmsg').className='ok'; }
     if(t.id==='refshare'){ if(navigator.share) await navigator.share({text:refMessage()}); else { await navigator.clipboard.writeText(refMessage()); $('refmsg').textContent='Copied.'; } }
     if(t.id==='exask'){ t.disabled=true; const r=await rpc('request_export',{p_token:TOKEN}); if(!r||r.error) throw new Error((r&&r.error)||'request_export');

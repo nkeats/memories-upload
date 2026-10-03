@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="build" content="2026-10-03a">
+<meta name="build" content="2026-10-04a">
 <title>The words to your song</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Great+Vibes&family=Newsreader:opsz,wght@6..72,300;6..72,400&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <!--
   lyrics.html?t=<the film owner's token> - 27 Sep 2026.
   The customer reads the lyric, changes any line, and approves it. NOTHING is sung until they do
@@ -25,6 +25,12 @@
   {auto, chosen}, finish: {auto, chosen}, choices: [asset ids of the film's photographs that show its people], locked}); "Choose a
   different photo" opens those; "Use our choice" goes back to ours. set_card_photo(p_token, p_which, p_asset) - null = ours.
   Pictures come from gallery (signed URLs). No photo answer (an older lyric, the RPC missing) = the words alone, as before.
+  4 Oct (Nigel): THE CARD STYLE beside the card words and photographs - a preview of each style the pipeline has (framed,
+  plain: pipeline/cards), drawn with THEIR words and THEIR photograph; they tap one. get_frame_style(p_token) -> {style,
+  locked, styles}; set_frame_style(p_token, p_style) -> collections.frame_style. Framed is the default; fixed once the lyric is
+  approved (like the words and photographs). The preview is the style's look (frame, lettering, darkening), not the exact
+  frame: in the film the words are placed away from faces and beside a photograph that does not fill the screen - the
+  preview says so. No style answer (the RPC missing) = no style section, as before. Test: pipeline/page_tests_front "STYLE".
 -->
 <style>
 :root{--ink:#0C0D10;--panel:#15171C;--p2:#1D1F26;--line:#2A2E37;--l2:#3C414C;
@@ -93,6 +99,37 @@ button:disabled{opacity:.35;cursor:default}
 .pick .grid button.now{border-color:var(--brass)}
 .pick .grid img{width:100%;aspect-ratio:3/2;object-fit:cover;border-radius:6px;display:block}
 .pick .grid .tag{position:absolute;left:6px;bottom:6px;background:var(--brass);color:#20180A;font-size:12px;border-radius:4px;padding:2px 6px}
+.sty-wrap{border-top:1px solid var(--line);padding:14px 0 4px;margin-top:6px}
+.sty-wrap .lab{font-size:13px;color:var(--fg3);letter-spacing:.06em;text-transform:uppercase;font-weight:500;margin:0 0 4px}
+.stys{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:8px 0 6px}
+.stys button{padding:0;background:none;border:2px solid var(--line);border-radius:10px;cursor:pointer;text-align:left;color:var(--fg);overflow:hidden;font:inherit}
+.stys button.on{border-color:var(--brass)}
+.stys button:disabled{opacity:1;cursor:default}
+.stys .nm{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;font-size:15px;line-height:1.35}
+.stys .nm .says{color:var(--fg3);font-size:13.5px;display:block}
+.stys .nm .ch{font-size:12.5px;background:var(--brass);color:#20180A;border-radius:4px;padding:2px 7px;font-weight:600;flex:none}
+.sty{position:relative;aspect-ratio:16/9;overflow:hidden;background:#111;container-type:inline-size}
+.sty .bg{position:absolute;inset:0;background-size:cover;background-position:center}
+.sty .w{position:absolute;left:0;right:0;text-align:center;color:#FAF3E6;font-family:"Cormorant Garamond",serif;line-height:1.05}
+.sty.framed .ov{position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(10,8,6,.5) 30%,rgba(10,8,6,.86) 100%)}
+.sty.framed .fr{position:absolute;inset:6cqw 3.4cqw;border:1px solid #C9A86A;outline:1px solid rgba(201,168,106,.5);outline-offset:-.9cqw}
+.sty.framed .fr i{position:absolute;width:1.3cqw;height:1.3cqw;border-radius:50%;background:#DEBE80}
+.sty.framed .fr i:nth-child(1){left:1.6cqw;top:1.6cqw}.sty.framed .fr i:nth-child(2){right:1.6cqw;top:1.6cqw}
+.sty.framed .fr i:nth-child(3){left:1.6cqw;bottom:1.6cqw}.sty.framed .fr i:nth-child(4){right:1.6cqw;bottom:1.6cqw}
+.sty.framed .w{top:50%;transform:translateY(-50%);padding:0 9cqw}
+.sty.framed .nmA{font-size:7.4cqw;font-weight:600;letter-spacing:.06em;text-transform:uppercase;text-shadow:0 .3cqw 1.2cqw rgba(0,0,0,.6)}
+.sty.framed .amp,.sty.framed .dt{font-family:"Great Vibes",cursive;color:#DEBE80;text-shadow:0 .3cqw 1.2cqw rgba(0,0,0,.6)}
+.sty.framed .amp{font-size:8cqw;line-height:.9}
+.sty.framed .dt{font-size:4.6cqw;margin-top:1.2cqw}
+.sty.framed .ttl{font-size:6.4cqw;font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+.sty.framed .msg{font-size:5.4cqw;font-style:italic;font-weight:500}
+.sty.framed .rule{width:32cqw;height:1px;background:#DEBE80;margin:2cqw auto 0}
+.sty.plain .ov{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.66) 0%,rgba(0,0,0,.42) 34%,rgba(0,0,0,.08) 62%,rgba(0,0,0,0) 100%)}
+.sty.plain .w{top:79%;transform:translateY(-50%);padding:0 6cqw;text-shadow:0 .4cqw 1.6cqw rgba(0,0,0,.75)}
+.sty.plain .ttl{font-size:6.4cqw;font-weight:500}
+.sty.plain .msg{font-size:4.6cqw;font-weight:500}
+.sty.plain .dt{font-size:3.4cqw;margin-top:1.4cqw;font-weight:500}
+.sty-note{font-size:13.5px;color:var(--fg3);line-height:1.45;margin:4px 0 6px}
 </style>
 </head>
 <body>
@@ -128,6 +165,7 @@ let L=null;          // the lyric: {lyric_id, version, status, lines:[{id,sectio
 let CP=null;         // 3 Oct: the card photographs {start:{auto,chosen}, finish:{auto,chosen}, choices:[ids], locked} - null = not shown
 let PICS={};         // asset id -> picture URL (gallery)
 let picking=null;    // 'start' | 'finish' while the picker is open
+let STY=null;        // 4 Oct: {style, locked, styles:[...]} - null = no style section
 let open=null;       // id of the line being edited
 let confirming=false;
 
@@ -205,7 +243,42 @@ function cardsHTML(done){
     }
     h+=`</div>`;
   }
-  return h+`</div>`;
+  return h+styleHTML(done)+`</div>`;
+}
+/* THE CARD STYLE (4 Oct). Each style drawn with the customer's own words and photograph. */
+const STYLE_NAME={framed:'Framed',plain:'Plain'};
+const STYLE_SAYS={framed:'A gold frame, the names in capitals, the date in script.',plain:'Just the words, softly over the photograph.'};
+function styleHTML(done){
+  if(!STY||!(STY.styles||[]).length) return '';
+  const k=cardOf('start').text?'start':(cardOf('finish').text?'finish':null);
+  if(!k) return '';
+  const text=cardOf(k).text, pid=CP&&CP[k]?(CP[k].chosen||CP[k].auto):null, pic=pid&&PICS[pid]?PICS[pid]:'';
+  const locked=done||STY.locked, cur=STY.style||'framed';
+  const list=locked?[cur]:STY.styles;
+  return `<div class="sty-wrap" id="styles"><p class="lab">How the words look</p>
+    <p class="sub" style="margin:0 0 4px">${locked?'Your cards will look like this.':'Choose a style for the cards at the start and the end of your film.'}</p>
+    <div class="stys">${list.map(st=>`<button data-style="${esc(st)}" class="${st===cur?'on':''}" ${locked?'disabled':''} aria-pressed="${st===cur}">
+      ${styleTile(st,k,text,pic)}<div class="nm"><span><b>${esc(STYLE_NAME[st]||st)}</b><span class="says">${esc(STYLE_SAYS[st]||'')}</span></span>${st===cur?'<span class="ch">Chosen</span>':''}</div></button>`).join('')}</div>
+    <p class="sty-note">A preview with your words and photograph. In your film the words are placed away from faces, and beside the photograph when it doesn’t fill the screen.</p>
+    <div class="err hide" id="serr"></div></div>`;
+}
+function styleTile(st,k,text,pic){
+  let words='';
+  if(k==='start'){
+    const i=text.lastIndexOf(' \u2014 '); let head=text, date='';     // "Names — date", as titles.start_parts
+    if(i>0&&text.length-i-3>0&&text.length-i-3<=20){ head=text.slice(0,i).trim(); date=text.slice(i+3).trim(); }
+    const amp=head.split(' & ');
+    if(st==='framed') words=(amp.length===2?`<div class="nmA">${esc(amp[0])}</div><div class="amp">&amp;</div><div class="nmA">${esc(amp[1])}</div>`:`<div class="ttl">${esc(head)}</div>`)+(date?`<div class="dt">${esc(date)}</div>`:'');
+    else words=`<div class="ttl">${esc(head)}</div>`+(date?`<div class="dt">${esc(date)}</div>`:'');
+  }else{
+    words=`<div class="msg">${esc(text)}</div>`+(st==='framed'?'<div class="rule"></div>':'');
+  }
+  return `<div class="sty ${esc(st)}"><div class="bg" style="${pic?`background-image:url('${esc(pic)}')`:''}"></div><div class="ov"></div>
+    ${st==='framed'?'<div class="fr"><i></i><i></i><i></i><i></i></div>':''}<div class="w">${words}</div></div>`;
+}
+async function loadStyle(){
+  try{ const r=await rpc('get_frame_style',{p_token:TOKEN}); if(!r||r.error) throw new Error((r&&r.error)||'get_frame_style'); STY=r; }
+  catch(e){ STY=null; if(!/no lyric yet|HTTP 404/.test(String(e&&e.message))) report('card style',e); }
 }
 /* THE CARD PHOTOGRAPHS (3 Oct). */
 function photoHTML(k,done){
@@ -286,6 +359,14 @@ async function approve(){
 
 document.addEventListener('click',ev=>{
   const t=ev.target.closest('button'); if(!t) return;
+  if(t.dataset.style){
+    const st=t.dataset.style; if(!STY||STY.locked||st===STY.style) return;
+    t.disabled=true;
+    rpc('set_frame_style',{p_token:TOKEN,p_style:st}).then(r=>{ if(!r||r.error) throw new Error((r&&r.error)||'set_frame_style');
+        STY.style=st; paint(); })
+      .catch(e=>{ report('set card style',e); t.disabled=false; const er=$('serr'); if(er){ er.textContent='That didn’t save. Please try again.'; er.classList.remove('hide'); } });
+    return;
+  }
   if(t.dataset.cpick){ picking=t.dataset.cpick; paint(); return; }
   if(t.dataset.pclose){ picking=null; paint(); return; }
   if(t.dataset.cphoto||t.dataset.creset){
@@ -323,6 +404,7 @@ async function load(){
   if(r&&r.error) throw Object.assign(new Error(r.error),{refusal:r.error});
   L=r;
   await loadPhotos();
+  await loadStyle();
 }
 
 (async()=>{
