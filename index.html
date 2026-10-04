@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="build" content="2026-10-05a">
+<meta name="build" content="2026-10-05b">
 <title>Your film</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2408,11 +2408,37 @@ async function answerTurn(skip,thread){
   if(next>=0){ paintGroupDone(next); scrollTo(0,0); return; }
   paintAllDone(); scrollTo(0,0);
 }
+/* "ASK ME MORE ABOUT THIS GROUP" (Nigel 5 Oct) - on a group THIS person has finished, on both links (?t= and ?a=).
+   rpc reopen_memory {p_token, p_chapter} (live 4 Oct, paste-2026-10-04b): reopens the group for this person only, never
+   deletes anyone's answers; refuses once the words are written, after three reopens, or for a bad link ({error: words}).
+   {ok} -> the group is opened the normal way (arrive): the interview asks its first question for a reopened group
+   ("What else from this part would you like the song to hold on to?"). m.shown is cleared first, so if the engine said
+   "done" on arrival the group is still NOT closed (the never-close-on-load rule). {error} -> the server's words, plainly,
+   and nothing changes. Test: Song/pipeline/page_tests.py "ASK ME MORE". */
+function askMoreHTML(i){
+  return `<p style="margin:16px 0 0"><button class="quiet" id="askmore" data-group="${i}" type="button">Ask me more about this group</button></p>
+    <p class="hide" id="askmoremsg" style="margin:8px 0 0;font-size:15px;color:var(--red);line-height:1.5"></p>`;
+}
+const MORE_SAY={'the words for this film are already written':'The words for your film are already written, so this group can’t be opened again.',
+  'that group has been reopened three times already':'This group has already been opened again three times, so it can’t be opened again.',
+  'no such memory on this film':'We couldn’t find this group on your film. Please reload the page and try again.'};
+async function askMore(btn){
+  const i=+btn.dataset.group, m=M[i], msg=$('askmoremsg'); if(!m) return;
+  btn.disabled=true; btn.textContent='One moment…'; if(msg) msg.classList.add('hide');
+  let r=null, err='';
+  try{ r=await rpc('reopen_memory',{p_token:TOKEN,p_chapter:m.id}); if(!r) throw new Error('reopen_memory: no reply'); }
+  catch(e){ report('reopen_memory',e,{group:m.title}); err='That didn’t go through. Please try again.'; }
+  if(!err&&r.error){ err=MORE_SAY[r.error]||('We can’t open this group again: '+r.error+'.');
+    if(!MORE_SAY[r.error]) report('reopen_memory refused',new Error(r.error),{group:m.title}); }
+  if(err){ btn.disabled=false; btn.textContent='Ask me more about this group'; if(msg){ msg.textContent=err; msg.classList.remove('hide'); } return; }
+  cur=i; draft=''; m.shown=false; m.turn=null; TURN=null;
+  await arrive();
+}
 function paintGroupDone(next){
   const m=M[cur];
   $('stage').innerHTML=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')}</div>
     <h1>That’s everything about “${esc(m.title||'this group')}”</h1>
-    <p class="do">Thank you. Next: “${esc(M[next].title||'the next group')}”.</p>${inviteCard()}${photosStripAll(m)}`;
+    <p class="do">Thank you. Next: “${esc(M[next].title||'the next group')}”.</p>${inviteCard()}${photosStripAll(m)}${askMoreHTML(cur)}`;
   $('stage').className='';
   nav(`<button class="go" id="agroupnext" data-next="${next}">On to “${esc(M[next].title||'the next group')}” →</button>`,`${M.filter(finishedMem).length} of ${M.length} groups done`,cur>0,'');
   $('sheet').classList.add('hide');
@@ -2447,7 +2473,7 @@ async function gotoGroup(i){
   if(TURN.done){
     /* nothing left to ask here: say so, with the way on */
     $('stage').innerHTML=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(M[cur].title||'')}</div>
-      <h2>You\u2019ve answered everything about this group.</h2>${photosStripAll(M[cur])}`;
+      <h2>You\u2019ve answered everything about this group.</h2>${photosStripAll(M[cur])}${askMoreHTML(cur)}`;
     $('stage').className='';
     nav('<button class="go" id="anext">Next →</button>',`${M.filter(finishedMem).length} of ${M.length} groups done`,cur>0,'');
     $('sheet').classList.add('hide'); return;
@@ -3009,6 +3035,7 @@ document.addEventListener('click',async e=>{
   if(t.id==='aelse'){ answerTurn(true,true); return; }
   if(t.id==='aenough'){ closeMemory(); return; }
   if(t.id==='agroupnext'){ cur=+t.dataset.next; draft=''; arrive(); return; }
+  if(t.id==='askmore'){ askMore(t); return; }
   if(t.id==='awrong'){ wrongOpen=!wrongOpen; paintTurn(); if(wrongOpen){ const f=$('what'); if(f) f.focus(); } return; }
   if(t.id==='awrongcancel'){ wrongOpen=false; whatDraft=''; paintTurn(); return; }
   if(t.id==='awrongsend'){ flagWrong(); return; }
