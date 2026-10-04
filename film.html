@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="build" content="2026-10-05a">
+<meta name="build" content="2026-10-06a">
 <title>Your film</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -39,6 +39,15 @@
   Nigel approves (credit recorded) or declines (the reason shows here, and they may send another). Approved or waiting: "Withdraw"
   (two steps, rpc withdraw_reaction) - out of the ad library at once, out of running ads within 30 days, the discount stays.
   No offer from the server (get_delivery before server-wanted-2026-10-05) = no reaction box at all.
+  6 Oct (Nigel): EACH ADULT AGREES FOR THEMSELVES. With the server's offer version 2026-10-06.1 (words.steps present) the offer
+  shows Nigel's four steps; the customer types everyone's first name, ticks that everyone is 18 or over, the terms as the one
+  sending it, and that they will send each person their own link. After the upload: "Waiting for everyone's yes" with each
+  person's status and their private link (agree.html?p=...) to copy or share - nothing reaches review until everyone has said yes.
+  The older words (05) still render as before until the server changes.
+  6 Oct (Nigel): CREDITS EXPIRE 24 months after they are earned - the date is shown with the discount.
+  6 Oct (Nigel): SHARE WITH FAMILY - a WATCH-ONLY link (watch.html?s=...): rpc create_share_link (the same link until stopped),
+  copy or the phone's share sheet; "Stop sharing" (rpc stop_sharing) ends it at once; sharing again makes a new link. Shown only
+  when the server has it (get_delivery.share). The owner's own link is never the one shared.
 -->
 <style>
 :root{--ink:#0C0D10;--panel:#15171C;--p2:#1D1F26;--line:#2A2E37;--l2:#3C414C;
@@ -64,6 +73,9 @@ label.tick{display:flex;gap:10px;align-items:flex-start;font-size:15.5px;line-he
 label.tick input{width:22px;height:22px;flex:none;margin-top:2px;accent-color:var(--brass)}
 input.nm{display:block;width:100%;max-width:320px;background:var(--ink);border:1px solid var(--l2);border-radius:8px;color:var(--fg);font:inherit;font-size:17px;padding:10px 12px;margin:0 0 8px}
 label.b.off{opacity:.4;cursor:default;pointer-events:none}
+ol.steps{padding-left:20px;margin:6px 0 10px}ol.steps li{margin:0 0 8px;line-height:1.55;color:var(--fg2)}ol.steps li b{color:var(--fg)}
+ul.people{list-style:none;padding:0;margin:10px 0}ul.people li{margin:0 0 14px;line-height:1.5}
+.plink{font-family:ui-monospace,Menlo,monospace;font-size:13px;word-break:break-all;background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0}
 </style>
 </head>
 <body>
@@ -93,7 +105,10 @@ function report(what,e){
 window.addEventListener('error',ev=>report('uncaught',ev.error||ev.message));
 window.addEventListener('unhandledrejection',ev=>report('unhandled promise',ev.reason));
 
-let D=null, FILM=null, ERASE_STEP=0;
+let D=null, FILM=null, ERASE_STEP=0, SHARE_STEP=0, SITE_BASE=null;
+try{ rpc('get_start_config').then(c=>{ if(c&&c.site_base_url) SITE_BASE=String(c.site_base_url).replace(/\/?$/,'/'); }).catch(()=>{}); }catch(_){}
+const pageUrl=(page,q)=>(SITE_BASE||new URL('.',location.href).href)+page+'?'+q;
+const fmtDate=d=>new Date(d).toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'});
 
 function paint(){
   let h='';
@@ -108,6 +123,7 @@ function paint(){
     if(D.review_url) h+=`<div class="box" id="review"><h2>Would you tell others about it?</h2>
         <p class="lede">If you have a moment, a review helps other families find us.</p>
         <a class="b" id="reviewlink" href="${esc(D.review_url)}" target="_blank" rel="noopener">Leave a review</a></div>`;
+    h+=shareHTML();
     h+=`<div class="box" id="feedback"><h2>Anything you’d like to tell us?</h2>
         <p class="lede">This goes only to us.</p>
         <textarea id="fbtext" maxlength="2000" placeholder="Something you loved, or something we could do better"></textarea>
@@ -144,7 +160,7 @@ function keepHTML(){
     You can delete everything sooner, at any time, below.</p>${r.reaction_licence_months?`
     <p class="lede" id="keepreaction">If you share a reaction video: if we don’t approve it, we delete it with your photos, ${r.working_days} days after delivery.
     If we approve it, we keep it for the ${r.reaction_licence_months} months of your licence and then delete it. If you withdraw it, we delete it ${r.reaction_takedown_days||30} days later -
-    the time we need to take it out of any running ads. Deleting everything below deletes it straight away.</p>`:''}`;
+    the time we need to take it out of any running ads.${r.reaction_consent_days?` If someone in it doesn’t say yes within ${r.reaction_consent_days} days, we delete it then.`:''} Deleting everything below deletes it straight away.</p>`:''}`;
 }
 function dataHTML(){
   const ex=D.export||{};
@@ -167,14 +183,32 @@ function reactionHTML(){
   if(!o&&!st) return '';                                         // no offer from the server: no reaction box at all
   const w=(o&&o.words)||{};
   let h=`<div class="box" id="reaction"><h2>Share your reaction</h2>`;
-  if(st==='to_review') h+=`<p class="ok" id="rstate">Thank you — we have your video. We’ll check it and let you know; the 20% off your next film is added once it’s approved.</p>`;
-  else if(st==='approved') h+=`<p class="ok" id="rstate">Approved — thank you. ${R.credit_percent?`You have ${esc(R.credit_percent)}% off your next film.`:'Your video is approved.'}</p>`;
-  else if(st==='withdrawn') h+=`<p class="lede" id="rstate">You withdrew your video. We took it out of our ad library straight away, and we’ll take it out of any running ads within ${esc((D.retention||{}).reaction_takedown_days||30)} days.${R.credit_percent?` Your ${esc(R.credit_percent)}% off stays yours.`:''}</p>`;
+  const until=R.credit_expires_at?` It can be used until ${esc(fmtDate(R.credit_expires_at))}.`:'';
+  if(st==='awaiting_consent') h+=`<p class="lede" id="rstate">Thank you — we have your video. Now everyone in it says yes for themselves: send each person their own link below. You’ll see each yes appear here. Nothing is used until everyone has said yes${(D.retention||{}).reaction_consent_days?`, and if someone doesn’t within ${esc(D.retention.reaction_consent_days)} days we delete the video`:''}.</p>`+peopleHTML(R);
+  else if(st==='to_review') h+=((R.people||[]).length
+      ?`<p class="ok" id="rstate">Thank you — everyone has said yes. We’ll check the video and let you know; the 20% off your next film is added once it’s approved.</p>`+peopleHTML(R)
+      :`<p class="ok" id="rstate">Thank you — we have your video. We’ll check it and let you know; the 20% off your next film is added once it’s approved.</p>`);
+  else if(st==='approved') h+=`<p class="ok" id="rstate">Approved — thank you. ${R.credit_percent?`You have ${esc(R.credit_percent)}% off your next film.${until}`:'Your video is approved.'}</p>`;
+  else if(st==='withdrawn'){ const who=(R.people||[]).filter(p=>p.withdrawn).map(p=>p.first_name);
+    h+=`<p class="lede" id="rstate">${who.length?`${esc(who.join(' and '))} withdrew their yes, so we stopped using the video.`:'You withdrew your video.'} We took it out of our ad library straight away, and we’ll take it out of any running ads within ${esc((D.retention||{}).reaction_takedown_days||30)} days.${R.credit_percent?` Your ${esc(R.credit_percent)}% off stays yours.${until}`:''}</p>`; }
   else if(st==='declined') h+=`<p class="lede" id="rstate">We couldn’t use the video you sent: ${esc(R.decline_reason||'')} You’re welcome to send another.</p>`;
   if(R.can_withdraw) h+=withdrawHTML();
   if(o){
     h+=`<p class="lede" id="rhead">${esc(w.headline)}</p>`;
+    if(w.steps) h+=`<ol class="steps" id="rsteps">${w.steps.map(x=>`<li><b>${esc(x.title)}</b> ${esc(x.text)}</li>`).join('')}</ol>
+        <p class="small">${esc(w.agreeing||'')}</p><p class="small">${esc(w.withdraw||'')}</p><p class="small">${esc(w.timeout||'')}</p>`;
     if(!OFFER_OPEN) h+=`<p><button class="b go" id="ryes" type="button">Yes, I’d like to</button> <span class="small">${esc(w.no_thanks||'')}</span></p>`;
+    else if(w.steps){                                              // 6 Oct: each person agrees through their own link
+      h+=`<div id="rform">
+        <p style="margin:12px 0 6px">${esc(w.names)}</p>
+        <div id="rnames">${NAMES.map((n,i)=>`<input class="nm" data-ni="${i}" maxlength="40" autocomplete="off" value="${esc(n)}" aria-label="First name ${i+1}">`).join('')}</div>
+        <p><button class="b" id="raddname" type="button">Add another person</button></p>
+        <label class="tick"><input type="checkbox" id="rkids"> <span>Everyone in the video is 18 or over, including anyone in the background.</span></label>
+        <label class="tick"><input type="checkbox" id="rlic"> <span>I agree to what’s above, as the person sending the video.</span></label>
+        <label class="tick"><input type="checkbox" id="rall"> <span>I’ll send each person their own link. The video is only used if everyone says yes.</span></label>
+        <p><label class="b go off" id="rpick" aria-disabled="true">Choose the video<input type="file" id="rfile" accept="video/*" disabled hidden></label>
+           <button class="b" id="rno" type="button">No thanks</button> <span id="rmsg"></span></p></div>`;
+    }
     else{
       h+=`<div id="rform">
         <label class="tick"><input type="checkbox" id="rlic"> <span>${esc(w.licence)}</span></label>
@@ -189,6 +223,24 @@ function reactionHTML(){
     }
   }
   return h+`</div>`;
+}
+function peopleHTML(R){
+  const ps=R.people||[]; if(!ps.length) return '';
+  return `<ul class="people" id="rpeople">${ps.map(p=>{ const link=pageUrl('agree.html','p='+encodeURIComponent(p.token));
+    const st=p.withdrawn?'withdrew':p.agreed?'said yes ✓':'waiting';
+    return `<li data-person="${esc(p.first_name)}"><b>${esc(p.first_name)}</b> — <span class="pst">${st}</span>${!p.agreed&&!p.withdrawn?`
+      <div class="plink">${esc(link)}</div><button class="b" type="button" data-plink="${esc(link)}" data-pname="${esc(p.first_name)}">${navigator.share?'Share':'Copy'} ${esc(p.first_name)}’s link</button>`:''}</li>`; }).join('')}</ul>`;
+}
+function shareHTML(){
+  if(!D.share||!D.film_ready) return '';                          // the server has no share links yet: no box
+  const link=D.share.active&&D.share.token?pageUrl('watch.html','s='+encodeURIComponent(D.share.token)):null;
+  if(!link) return `<div class="box" id="share"><h2>Share with family</h2><p class="lede">A link that only plays your film — it can’t change anything, see your photos or delete anything. Send it to anyone you like.</p>
+    <p><button class="b go" id="sh1" type="button">Share with family</button> <span id="shmsg"></span></p></div>`;
+  return `<div class="box" id="share"><h2>Share with family</h2><p class="lede">Anyone with this link can watch your film — nothing else.</p>
+    <div class="plink" id="shlink">${esc(link)}</div>
+    <p><button class="b go" id="shcopy" type="button">${navigator.share?'Share the link':'Copy the link'}</button>
+    ${SHARE_STEP===0?`<button class="b" id="shstop" type="button">Stop sharing</button>`:`<button class="b warn" id="shstop2" type="button">Yes, stop sharing now</button><button class="b" id="shkeep" type="button">Keep sharing</button>`}
+    <span id="shmsg"></span></p>${SHARE_STEP?'<p class="small">The link stops working straight away. If you share again you get a new link.</p>':''}</div>`;
 }
 function withdrawHTML(){
   if(WD_STEP===0) return `<p><button class="b warn" id="wd1" type="button">Withdraw my video</button></p>`;
@@ -213,7 +265,9 @@ async function sendReaction(ev){
     const put=await fetch(s.signed_url,{method:'PUT',headers:{'Content-Type':file.type||'video/mp4'},body:file});
     if(!put.ok) throw new Error('upload HTTP '+put.status);
     await fn('reaction_done',{path:s.path,release_id:s.release_id});
-    D.reaction={...D.reaction,sent:true,status:'to_review',ads_offer:null,can_withdraw:true}; OFFER_OPEN=false; RSENDING=false; paint();
+    const people=Array.isArray(s.people)?s.people.map(p=>({first_name:p.first_name,token:p.token,agreed:false,withdrawn:false})):[];
+    D.reaction={...D.reaction,sent:true,status:people.length?'awaiting_consent':'to_review',people,ads_offer:null,can_withdraw:true};
+    OFFER_OPEN=false; RSENDING=false; paint();
   }catch(e){ report('reaction',e); RSENDING=false; offerReady(); m.textContent=/offer changed/.test(e.message)?'The offer’s words have changed. Please reload the page.':'That didn’t send. Please try again.'; m.className='err'; }
 }
 const refMessage=()=>`I made a film of our memories with this - you might like to make one for someone you love. My code: ${D.referral.code}\n\n${D.referral.link}`;
@@ -223,6 +277,16 @@ document.addEventListener('input',ev=>{ if(ev.target.dataset&&ev.target.dataset.
 document.addEventListener('click',async ev=>{
   const t=ev.target.closest('button'); if(!t) return;
   try{
+    if(t.id==='sh1'){ t.disabled=true; const r=await rpc('create_share_link',{p_token:TOKEN}); if(!r||r.error) throw new Error((r&&r.error)||'create_share_link');
+      D.share={active:true,token:r.token}; paint(); $('share').scrollIntoView({block:'center'}); return; }
+    if(t.id==='shcopy'){ const l=$('shlink').textContent; if(navigator.share){ await navigator.share({text:l}); } else { await navigator.clipboard.writeText(l); $('shmsg').textContent='Copied.'; $('shmsg').className='ok'; } return; }
+    if(t.id==='shstop'){ SHARE_STEP=1; paint(); return; }
+    if(t.id==='shkeep'){ SHARE_STEP=0; paint(); return; }
+    if(t.id==='shstop2'){ t.disabled=true; const r=await rpc('stop_sharing',{p_token:TOKEN}); if(!r||r.error) throw new Error((r&&r.error)||'stop_sharing');
+      D.share={active:false,token:null}; SHARE_STEP=0; paint(); return; }
+    if(t.dataset&&t.dataset.plink){ const l=t.dataset.plink, n=t.dataset.pname;
+      if(navigator.share) await navigator.share({text:`${n}, this is the video of us watching the film. Please watch it and say yes or no yourself:\n\n${l}\n`});
+      else { await navigator.clipboard.writeText(l); t.textContent='Copied'; } return; }
     if(t.id==='ryes'){ OFFER_OPEN=true; paint(); $('reaction').scrollIntoView({block:'start'}); return; }
     if(t.id==='rno'){ OFFER_OPEN=false; NAMES=['']; paint(); return; }
     if(t.id==='raddname'){ if(NAMES.length<20){ NAMES.push(''); const keep=['rlic','rkids','rall'].map(i=>$(i).checked); paint();
@@ -244,7 +308,7 @@ document.addEventListener('click',async ev=>{
     if(t.id==='er3'){ t.disabled=true; const r=await rpc('request_erasure',{p_token:TOKEN,p_confirm:'DELETE'});
       if(!r||r.error) throw new Error((r&&r.error)||'request_erasure'); D.erasure={status:'confirmed'}; paint(); window.scrollTo(0,0); }
   }catch(e){ report('click '+t.id,e); t.disabled=false;
-    const m=$(t.id==='er3'?'ermsg':t.id==='fbsend'?'fbmsg':t.id==='wd2'?'wdmsg':'refmsg'); if(m){ m.textContent='That didn’t go through. Please try again.'; m.className='err'; } }
+    const m=$(t.id==='er3'?'ermsg':t.id==='fbsend'?'fbmsg':t.id==='wd2'?'wdmsg':/^sh/.test(t.id)?'shmsg':'refmsg'); if(m){ m.textContent='That didn’t go through. Please try again.'; m.className='err'; } }
 });
 
 (async()=>{
