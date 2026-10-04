@@ -2421,7 +2421,8 @@ function askMoreHTML(i){
 }
 const MORE_SAY={'the words for this film are already written':'The words for your film are already written, so this group can’t be opened again.',
   'that group has been reopened three times already':'This group has already been opened again three times, so it can’t be opened again.',
-  'no such memory on this film':'We couldn’t find this group on your film. Please reload the page and try again.'};
+  'no such memory on this film':'We couldn’t find this group on your film. Please reload the page and try again.',
+  'unknown token':'This link doesn’t work any more. Please open the link we sent you again.'};
 async function askMore(btn){
   const i=+btn.dataset.group, m=M[i], msg=$('askmoremsg'); if(!m) return;
   btn.disabled=true; btn.textContent='One moment…'; if(msg) msg.classList.add('hide');
