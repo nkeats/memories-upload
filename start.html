@@ -92,6 +92,9 @@ window.addEventListener('unhandledrejection',ev=>report('unhandled promise',ev.r
 let C=null, OCC=null, BUSY=false;
 const EMAIL=/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+/* 7 Oct: an occasion's own line from the server (occasions.start_note) - e.g. Valentine's: "For a couple who are already
+   together - a film about the two of you." Shown when that occasion is chosen; nothing for one without a note. */
+function occNote(){ const o=(C.occasions||[]).find(x=>x.slug===OCC); return (o&&o.note)||''; }
 function form(){
   const r=C.retention||{};
   $('stage').innerHTML=`<h1>Turn your memories into a film, with its own song</h1>
@@ -99,7 +102,8 @@ function form(){
     ${INV?`<div class="box" id="invite"><h2>You’re testing ${esc(INV.label)}</h2><p class="lede" style="margin:0">Thank you for helping us try out the questions for ${esc(INV.label.toLowerCase())} films before they’re open to everyone. Everything else works just as it will for customers.</p></div>`
       :INV_MSG?`<div class="box" id="invite"><p class="err" style="margin:0">${esc(INV_MSG)}</p></div>`:''}
     <div class="box"><h2>What is it for?</h2>
-      <div class="occ" role="group" aria-label="The occasion">${C.occasions.map(o=>`<button type="button" data-occ="${esc(o.slug)}" aria-pressed="${OCC===o.slug}">${esc(o.label)}</button>`).join('')}</div></div>
+      <div class="occ" role="group" aria-label="The occasion">${C.occasions.map(o=>`<button type="button" data-occ="${esc(o.slug)}" aria-pressed="${OCC===o.slug}">${esc(o.label)}</button>`).join('')}</div>
+      <p class="small" id="occnote" style="margin:10px 0 0">${esc(occNote())}</p></div>
     <div class="box"><h2>About you</h2>
       <label for="fname">Your first name</label>
       <input class="t" id="fname" maxlength="40" autocomplete="given-name" autocapitalize="words">
@@ -164,7 +168,7 @@ function done(token){
 }
 document.addEventListener('click',ev=>{
   const b=ev.target.closest('button'); if(!b) return;
-  if(b.dataset.occ){ OCC=b.dataset.occ; document.querySelectorAll('[data-occ]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.occ===OCC))); ready(); }
+  if(b.dataset.occ){ OCC=b.dataset.occ; document.querySelectorAll('[data-occ]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.occ===OCC))); const n=$('occnote'); if(n) n.textContent=occNote(); ready(); }
   if(b.id==='go') start();
 });
 (async()=>{

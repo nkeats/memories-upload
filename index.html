@@ -58,6 +58,9 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 .grid.around .c{cursor:pointer} .grid.around .ph{border-radius:4px}
 .c .ph{width:100%;aspect-ratio:4/3;background:var(--p2);display:flex;align-items:center;
   justify-content:center;color:var(--fg3);font-size:12px;text-align:center;padding:6px}
+.c .chk{position:absolute;bottom:34px;left:6px;font-size:10.5px;font-weight:600;padding:3px 8px;
+  border-radius:4px;background:rgba(12,13,16,.82);color:#fff}
+.c .ph.gone{color:var(--fg2);font-weight:600}
 
 .dup{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:26px}
 .dup .side{background:var(--panel);border:3px solid var(--line);border-radius:7px;
@@ -240,7 +243,7 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
 const FN=SB+'/functions/v1';
 const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
-const BUILD='2026-10-04a';                                 // bump on every change (1 Oct: there was no stamp before)
+const BUILD='2026-10-07a';                                 // bump on every change (1 Oct: there was no stamp before)
 document.documentElement.dataset.build=BUILD;
 let TOKEN=new URLSearchParams(location.search).get('t')||'';
 /* ?a=<answer token> — somebody else answering the same memories (on a film
@@ -1345,10 +1348,15 @@ async function look(){
   $('sofarGrid').innerHTML=j.assets.map(a=>{
     const when=a.taken_at?new Date(a.taken_at).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}):'no date';
     const heic=/hei[cf]/i.test(a.mime_type), vid=/^video/.test(a.mime_type)||/\.(mp4|mov|m4v|3gp|webm)$/i.test(a.storage_path||'');
-    const top=(vid&&a.thumb_url)?`<img loading="lazy" src="${a.thumb_url}" alt=""><div class="tag">VIDEO</div>`
+    /* 7 Oct: every upload is checked on our side first (gallery's `intake`). 'checking' shows with a small badge; one the check
+       removed, or could not check, has no link at all - so it says so instead of a broken picture. */
+    const gone=a.intake==='removed'||a.intake==='could_not_check';
+    const top=gone?`<div class="ph gone">can't be used</div>`
+      :(vid&&a.thumb_url)?`<img loading="lazy" src="${a.thumb_url}" alt=""><div class="tag">VIDEO</div>`
       :(heic||vid||!a.url)?`<div class="ph">${vid?'video':heic?'HEIC<br>no preview':'no preview'}</div>`
       :`<img loading="lazy" src="${a.url}" alt="">`;
-    return `<div class="c" style="cursor:default">${top}<p class="stamp">${when}${a.uploaded_by?' · '+esc(a.uploaded_by):''}</p></div>`;
+    const badge=a.intake==='checking'?`<div class="chk">checking</div>`:'';
+    return `<div class="c" style="cursor:default" data-intake="${esc(a.intake||'')}">${top}${badge}<p class="stamp">${when}${a.uploaded_by?' · '+esc(a.uploaded_by):''}</p></div>`;
   }).join('');
   uploadNav();
 }
@@ -1457,6 +1465,7 @@ async function describeLoop(run){
       if(page!=='describing'||run!==describeRun) return;
       scan.described=+j.described||0; scan.total=+j.total||(scan.described+(+j.remaining||0));
       scan.stalled=!!j.stalled&&!j.done; scan.done=!!j.done; scan.trouble=false;
+      scan.checking=+j.checking||0; scan.removed=+j.removed||0; scan.unchecked=+j.could_not_check||0;
       paintScan();
       if(j.done){ prog({screen:'describing',done:true}); return; }
       if(j.stalled){
@@ -1467,7 +1476,9 @@ async function describeLoop(run){
         try{ const cs=await rpc('clip_state',{p_token:TOKEN}); const undone=(cs&&cs.clips||[]).filter(c=>!c.described).length;
           scan.onlyClipsLeft=undone>0&&undone>=(+j.remaining||0); }catch(_){ scan.onlyClipsLeft=false; }
         paintScan(); return; }
-      wait=3000; await sleep(+j.this_call>0?400:3000);   // a call that did nothing: don't hammer
+      /* a call that did nothing: don't hammer. 7 Oct: when all that is left is photos still being CHECKED on our side (the
+         worker looks every couple of minutes), ask every 15 s, not every 3. */
+      wait=3000; await sleep(+j.this_call>0?400:(scan.checking>0?15000:3000));
     }catch(e){
       report('describe',e); scan.trouble=true; paintScan();
       await sleep(wait); wait=Math.min(wait*2,30000);
@@ -1477,8 +1488,16 @@ async function describeLoop(run){
 /* The count, quietly — "Looking at your photos — 34 of 55". No bar, no
    percentage, no estimate: a count is what people tolerate waiting for, and a
    bar that stalls is worse than none. */
+/* 7 Oct: photos we didn't use are SAID - never a silent drop. 'removed' is the nudity check; 'could_not_check' is our fault. */
+function notUsedLine(){
+  const out=[];
+  if(scan.removed) out.push(`${scan.removed===1?'One photo':plural(scan.removed,'photo')} couldn't be included. Our films don't include nudity.`);
+  if(scan.unchecked) out.push(`${scan.unchecked===1?'One photo':plural(scan.unchecked,'photo')} couldn't be checked, so ${scan.unchecked===1?"it won't":"they won't"} be used. We've been told and we're looking into it.`);
+  return out.join(' ');
+}
 function scanLine(){
-  if(scan.done) return `All ${plural(scan.total,'photo')} looked at.`;
+  if(scan.done) return `All ${plural(scan.total,'photo')} looked at.`+(notUsedLine()?' '+notUsedLine():'');
+  if(scan.checking>0&&!scan.stalled&&!scan.trouble) return `Checking your photos — ${scan.checking} still being checked`;
   if(scan.stalled&&scan.onlyClipsLeft) return `All your photos looked at. We couldn't look inside your video clips — they'll still be in your film.`;
   if(scan.stalled) return `We've hit a snag looking at your photos.`;
   if(scan.trouble) return `Looking at your photos — taking a little longer than usual.`;
