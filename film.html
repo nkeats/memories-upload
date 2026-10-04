@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="build" content="2026-10-04a">
+<meta name="build" content="2026-10-05a">
 <title>Your film</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -30,6 +30,15 @@
   appear in it?" Yes / No. The answer goes with reaction_done (child_present true / false / null when unanswered); the server
   (delivery v2 + a trigger on reaction_videos) records ad_use_allowed = false unless the advertising consent is given AND the
   answer is No. Shown only when the server says it asks (get_delivery.reaction.asks_child) - until then the page is as before.
+  5 Oct (Nigel: the 20% is ONLY for videos we can use in advertising): the reaction video is now ONE SEPARATE, OPTIONAL OFFER -
+  "Share your reaction and get 20% off your next film" - and nothing else (no private upload, no up-front advertising tick).
+  "No thanks" changes nothing. Saying yes needs: the licence ticked (24 months, our marketing in any media, we may edit/crop it, no
+  payment but the credit), "no one under 18 appears" ticked, the first name of every adult in it, and "each of them agreed" ticked -
+  the file button stays off until all of that is there. The words are the SERVER's (get_delivery.reaction.ads_offer.words, version
+  sent back with the release - delivery v3 stores its own copy and refuses an older version). The video then waits "to review";
+  Nigel approves (credit recorded) or declines (the reason shows here, and they may send another). Approved or waiting: "Withdraw"
+  (two steps, rpc withdraw_reaction) - out of the ad library at once, out of running ads within 30 days, the discount stays.
+  No offer from the server (get_delivery before server-wanted-2026-10-05) = no reaction box at all.
 -->
 <style>
 :root{--ink:#0C0D10;--panel:#15171C;--p2:#1D1F26;--line:#2A2E37;--l2:#3C414C;
@@ -42,15 +51,19 @@ h2{font-family:"Newsreader",serif;font-weight:400;font-size:22px;margin:0 0 6px}
 p.lede{color:var(--fg2);font-size:16.5px;line-height:1.6;margin:0 0 14px;max-width:56ch}
 .box{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:16px 18px;margin:0 0 22px}
 video{width:100%;border-radius:10px;background:#000;display:block;margin:6px 0 10px}
-button.b,a.b{display:inline-block;background:none;border:1px solid var(--line);color:var(--fg);border-radius:7px;padding:11px 16px;
+button.b,a.b,label.b{display:inline-block;background:none;border:1px solid var(--line);color:var(--fg);border-radius:7px;padding:11px 16px;
   font:inherit;font-size:16px;cursor:pointer;text-decoration:none;margin:4px 8px 4px 0}
-button.b.go,a.b.go{background:var(--brass);border-color:var(--brass);color:#20180A;font-weight:600}
+button.b.go,a.b.go,label.b.go{background:var(--brass);border-color:var(--brass);color:#20180A;font-weight:600}
 button.b.warn{border-color:var(--red);color:#F1B8A8}
 button:disabled{opacity:.4;cursor:default}
 .code{font-family:ui-monospace,Menlo,monospace;font-size:20px;letter-spacing:.08em;color:var(--brass)}
 textarea{width:100%;background:var(--ink);border:1px solid var(--l2);border-radius:8px;color:var(--fg);font:inherit;padding:12px;min-height:90px}
 .ok{color:#9CCBA6;font-size:15px}.err{color:var(--red);font-size:15px}.small{font-size:14px;color:var(--fg3)}
 .hide{display:none}
+label.tick{display:flex;gap:10px;align-items:flex-start;font-size:15.5px;line-height:1.55;margin:10px 0;cursor:pointer}
+label.tick input{width:22px;height:22px;flex:none;margin-top:2px;accent-color:var(--brass)}
+input.nm{display:block;width:100%;max-width:320px;background:var(--ink);border:1px solid var(--l2);border-radius:8px;color:var(--fg);font:inherit;font-size:17px;padding:10px 12px;margin:0 0 8px}
+label.b.off{opacity:.4;cursor:default;pointer-events:none}
 </style>
 </head>
 <body>
@@ -105,9 +118,7 @@ function paint(){
         <p>Your code: <span class="code" id="refcode">${esc(D.referral.code)}</span></p>
         ${D.referral.link?`<p class="small" id="reflink">${esc(D.referral.link)}</p>
         <button class="b" id="refcopy">Copy the message</button><button class="b" id="refshare">Share</button> <span id="refmsg"></span>`:''}</div>`;
-    h+=`<div class="box" id="reaction"><h2>Did you film yourselves watching?</h2>
-        <p class="lede">If you’d like to, send it to us.${D.ads_consent?' As you agreed when you started, we may use it in our advertising - if you’ve changed your mind, tell us in the box above.':' We’ll keep it private — it won’t be used in advertising, because you didn’t agree to that.'}</p>
-        ${D.reaction&&D.reaction.sent?`<p class="ok">Thank you — we have it.</p>`:childHTML()+`<input type="file" id="rfile" accept="video/*"> <span id="rmsg"></span>`}</div>`;
+    h+=reactionHTML();
   }else{
     h+=`<h1>Your film</h1><p class="lede">Your film isn’t ready yet. We’ll let you know when it is.</p>`;
   }
@@ -116,7 +127,7 @@ function paint(){
       ${keepHTML()}
       ${dataHTML()}</div>`;
   $('stage').innerHTML=h;
-  const f=$('rfile'); if(f) f.addEventListener('change',sendReaction);
+  const f=$('rfile'); if(f){ f.addEventListener('change',sendReaction); offerReady(); }
 }
 /* 4 Oct: how long we keep it - the server's numbers (get_delivery.retention), with dates once the film is delivered */
 function keepHTML(){
@@ -130,7 +141,10 @@ function keepHTML(){
   }
   return `<p class="lede" id="keep">We delete your photos, your answers and our working files ${r.working_days} days after we deliver your film${w}.
     We keep your finished film and its words for ${r.film_months} months after delivery, so you can come back for them${f}, and then we delete those too.
-    You can delete everything sooner, at any time, below.</p>`;
+    You can delete everything sooner, at any time, below.</p>${r.reaction_licence_months?`
+    <p class="lede" id="keepreaction">If you share a reaction video: if we don’t approve it, we delete it with your photos, ${r.working_days} days after delivery.
+    If we approve it, we keep it for the ${r.reaction_licence_months} months of your licence and then delete it. If you withdraw it, we delete it ${r.reaction_takedown_days||30} days later -
+    the time we need to take it out of any running ads. Deleting everything below deletes it straight away.</p>`:''}`;
 }
 function dataHTML(){
   const ex=D.export||{};
@@ -146,31 +160,77 @@ function dataHTML(){
       <p><button class="b" id="erno">Keep everything</button><button class="b warn" id="er3" disabled>Delete everything now</button> <span id="ermsg"></span></p></div>`;
   return h;
 }
-/* 4 Oct: children in a reaction video - asked before the file; unanswered counts as "a child may be in it" (never in ads) */
-let CHILD=null;                                                    // 'yes' | 'no' | null (not answered)
-function childHTML(){
-  if(!(D.reaction&&D.reaction.asks_child)) return '';
-  return `<div id="child"><p style="margin:0 0 8px">Does anyone under 18 appear in the video?</p>
-    <p><button class="b${CHILD==='yes'?' go':''}" id="childyes" type="button">Yes</button><button class="b${CHILD==='no'?' go':''}" id="childno" type="button">No</button></p>
-    ${CHILD==='yes'?`<p class="small">Thank you. A video with a child in it is never used in our advertising — it stays private.</p>`:''}</div>`;
+/* 5 Oct: THE "SHARE YOUR REACTION" OFFER - separate, optional; the server's words; a full release before the file can be chosen */
+let OFFER_OPEN=false, NAMES=[''], WD_STEP=0, RSENDING=false;
+function reactionHTML(){
+  const R=D.reaction||{}, o=R.ads_offer, st=R.status;
+  if(!o&&!st) return '';                                         // no offer from the server: no reaction box at all
+  const w=(o&&o.words)||{};
+  let h=`<div class="box" id="reaction"><h2>Share your reaction</h2>`;
+  if(st==='to_review') h+=`<p class="ok" id="rstate">Thank you — we have your video. We’ll check it and let you know; the 20% off your next film is added once it’s approved.</p>`;
+  else if(st==='approved') h+=`<p class="ok" id="rstate">Approved — thank you. ${R.credit_percent?`You have ${esc(R.credit_percent)}% off your next film.`:'Your video is approved.'}</p>`;
+  else if(st==='withdrawn') h+=`<p class="lede" id="rstate">You withdrew your video. We took it out of our ad library straight away, and we’ll take it out of any running ads within ${esc((D.retention||{}).reaction_takedown_days||30)} days.${R.credit_percent?` Your ${esc(R.credit_percent)}% off stays yours.`:''}</p>`;
+  else if(st==='declined') h+=`<p class="lede" id="rstate">We couldn’t use the video you sent: ${esc(R.decline_reason||'')} You’re welcome to send another.</p>`;
+  if(R.can_withdraw) h+=withdrawHTML();
+  if(o){
+    h+=`<p class="lede" id="rhead">${esc(w.headline)}</p>`;
+    if(!OFFER_OPEN) h+=`<p><button class="b go" id="ryes" type="button">Yes, I’d like to</button> <span class="small">${esc(w.no_thanks||'')}</span></p>`;
+    else{
+      h+=`<div id="rform">
+        <label class="tick"><input type="checkbox" id="rlic"> <span>${esc(w.licence)}</span></label>
+        <label class="tick"><input type="checkbox" id="rkids"> <span>${esc(w.no_minors)}</span></label>
+        <p style="margin:12px 0 6px">${esc(w.names)}</p>
+        <div id="rnames">${NAMES.map((n,i)=>`<input class="nm" data-ni="${i}" maxlength="40" autocomplete="off" value="${esc(n)}" aria-label="First name ${i+1}">`).join('')}</div>
+        <p><button class="b" id="raddname" type="button">Add another person</button></p>
+        <label class="tick"><input type="checkbox" id="rall"> <span>${esc(w.all_agreed)}</span></label>
+        <p class="small">${esc(w.review||'')}</p>
+        <p><label class="b go off" id="rpick" aria-disabled="true">Choose the video<input type="file" id="rfile" accept="video/*" disabled hidden></label>
+           <button class="b" id="rno" type="button">No thanks</button> <span id="rmsg"></span></p></div>`;
+    }
+  }
+  return h+`</div>`;
+}
+function withdrawHTML(){
+  if(WD_STEP===0) return `<p><button class="b warn" id="wd1" type="button">Withdraw my video</button></p>`;
+  return `<div id="wd"><p>We’ll stop using your video: out of our ad library now, and out of any running ads within ${esc((D.retention||{}).reaction_takedown_days||30)} days. Your discount stays yours. This can’t be undone.</p>
+    <p><button class="b" id="wdno" type="button">Keep it</button><button class="b warn" id="wd2" type="button">Yes, withdraw it</button> <span id="wdmsg"></span></p></div>`;
+}
+const NAME_OK=/^\p{L}[\p{L} '’.-]{0,39}$/u;
+function cleanNames(){ return NAMES.map(n=>n.trim().replace(/\s+/g,' ')).filter(Boolean); }
+function offerReady(){
+  const n=cleanNames();
+  const ok=!!($('rlic')&&$('rlic').checked&&$('rkids').checked&&$('rall').checked)&&n.length>0&&n.every(x=>NAME_OK.test(x))&&!RSENDING;
+  const f=$('rfile'), l=$('rpick'); if(f){ f.disabled=!ok; l.setAttribute('aria-disabled',String(!ok)); l.classList.toggle('off',!ok); }
+  return ok;
 }
 async function sendReaction(ev){
-  const file=ev.target.files[0]; if(!file) return;
-  const m=$('rmsg'); m.textContent='Sending…'; m.className='';
+  const file=ev.target.files[0]; if(!file||!offerReady()) return;
+  const m=$('rmsg'); m.textContent='Sending…'; m.className=''; RSENDING=true; offerReady();
   try{
-    const s=await fn('sign_reaction',{filename:file.name,mime:file.type||'video/mp4',size:file.size});
+    const o=D.reaction.ads_offer;
+    const s=await fn('sign_reaction',{filename:file.name,mime:file.type||'video/mp4',size:file.size,
+      release:{version:o.version,licence_agreed:true,no_minors:true,all_agreed:true,names:cleanNames()}});
     const put=await fetch(s.signed_url,{method:'PUT',headers:{'Content-Type':file.type||'video/mp4'},body:file});
     if(!put.ok) throw new Error('upload HTTP '+put.status);
-    await fn('reaction_done',{path:s.path,child_present:CHILD==='yes'?true:CHILD==='no'?false:null});
-    D.reaction={sent:true}; paint();
-  }catch(e){ report('reaction',e); m.textContent='That didn’t send. Please try again.'; m.className='err'; }
+    await fn('reaction_done',{path:s.path,release_id:s.release_id});
+    D.reaction={...D.reaction,sent:true,status:'to_review',ads_offer:null,can_withdraw:true}; OFFER_OPEN=false; RSENDING=false; paint();
+  }catch(e){ report('reaction',e); RSENDING=false; offerReady(); m.textContent=/offer changed/.test(e.message)?'The offer’s words have changed. Please reload the page.':'That didn’t send. Please try again.'; m.className='err'; }
 }
 const refMessage=()=>`I made a film of our memories with this - you might like to make one for someone you love. My code: ${D.referral.code}\n\n${D.referral.link}`;
-document.addEventListener('input',ev=>{ if(ev.target.id==='ertype'){ const b=$('er3'); if(b) b.disabled=ev.target.value.trim().toUpperCase()!=='DELETE'; } });
+document.addEventListener('change',ev=>{ if(['rlic','rkids','rall'].includes(ev.target.id)) offerReady(); });
+document.addEventListener('input',ev=>{ if(ev.target.dataset&&ev.target.dataset.ni!=null){ NAMES[+ev.target.dataset.ni]=ev.target.value; offerReady(); }
+  if(ev.target.id==='ertype'){ const b=$('er3'); if(b) b.disabled=ev.target.value.trim().toUpperCase()!=='DELETE'; } });
 document.addEventListener('click',async ev=>{
   const t=ev.target.closest('button'); if(!t) return;
   try{
-    if(t.id==='childyes'||t.id==='childno'){ CHILD=t.id==='childyes'?'yes':'no'; const c=$('child'); if(c) c.outerHTML=childHTML(); return; }
+    if(t.id==='ryes'){ OFFER_OPEN=true; paint(); $('reaction').scrollIntoView({block:'start'}); return; }
+    if(t.id==='rno'){ OFFER_OPEN=false; NAMES=['']; paint(); return; }
+    if(t.id==='raddname'){ if(NAMES.length<20){ NAMES.push(''); const keep=['rlic','rkids','rall'].map(i=>$(i).checked); paint();
+      ['rlic','rkids','rall'].forEach((i,k)=>$(i).checked=keep[k]); offerReady(); const ins=document.querySelectorAll('#rnames .nm'); ins[ins.length-1].focus(); } return; }
+    if(t.id==='wd1'){ WD_STEP=1; paint(); return; }
+    if(t.id==='wdno'){ WD_STEP=0; paint(); return; }
+    if(t.id==='wd2'){ t.disabled=true; const r=await rpc('withdraw_reaction',{p_token:TOKEN}); if(!r||r.error) throw new Error((r&&r.error)||'withdraw_reaction');
+      WD_STEP=0; D.reaction={...D.reaction,status:'withdrawn',can_withdraw:false}; paint(); return; }
     if(t.id==='fbsend'){ const v=($('fbtext').value||'').trim(); if(!v) return; t.disabled=true;
       const r=await rpc('send_feedback',{p_token:TOKEN,p_text:v}); if(!r||r.error) throw new Error((r&&r.error)||'send_feedback');
       $('fbtext').value=''; $('fbmsg').textContent='Thank you — we have it.'; $('fbmsg').className='ok'; t.disabled=false; }
@@ -184,7 +244,7 @@ document.addEventListener('click',async ev=>{
     if(t.id==='er3'){ t.disabled=true; const r=await rpc('request_erasure',{p_token:TOKEN,p_confirm:'DELETE'});
       if(!r||r.error) throw new Error((r&&r.error)||'request_erasure'); D.erasure={status:'confirmed'}; paint(); window.scrollTo(0,0); }
   }catch(e){ report('click '+t.id,e); t.disabled=false;
-    const m=$(t.id==='er3'?'ermsg':t.id==='fbsend'?'fbmsg':'refmsg'); if(m){ m.textContent='That didn’t go through. Please try again.'; m.className='err'; } }
+    const m=$(t.id==='er3'?'ermsg':t.id==='fbsend'?'fbmsg':t.id==='wd2'?'wdmsg':'refmsg'); if(m){ m.textContent='That didn’t go through. Please try again.'; m.className='err'; } }
 });
 
 (async()=>{

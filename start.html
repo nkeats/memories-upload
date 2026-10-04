@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="build" content="2026-10-04a">
+<meta name="build" content="2026-10-05a">
 <title>Start your film</title>
 <meta name="description" content="Turn your photographs and memories into a film with its own song.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -23,6 +23,12 @@
   Every refusal answers HTTP 200 with {"error": ...}, like the other RPCs. No server answer (the RPCs not there yet) = a plain
   "not open yet" message, never a broken form. The link to their film is shown before they go to it, to keep (until film
   emails are switched on, nothing else sends it to them). Test: pipeline/page_tests_front "FRONT DOOR"; live: live_pages_check front.
+  5 Oct (Nigel): TESTER INVITES. start.html?o=<occasion>&invite=<code> - friends test the questions for an occasion that is not
+  public yet. check_invite(p_occasion, p_code) (server-wanted-2026-10-05.sql) -> {ok, occasion:{slug,label}} | {error}: valid ->
+  only that occasion is offered, already chosen, with a line saying it is a test; create_film gets p_invite (the server checks it
+  again and takes one use; the film is marked a tester film). Not valid / expired / used up -> said plainly, and the ordinary
+  (active-only) choice is shown. The public page without an invite is unchanged. p_invite is only ever sent after check_invite
+  answered ok, so the page works on a server without it. Codes: python -m pipeline.invites (Nigel's PC).
 -->
 <style>
 :root{--ink:#0C0D10;--panel:#15171C;--p2:#1D1F26;--line:#2A2E37;--l2:#3C414C;
@@ -67,6 +73,10 @@ const HDR={'Content-Type':'application/json','apikey':KEY,'Authorization':'Beare
 const $=id=>document.getElementById(id);
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const REF=(new URLSearchParams(location.search).get('ref')||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,12);
+const QS=new URLSearchParams(location.search);
+const INVITE=(QS.get('invite')||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,16);
+const OPARAM=(QS.get('o')||'').trim().toLowerCase().replace(/[^a-z-]/g,'').slice(0,40);
+let INV=null, INV_MSG='';                                         // INV = {code, slug, label} once check_invite said ok
 async function rpc(name,args){
   const r=await fetch(`${SB}/rest/v1/rpc/${name}`,{method:'POST',headers:HDR,body:JSON.stringify(args||{})});
   if(!r.ok) throw Object.assign(new Error(`${name}: HTTP ${r.status}`),{status:r.status});
@@ -86,6 +96,8 @@ function form(){
   const r=C.retention||{};
   $('stage').innerHTML=`<h1>Turn your memories into a film, with its own song</h1>
     <p class="do">Your photographs, your stories, and a song written from what you tell us. It takes about half an hour, and you can stop and come back.</p>
+    ${INV?`<div class="box" id="invite"><h2>You’re testing ${esc(INV.label)}</h2><p class="lede" style="margin:0">Thank you for helping us try out the questions for ${esc(INV.label.toLowerCase())} films before they’re open to everyone. Everything else works just as it will for customers.</p></div>`
+      :INV_MSG?`<div class="box" id="invite"><p class="err" style="margin:0">${esc(INV_MSG)}</p></div>`:''}
     <div class="box"><h2>What is it for?</h2>
       <div class="occ" role="group" aria-label="The occasion">${C.occasions.map(o=>`<button type="button" data-occ="${esc(o.slug)}" aria-pressed="${OCC===o.slug}">${esc(o.label)}</button>`).join('')}</div></div>
     <div class="box"><h2>About you</h2>
@@ -99,7 +111,7 @@ function form(){
     <div class="box notice" id="notice"><h2>Your privacy, in plain words</h2>
       <ul>
         <li><b>What you give us:</b> your name and email, your photographs and video clips, and your answers to our questions.</li>
-        <li><b>What we do with it:</b> make your film and its song — nothing else. We never sell it or share it for advertising.</li>
+        <li><b>What we do with it:</b> make your film and its song — nothing else. We never sell it, and never use it in advertising (the only exception is a reaction video, if you later choose to share one under its own agreement).</li>
         <li><b>Who helps us make it:</b> Supabase (stores it securely), Anthropic (our AI reads your photos and answers to write the words) and ElevenLabs (sings the song). They work for us under contract and may process it outside Australia.</li>
         <li><b>How long we keep it:</b> your photos, answers and our working files for ${esc(r.working_days||90)} days after we deliver your film; the finished film and its words for ${esc(r.film_months||12)} months, so you can come back for them. Then we delete them.</li>
         <li><b>Your choice, always:</b> you can download everything, or delete everything, at any time from your film's page.</li>
@@ -121,13 +133,16 @@ const SAY={
   'bad email':'That email address doesn’t look right. Please check it.',
   'bad name':'Please type your first name (letters only).',
   'unknown occasion':'Please choose what your film is for.',
-  'not accepted':'Something went wrong starting your film. Please try again, or email hello@singmeamemory.com.'};
+  'not accepted':'Something went wrong starting your film. Please try again, or email hello@singmeamemory.com.',
+  'invite not valid':'This invite link doesn’t work. Please check you have the whole link, or ask the person who sent it.',
+  'invite expired':'This invite link has expired. Please ask the person who sent it for a new one.',
+  'invite used up':'This invite link has been used as many times as it allows. Please ask the person who sent it for a new one.'};
 async function start(){
   if(!ready()||BUSY) return;
   BUSY=true; $('go').disabled=true; $('go').textContent='Starting your film…'; $('err').classList.add('hide');
   try{
     const r=await rpc('create_film',{p_occasion:OCC,p_first_name:$('fname').value.trim(),p_email:$('email').value.trim(),
-      p_ref:REF||null,p_website:$('website').value,p_notice_version:C.notice_version||null});
+      p_ref:REF||null,p_website:$('website').value,p_notice_version:C.notice_version||null,...(INV?{p_invite:INV.code}:{})});
     if(!r||r.error||!r.token){ BUSY=false; $('go').textContent='Start my film'; ready(); fail(SAY[(r&&r.error)||'']||SAY['not accepted']);
       if(r&&r.error&&!SAY[r.error]) report('create_film',new Error(r.error)); return; }
     try{ if(REF) localStorage.setItem('mf_ref_done_'+r.token,REF); }catch(_){}           // recorded by create_film - index.html need not
@@ -156,6 +171,12 @@ document.addEventListener('click',ev=>{
   try{
     C=await rpc('get_start_config');
     if(!C||C.error||!Array.isArray(C.occasions)||!C.occasions.length) throw new Error((C&&C.error)||'no occasions');
+    if(INVITE&&OPARAM){                                          // a tester's invite: only with the server's yes
+      let r=null;
+      try{ r=await rpc('check_invite',{p_occasion:OPARAM,p_code:INVITE}); }catch(e){ if(!(e&&e.status===404)) report('check_invite',e); }
+      if(r&&r.ok&&r.occasion){ INV={code:INVITE,slug:r.occasion.slug,label:r.occasion.label}; C.occasions=[r.occasion]; OCC=r.occasion.slug; }
+      else INV_MSG=SAY[(r&&r.error)||'invite not valid']||SAY['invite not valid'];
+    }else if(OPARAM&&C.occasions.some(o=>o.slug===OPARAM)) OCC=OPARAM;   // ?o= alone: a public occasion chosen for them
     form();
   }catch(e){
     if(!(e&&e.status===404)) report('get_start_config',e);

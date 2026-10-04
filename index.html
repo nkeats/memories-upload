@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="build" content="2026-10-04a">
+<meta name="build" content="2026-10-05a">
 <title>Your film</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -932,14 +932,15 @@ function paintPrints(){
 }
 /* CONSENT AT UPLOAD (3 Oct 2026, Nigel - UK GDPR standard, every customer). Before the first photograph: (1) REQUIRED - they may
    share these photographs and the people in them would be happy to be in the film; (2) REQUIRED - are there children (under 18) in
-   them? If yes, their first names and the parent-or-guardian confirmation; (3) OPTIONAL, unticked - a reaction video in our
-   advertising; (4) OPTIONAL, unticked - marketing emails. Each answer is stored by record_consent (server-wanted) with its time,
+   them? If yes, their first names and the parent-or-guardian confirmation; (3) OPTIONAL, unticked - marketing emails.
+   5 Oct (Nigel): the up-front "a reaction video may be used in your advertising" tick is GONE - advertising use now comes only
+   from the separate offer on the film page (film.html), with its own licence, the names of every adult in it, no one under 18,
+   and a review before any credit. A tick given before the video exists could not be that. Each answer is stored by record_consent (server-wanted) with its time,
    its exact wording and CONSENT_VERSION. Change a wording -> change the version. Test: pipeline/page_tests "CONSENT". */
-const CONSENT_VERSION='2026-10-03.1';
+const CONSENT_VERSION='2026-10-05.1';
 const CONSENT={
   share_photos:'I have the right to share these photographs and clips, and the people in them would be happy to be in this film.',
   children_guardian:'Some of these photographs show children under 18. I am their parent or guardian, or I have their parent\u2019s or guardian\u2019s permission to share them.',
-  ads_reaction_video:'If I send you a video of us watching the film, you may use it in your advertising.',
   marketing_email:'Send me the occasional email about new films and offers. I can stop them at any time.'};
 let CONSENTED=null, CKIDS=null;
 async function consentGiven(){
@@ -967,7 +968,6 @@ function paintConsent(){
         <input id="c_names" class="cin" maxlength="200" placeholder="e.g. Lily, Sam" autocomplete="off">
         <label class="cbox"><input type="checkbox" id="c_kids"> <span>${CONSENT.children_guardian}</span></label>`:''}
       <p class="cq" style="margin-top:22px">Only if you would like to (you can say no and still make your film):</p>
-      <label class="cbox"><input type="checkbox" id="c_ads"> <span>${CONSENT.ads_reaction_video}</span></label>
       <label class="cbox"><input type="checkbox" id="c_email"> <span>${CONSENT.marketing_email}</span></label>
       <p class="note bad" id="cwarn" style="display:none;margin:14px 0 0;font-size:14px"></p>
     </div>
@@ -982,7 +982,6 @@ async function saveConsent(){
   const rows=[
     {k:'share_photos',g:true,d:null},
     {k:'children_guardian',g:CKIDS==='yes',d:{children_under_18:CKIDS==='yes',names:names||null}},
-    {k:'ads_reaction_video',g:!!($('c_ads')&&$('c_ads').checked),d:null},
     {k:'marketing_email',g:!!($('c_email')&&$('c_email').checked),d:null}];
   try{
     for(const r of rows){
@@ -2864,9 +2863,9 @@ document.addEventListener('click',async e=>{
   if(t.id==='pnotme'){ paintMe(); scrollTo(0,0); return; }
   if(t.id==='preldone'){ saveRelations(); return; }
   if(t.id==='giftNo'||t.id==='giftYes'){ saveGift(t.id==='giftYes'); return; }
-  if(t.id==='c_kidsno'||t.id==='c_kidsyes'){ const keep={share:$('c_share')&&$('c_share').checked,ads:$('c_ads')&&$('c_ads').checked,
+  if(t.id==='c_kidsno'||t.id==='c_kidsyes'){ const keep={share:$('c_share')&&$('c_share').checked,
       email:$('c_email')&&$('c_email').checked}; CKIDS=t.id==='c_kidsyes'?'yes':'no'; paintConsent();
-    $('c_share').checked=!!keep.share; $('c_ads').checked=!!keep.ads; $('c_email').checked=!!keep.email; $('cdone').disabled=!consentReady(); return; }
+    $('c_share').checked=!!keep.share; $('c_email').checked=!!keep.email; $('cdone').disabled=!consentReady(); return; }
   if(t.id==='cdone'){ if(consentReady()) saveConsent(); return; }
   if(t.id==='printsGo'||t.id==='printsSkip'){ showUploadPage(); scrollTo(0,0); return; }
   /* who */
