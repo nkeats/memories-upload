@@ -95,6 +95,16 @@ const EMAIL=/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 /* 7 Oct: an occasion's own line from the server (occasions.start_note) - e.g. Valentine's: "For a couple who are already
    together - a film about the two of you." Shown when that occasion is chosen; nothing for one without a note. */
 function occNote(){ const o=(C.occasions||[]).find(x=>x.slug===OCC); return (o&&o.note)||''; }
+/* 8 Oct: an honest line near an occasion's own day, from the server's dates (occasions.warn_from / finish_by / late_after,
+   occasion_timing): "To have it for 14 February, finish your answers by 12 February." / "Starting now? Your film will most
+   likely arrive after Valentine's Day." Nothing when the server says nothing. */
+function dayMonth(iso){ const d=new Date(String(iso)+'T12:00:00Z'); return isNaN(d)?'':d.toLocaleDateString('en-GB',{day:'numeric',month:'long',timeZone:'UTC'}); }
+function occTiming(){
+  const o=(C.occasions||[]).find(x=>x.slug===OCC), t=o&&o.timing; if(!t) return '';
+  if(t.kind==='late') return `Starting now? Your film will most likely arrive after ${o.label}.`;
+  if(t.kind==='finish_by'&&t.by&&t.day) return `To have it for ${dayMonth(t.day)}, finish your answers by ${dayMonth(t.by)}.`;
+  return '';
+}
 function form(){
   const r=C.retention||{};
   $('stage').innerHTML=`<h1>Turn your memories into a film, with its own song</h1>
@@ -103,7 +113,8 @@ function form(){
       :INV_MSG?`<div class="box" id="invite"><p class="err" style="margin:0">${esc(INV_MSG)}</p></div>`:''}
     <div class="box"><h2>What is it for?</h2>
       <div class="occ" role="group" aria-label="The occasion">${C.occasions.map(o=>`<button type="button" data-occ="${esc(o.slug)}" aria-pressed="${OCC===o.slug}">${esc(o.label)}</button>`).join('')}</div>
-      <p class="small" id="occnote" style="margin:10px 0 0">${esc(occNote())}</p></div>
+      <p class="small" id="occnote" style="margin:10px 0 0">${esc(occNote())}</p>
+      <p class="small" id="occtiming" style="margin:6px 0 0;color:var(--brass,#d4a24c)">${esc(occTiming())}</p></div>
     <div class="box"><h2>About you</h2>
       <label for="fname">Your first name</label>
       <input class="t" id="fname" maxlength="40" autocomplete="given-name" autocapitalize="words">
@@ -168,7 +179,7 @@ function done(token){
 }
 document.addEventListener('click',ev=>{
   const b=ev.target.closest('button'); if(!b) return;
-  if(b.dataset.occ){ OCC=b.dataset.occ; document.querySelectorAll('[data-occ]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.occ===OCC))); const n=$('occnote'); if(n) n.textContent=occNote(); ready(); }
+  if(b.dataset.occ){ OCC=b.dataset.occ; document.querySelectorAll('[data-occ]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.occ===OCC))); const n=$('occnote'); if(n) n.textContent=occNote(); const tm=$('occtiming'); if(tm) tm.textContent=occTiming(); ready(); }
   if(b.id==='go') start();
 });
 (async()=>{
