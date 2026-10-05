@@ -243,7 +243,7 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
 const FN=SB+'/functions/v1';
 const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
-const BUILD='2026-10-07a';                                 // bump on every change (1 Oct: there was no stamp before)
+const BUILD='2026-10-09a';                                 // bump on every change (1 Oct: there was no stamp before)
 document.documentElement.dataset.build=BUILD;
 let TOKEN=new URLSearchParams(location.search).get('t')||'';
 /* ?a=<answer token> — somebody else answering the same memories (on a film
@@ -2116,12 +2116,22 @@ async function closeMemory(){
 /* INVITE THE OTHER PERSON TO ANSWER (2 Oct; Nigel's test never saw it). On the builder's link only, once a second
    person is in the film: "Invite Leisa to answer" → rpc invite_to_answer {p_token, p_name} → {ok, answer_token} (the
    same token every time) → the ?a= link to copy or share. She gets her own questions and never sees his answers. */
-let INV={people:[],links:{},hidden:false,busy:null,copied:null};
+/* 9 Oct (Nigel): a GIFT film is a surprise - the person it is FOR never answers and never gets a link. The server says
+   which kind the film is and who it is for (who_answers, server-wanted-2026-10-09) and refuses them itself
+   (invite_to_answer_checked + a trigger); the page leaves them out and says so plainly. Givers can be several people: a gift
+   film can invite anyone else by first name. A SHARED film is unchanged: everyone who was there is invited. */
+let INV={people:[],links:{},hidden:false,busy:null,copied:null,kind:null,for:null,recipients:[],msg:null,confirm:null,other:''};
+const nameKey=n=>String(n||'').trim().toLowerCase();
 async function loadInvite(){
-  INV={people:[],links:{},hidden:false,busy:null,copied:null};
+  INV={people:[],links:{},hidden:false,busy:null,copied:null,kind:null,for:null,recipients:[],msg:null,confirm:null,other:''};
   if(ASK) return;
+  try{ const w=await rpc('who_answers',{p_token:TOKEN}); if(w&&!w.error){ INV.kind=w.kind; INV.for=w.for||null; INV.recipients=(w.recipients||[]).map(nameKey); } }
+  catch(_){ /* before the server has who_answers: what the journey says */ }
+  if(!INV.kind){ INV.kind=J.is_gift?'gift':'shared'; INV.for=J.is_gift?(J.gift_for||null):null;
+    INV.recipients=INV.for?String(INV.for).split(/\s*(?:,|&|\band\b)\s*/i).map(nameKey).filter(Boolean):[]; }
   try{ const r=await rpc('get_people',{p_token:TOKEN}); if(r&&r.error) throw new Error(r.error);
-    INV.people=(Array.isArray(r)?r:[]).filter(x=>!x.is_you&&(x.name||'').trim()).map(x=>x.name); }
+    INV.people=(Array.isArray(r)?r:[]).filter(x=>!x.is_you&&(x.name||'').trim()
+      &&!(INV.kind==='gift'&&(x.is_subject||INV.recipients.includes(nameKey(x.name))))).map(x=>x.name); }
   catch(e){ report('get_people for invite',e); }
 }
 /* 4 Oct: ONE BASE ADDRESS for every link a page builds to be shared (app_config.site_base_url, from get_start_config) - moving
@@ -2130,21 +2140,44 @@ let SITE_BASE=null;
 try{ rpc('get_start_config').then(c=>{ if(c&&c.site_base_url) SITE_BASE=String(c.site_base_url).replace(/\/?$/,'/'); }).catch(()=>{}); }catch(_){}
 const inviteUrl=tok=>(SITE_BASE?SITE_BASE+'index.html':location.origin+location.pathname)+'?a='+encodeURIComponent(tok);
 function inviteCard(){
-  if(ASK||INV.hidden||!INV.people.length) return '';
-  return `<div class="card invite" style="margin:0 0 16px">${INV.people.map(nm=>{ const l=INV.links[nm];
+  const gift=INV.kind==='gift';
+  if(ASK||INV.hidden||(!INV.people.length&&!gift)) return '';
+  const surprise=gift&&INV.for?`<p class="lede" id="invsurprise" style="margin:0 0 10px"><b>This is a surprise for ${esc(INV.for)} - please don\u2019t add them.</b></p>`:'';
+  const ask=INV.confirm?`<div class="box" id="invconfirm" style="margin:8px 0"><p class="lede" style="margin:0 0 8px">Is ${esc(INV.confirm.name)} the same person as ${esc(INV.confirm.close)}? This film is a surprise for ${esc(INV.confirm.close)}.</p>
+      <div class="acts"><button type="button" class="yes" id="invdiff">No \u2014 someone else, invite them</button><button type="button" id="invsame">Yes \u2014 don\u2019t invite</button></div></div>`:'';
+  const msg=INV.msg?`<p class="err" id="invmsg" style="margin:6px 0">${esc(INV.msg)}</p>`:'';
+  const other=gift?`<p class="lede" style="margin:12px 0 6px">Someone else helping with the film?</p>
+      <div class="acts"><input type="text" id="invother" maxlength="40" placeholder="Their first name" value="${esc(INV.other)}" autocomplete="off" style="flex:1">
+      <button type="button" id="invothergo">Invite</button></div>`:'';
+  return `<div class="card invite" style="margin:0 0 16px">${surprise}${ask}${msg}${INV.people.map(nm=>{ const l=INV.links[nm];
     return l?`<p class="lede" style="margin:0 0 8px"><b>${esc(nm)}’s link</b> — send it to ${esc(nm)}. Their answers go in the song too; they won’t see yours.</p>
       <input type="text" readonly value="${esc(l)}" onfocus="this.select()" style="width:100%;margin-bottom:8px">
       <div class="acts"><button type="button" data-copyinv="${esc(nm)}">${INV.copied===nm?'Copied':'Copy the message'}</button>
       ${navigator.share?`<button type="button" data-shareinv="${esc(nm)}">Share…</button>`:''}</div>`
       :`<p class="lede" style="margin:0 0 8px">Would ${esc(nm)} like to answer too? Two people remember different things.</p>
       <div class="acts"><button class="yes" type="button" data-invite="${esc(nm)}" ${INV.busy===nm?'disabled':''}>${INV.busy===nm?'One moment…':'Invite '+esc(nm)+' to answer'}</button></div>`; }).join('<hr style="border:0;border-top:1px solid var(--line,#ddd);margin:12px 0">')}
+    ${other}
     <p style="margin:10px 0 0"><button class="quiet" id="invhide" type="button">Not now</button></p></div>`;
 }
-async function inviteTo(nm){
-  INV.busy=nm; repaintAnswer();
-  try{ const r=await rpc('invite_to_answer',{p_token:TOKEN,p_name:nm});
-    if(!r||r.error||!r.answer_token) throw new Error((r&&r.error)||'invite_to_answer: no token');
-    INV.links[nm]=inviteUrl(r.answer_token); }
+async function inviteTo(nm,confirm){
+  nm=String(nm||'').trim(); if(!nm) return;
+  INV.busy=nm; INV.msg=null; INV.confirm=null; repaintAnswer();
+  try{
+    let r;
+    try{ r=await rpc('invite_to_answer_checked',{p_token:TOKEN,p_name:nm,p_confirm:!!confirm}); }
+    catch(e){                                      // before server-wanted-2026-10-09: the old function, the page's own check
+      if(!/HTTP 404/.test(String(e&&e.message))) throw e;
+      if(INV.kind==='gift'&&INV.recipients.includes(nameKey(nm))) r={error:'surprise',for:INV.for||nm};
+      else r=await rpc('invite_to_answer',{p_token:TOKEN,p_name:nm});
+    }
+    if(r&&r.error==='surprise'){ INV.msg=`This film is a surprise for ${r.for||INV.for||nm}, so they can\u2019t be invited to answer.`; }
+    else if(r&&r.confirm){ INV.confirm={name:nm,close:r.close_to}; }
+    else{
+      if(!r||r.error||!r.answer_token) throw new Error((r&&r.error)||'invite_to_answer: no token');
+      if(!INV.people.includes(nm)) INV.people.push(nm);
+      INV.links[nm]=inviteUrl(r.answer_token); INV.other='';
+    }
+  }
   catch(e){ report('invite_to_answer',e,{name:nm}); flash(false); }
   INV.busy=null; repaintAnswer();
 }
@@ -3021,6 +3054,9 @@ document.addEventListener('click',async e=>{
   if(t.dataset.copyinv!==undefined){ copyInvite(t.dataset.copyinv); return; }
   if(t.dataset.shareinv!==undefined){ shareInvite(t.dataset.shareinv); return; }
   if(t.id==='invhide'){ INV.hidden=true; repaintAnswer(); return; }
+  if(t.id==='invothergo'){ const v=($('invother')||{}).value||''; INV.other=v; inviteTo(v); return; }
+  if(t.id==='invdiff'&&INV.confirm){ const n=INV.confirm.name; inviteTo(n,true); return; }
+  if(t.id==='invsame'){ INV.confirm=null; INV.msg=null; INV.other=''; repaintAnswer(); return; }
   const sp=t.closest('[data-stpick]');
   if(sp){ linkStory(sp.dataset.stturn,sp.dataset.stpick); return; }
   if(t.id==='stdone'){ STP.done=true; paintAllDone(); scrollTo(0,0); return; }
