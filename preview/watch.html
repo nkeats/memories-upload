@@ -53,7 +53,18 @@ label.tick,label:has(> input[type=checkbox]),label:has(> input[type=radio]){min-
 .card,.box,.person,.c,.sheet .in,.in{background:var(--panel)!important;border-color:var(--line)!important;color:var(--fg)}
 .c img,.lo img,.side img,.dup img,figure img,.photo img,.strip img,.ph,video{box-shadow:0 1px 3px rgba(60,40,10,.28),0 0 0 1px #E2D3B6;border-radius:6px}
 #nav,.nav{background:var(--panel)!important;border-color:var(--line)!important;color:var(--fg)!important}
-.tag,.chk,.stamp,.step,.n,.badge{font-size:15px!important}
+/* 12 Oct: EVERY label at least 18 px (Nigel) - captions, counters, tallies, section names, the drop zone's line */
+.tag,.chk,.stamp,.step,.n,.badge,.tally,.tally *,.drop span,summary,.tips summary,h3,h4,.meta,.count,small{font-size:18px!important}
+.n{width:auto!important;min-width:32px;height:32px!important;padding:0 6px}
+/* 12 Oct: every clickable thing is a gold box (Nigel: "text they can click on needs to have something saying click") -
+   the photo drop zone is a gold button like every other action; the "What helps" opener, tick boxes' labels, genre cards and
+   group boxes are gold-bordered */
+.drop{background:var(--goldsoft)!important;border:2px solid var(--goldline)!important;border-radius:12px!important}
+.drop:hover,.drop.over{background:var(--brass)!important}
+.drop b{color:var(--fg)!important;font-weight:700}
+summary,.tips summary{background:var(--goldsoft)!important;border:2px solid var(--goldline)!important;border-radius:10px;
+  padding:10px 14px!important;min-height:44px;display:flex;align-items:center;color:var(--fg)!important}
+label.tick,.cbox,.genre,.bg{border:2px solid var(--goldline)!important;border-radius:10px;padding:8px 12px}
 .goldnote{background:var(--goldsoft);border:2px solid var(--goldline);border-radius:10px;padding:10px 14px;margin:0 0 16px;
   font-size:18px;color:var(--fg)}
 </style>
