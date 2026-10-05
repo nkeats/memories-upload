@@ -63,79 +63,6 @@ button.b{background:none;border:1px solid var(--line);color:var(--fg);border-rad
   border-radius:8px;padding:10px 12px;color:var(--fg);margin:8px 0 10px}
 .hide{display:none}
 </style>
-
-<style id="preview-warm">
-/* 11 Oct PREVIEW - the warm, light look (pipeline/make_preview_pages.py). Contrast >= 7:1, body text >= 18 px, targets >= 44 px. */
-:root{--ink:#FBF6EC;--panel:#FFFDF8;--p2:#F3EBDC;--line:#CDBB9A;--l2:#A8926B;--fg:#1F1A12;--fg2:#3F3628;--fg3:#4E4434;
-  --brass:#D4A24C;--green:#2A5234;--red:#7A2812;--goldtext:#5A3B06;--goldsoft:#F6E7C4;--goldline:#A87A22}
-html,body{background:var(--ink)!important;color:var(--fg)!important}
-body{font-size:18px!important;line-height:1.55}
-p,li,label,dd,dt,td,th,blockquote,textarea,select,input,.lede,.do,.small,.err,.hint,.note,.said,.fqhint{font-size:18px!important}
-h1,h2,h3,h4{color:var(--fg)!important}
-.small,.hint,.fqhint{color:var(--fg2)!important}
-.err,.fqerr,[role=alert]{color:var(--red)!important}
-.ok,.done{color:var(--green)!important}
-a{color:var(--goldtext)!important;text-decoration:underline!important;text-underline-offset:2px}
-a:hover{text-decoration-thickness:2px!important}
-/* every button is a gold box: main actions filled gold, the rest gold-bordered on pale gold */
-button,.b,.chip,.quiet,input[type=button],input[type=submit]{min-height:44px!important;min-width:44px!important;font-size:18px!important;
-  background:var(--goldsoft)!important;color:var(--fg)!important;border:2px solid var(--goldline)!important;border-radius:10px!important;
-  padding:10px 16px!important;cursor:pointer;font-weight:600}
-button.go,button.yes,button.big,button.b.yes,#go,#open,#fqnext,#tosort,#send,#allinYes,#rpick,.acts .yes{background:var(--brass)!important;
-  color:#1F1A12!important;border-color:var(--goldline)!important}
-button[aria-pressed=true]{background:var(--brass)!important;color:#1F1A12!important}
-button:disabled{opacity:.55}
-button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--goldline)!important;outline-offset:2px}
-input[type=text],input[type=email],input:not([type]),textarea,select{background:#fff!important;color:var(--fg)!important;
-  border:2px solid var(--l2)!important;min-height:48px;border-radius:8px}
-input::placeholder,textarea::placeholder{color:#6A5E4C!important;opacity:1}
-input[type=checkbox],input[type=radio]{width:26px!important;height:26px!important;accent-color:var(--goldline)}
-label.tick,label:has(> input[type=checkbox]),label:has(> input[type=radio]){min-height:44px;display:flex!important;align-items:center;gap:10px}
-.card,.box,.person,.c,.sheet .in,.in{background:var(--panel)!important;border-color:var(--line)!important;color:var(--fg)}
-.c img,.lo img,.side img,.dup img,figure img,.photo img,.strip img,.ph,video{box-shadow:0 1px 3px rgba(60,40,10,.28),0 0 0 1px #E2D3B6;border-radius:6px}
-#nav,.nav{background:var(--panel)!important;border-color:var(--line)!important;color:var(--fg)!important}
-/* 12 Oct: EVERY label at least 18 px (Nigel) - captions, counters, tallies, section names, the drop zone's line */
-.tag,.chk,.stamp,.step,.n,.badge,.tally,.tally *,.drop span,summary,.tips summary,h3,h4,.meta,.count,small{font-size:18px!important}
-.n{width:auto!important;min-width:32px;height:32px!important;padding:0 6px}
-/* 13 Oct: the "checking" badge sits on the photo's top-left corner, clear of the date under it (at 18 px it covered the date) */
-.c .chk{top:6px!important;bottom:auto!important;left:6px!important}
-/* 12 Oct: every clickable thing is a gold box (Nigel: "text they can click on needs to have something saying click") -
-   the photo drop zone is a gold button like every other action; the "What helps" opener, tick boxes' labels, genre cards and
-   group boxes are gold-bordered */
-.drop{background:var(--goldsoft)!important;border:2px solid var(--goldline)!important;border-radius:12px!important}
-.drop:hover,.drop.over{background:var(--brass)!important}
-.drop b{color:var(--fg)!important;font-weight:700}
-summary,.tips summary{background:var(--goldsoft)!important;border:2px solid var(--goldline)!important;border-radius:10px;
-  padding:10px 14px!important;min-height:44px;display:flex;align-items:center;color:var(--fg)!important}
-label.tick,.cbox,.genre,.bg{border:2px solid var(--goldline)!important;border-radius:10px;padding:8px 12px}
-.goldnote{background:var(--goldsoft);border:2px solid var(--goldline);border-radius:10px;padding:10px 14px;margin:0 0 16px;
-  font-size:18px;color:var(--fg)}
-</style>
-
-<script id="preview-base">
-/* 11 Oct PREVIEW: served from .../preview/, every link the page builds stays inside .../preview/ */
-function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?String(b).replace(/\/?$/,'/')+'preview/':b; }catch(e){ return b; } }
-</script>
-
-<script id="preview-note">
-/* 11 Oct PREVIEW: the first time on this page, one line saying what a gold box is - "tap" on a touch screen, "click" on a
-   computer, both when the page can't tell. */
-(function(){
-  var key='mf_goldnote_'+(location.pathname.split('/').pop()||'index.html');
-  try{ if(localStorage.getItem(key)) return; }catch(e){}
-  var coarse=false, fine=false;
-  try{ coarse=matchMedia('(pointer:coarse)').matches; fine=matchMedia('(pointer:fine)').matches; }catch(e){}
-  var how=(coarse&&!fine)?'tap it.':(fine&&!coarse)?'click it.':'tap it (or click it on a computer).';
-  function show(){
-    if(document.getElementById('goldnote')) return;
-    var p=document.createElement('p'); p.id='goldnote'; p.className='goldnote';
-    p.textContent='Anything in a gold box is a button - '+how;
-    var w=document.querySelector('.wrap')||document.body; w.insertBefore(p,w.firstChild);
-    try{ localStorage.setItem(key,'1'); }catch(e){}
-  }
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',show); else show();
-})();
-</script>
 </head>
 <body>
 <div class="wrap"><div id="stage"><p class="lede">One moment…</p></div></div>
@@ -194,7 +121,6 @@ function form(){
       <label for="email">Your email</label>
       <input class="t" id="email" type="email" maxlength="254" autocomplete="email" inputmode="email">
       <p class="small" style="margin-top:8px">We use it only for your film — to send you its link and the film itself. Never for anything else unless you ask.</p>
-      <p class="small" id="junknote" style="margin-top:8px"><b>Your link comes by email from hello@singmeamemory.com.</b> If it isn’t in your inbox in a minute or two, please look in your junk or spam folder.</p>
       <div class="hp" aria-hidden="true"><label for="website">Leave this empty</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
     </div>
     <div class="box notice" id="notice"><h2>Your privacy, in plain words</h2>
@@ -240,29 +166,16 @@ async function start(){
   }catch(e){ report('create_film',e); BUSY=false; $('go').textContent='Start my film'; ready(); fail('That didn’t go through. Please check your connection and try again.'); }
 }
 function done(token){
-  /* 11 Oct PREVIEW (Nigel 5 Oct: "The link will confuse people ... it needs to be emailed directly to them"): no raw link, no
-     copying, no bookmarking - the link is in their email; one big button now; "Send it again" (at most 3 a day, notify v4). */
-  const base=(__pv(C.site_base_url)||new URL('.',location.href).href).replace(/\/?$/,'/');
+  const base=(C.site_base_url||new URL('.',location.href).href).replace(/\/?$/,'/');
   const link=`${base}index.html?t=${encodeURIComponent(token)}`;
-  const em=(document.getElementById('email')||{}).value||'';
-  $('stage').innerHTML=`<h1>Check your email</h1>
-    <p class="do" id="sentto">We’ve sent your private link to <b>${esc(em.trim())}</b> from hello@singmeamemory.com. Use it any time to come back.</p>
-    <p style="margin:22px 0"><button class="go" id="open" type="button">Start my film now →</button></p>
-    <div class="box" id="again"><p class="lede" style="margin:0 0 10px">Didn’t get it? Please look in your junk or spam folder first.</p>
-      <button class="b" id="resend" type="button">Didn’t get it? Send it again</button>
-      <p class="small" id="resendmsg" role="status" style="margin:10px 0 0"></p></div>`;
-  $('open').dataset.href=link;
+  $('stage').innerHTML=`<h1>Your film is ready to start</h1>
+    <p class="do">This is your film’s private link. Keep it — it’s the way back to your film, and anyone with it can open it.</p>
+    <div class="link" id="mylink">${esc(link)}</div>
+    <p><button class="b" id="copy">Copy the link</button> <span class="small" id="copied"></span></p>
+    <p class="small" style="margin:6px 0 22px">Tip: bookmark the next page, or email the link to yourself.</p>
+    <button class="go" id="open">Open my film →</button>`;
   $('open').addEventListener('click',()=>{ location.href=link; });
-  $('resend').addEventListener('click',async()=>{
-    const b=$('resend'), m=$('resendmsg'); b.disabled=true; m.textContent='Sending…';
-    let r=null;
-    try{ const x=await fetch(`${SB}/functions/v1/notify`,{method:'POST',headers:HDR,body:JSON.stringify({action:'welcome_again',token})}); r=await x.json(); }
-    catch(e){ report('welcome_again',e); }
-    if(r&&r.sent){ m.textContent=`Sent again to ${em.trim()}. It can take a minute or two - and please check your junk folder.`; }
-    else if(r&&r.why==='limit'){ m.textContent='We’ve already sent it 3 times today. Please check your junk folder, or email hello@singmeamemory.com and we’ll help.'; }
-    else{ m.textContent='We couldn’t send it just now. Please try again in a minute, or email hello@singmeamemory.com and we’ll help.'; }
-    b.disabled=false;
-  });
+  $('copy').addEventListener('click',async()=>{ try{ await navigator.clipboard.writeText(link); $('copied').textContent='Copied.'; }catch(_){ $('copied').textContent='Press and hold the link to copy it.'; } });
 }
 document.addEventListener('click',ev=>{
   const b=ev.target.closest('button'); if(!b) return;

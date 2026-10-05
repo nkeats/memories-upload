@@ -77,89 +77,6 @@ ol.steps{padding-left:20px;margin:6px 0 10px}ol.steps li{margin:0 0 8px;line-hei
 ul.people{list-style:none;padding:0;margin:10px 0}ul.people li{margin:0 0 14px;line-height:1.5}
 .plink{font-family:ui-monospace,Menlo,monospace;font-size:13px;word-break:break-all;background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0}
 </style>
-
-<style id="preview-warm">
-/* 11 Oct PREVIEW - the warm, light look (pipeline/make_preview_pages.py). Contrast >= 7:1, body text >= 18 px, targets >= 44 px. */
-:root{--ink:#FBF6EC;--panel:#FFFDF8;--p2:#F3EBDC;--line:#CDBB9A;--l2:#A8926B;--fg:#1F1A12;--fg2:#3F3628;--fg3:#4E4434;
-  --brass:#D4A24C;--green:#2A5234;--red:#7A2812;--goldtext:#5A3B06;--goldsoft:#F6E7C4;--goldline:#A87A22}
-html,body{background:var(--ink)!important;color:var(--fg)!important}
-body{font-size:18px!important;line-height:1.55}
-p,li,label,dd,dt,td,th,blockquote,textarea,select,input,.lede,.do,.small,.err,.hint,.note,.said,.fqhint{font-size:18px!important}
-h1,h2,h3,h4{color:var(--fg)!important}
-.small,.hint,.fqhint{color:var(--fg2)!important}
-.err,.fqerr,[role=alert]{color:var(--red)!important}
-.ok,.done{color:var(--green)!important}
-a{color:var(--goldtext)!important;text-decoration:underline!important;text-underline-offset:2px}
-a:hover{text-decoration-thickness:2px!important}
-/* every button is a gold box: main actions filled gold, the rest gold-bordered on pale gold */
-button,.b,.chip,.quiet,input[type=button],input[type=submit]{min-height:44px!important;min-width:44px!important;font-size:18px!important;
-  background:var(--goldsoft)!important;color:var(--fg)!important;border:2px solid var(--goldline)!important;border-radius:10px!important;
-  padding:10px 16px!important;cursor:pointer;font-weight:600}
-button.go,button.yes,button.big,button.b.yes,#go,#open,#fqnext,#tosort,#send,#allinYes,#rpick,.acts .yes{background:var(--brass)!important;
-  color:#1F1A12!important;border-color:var(--goldline)!important}
-button[aria-pressed=true]{background:var(--brass)!important;color:#1F1A12!important}
-button:disabled{opacity:.55}
-button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--goldline)!important;outline-offset:2px}
-input[type=text],input[type=email],input:not([type]),textarea,select{background:#fff!important;color:var(--fg)!important;
-  border:2px solid var(--l2)!important;min-height:48px;border-radius:8px}
-input::placeholder,textarea::placeholder{color:#6A5E4C!important;opacity:1}
-input[type=checkbox],input[type=radio]{width:26px!important;height:26px!important;accent-color:var(--goldline)}
-label.tick,label:has(> input[type=checkbox]),label:has(> input[type=radio]){min-height:44px;display:flex!important;align-items:center;gap:10px}
-.card,.box,.person,.c,.sheet .in,.in{background:var(--panel)!important;border-color:var(--line)!important;color:var(--fg)}
-.c img,.lo img,.side img,.dup img,figure img,.photo img,.strip img,.ph,video{box-shadow:0 1px 3px rgba(60,40,10,.28),0 0 0 1px #E2D3B6;border-radius:6px}
-#nav,.nav{background:var(--panel)!important;border-color:var(--line)!important;color:var(--fg)!important}
-/* 12 Oct: EVERY label at least 18 px (Nigel) - captions, counters, tallies, section names, the drop zone's line */
-.tag,.chk,.stamp,.step,.n,.badge,.tally,.tally *,.drop span,summary,.tips summary,h3,h4,.meta,.count,small{font-size:18px!important}
-.n{width:auto!important;min-width:32px;height:32px!important;padding:0 6px}
-/* 13 Oct: the "checking" badge sits on the photo's top-left corner, clear of the date under it (at 18 px it covered the date) */
-.c .chk{top:6px!important;bottom:auto!important;left:6px!important}
-/* 12 Oct: every clickable thing is a gold box (Nigel: "text they can click on needs to have something saying click") -
-   the photo drop zone is a gold button like every other action; the "What helps" opener, tick boxes' labels, genre cards and
-   group boxes are gold-bordered */
-.drop{background:var(--goldsoft)!important;border:2px solid var(--goldline)!important;border-radius:12px!important}
-.drop:hover,.drop.over{background:var(--brass)!important}
-.drop b{color:var(--fg)!important;font-weight:700}
-summary,.tips summary{background:var(--goldsoft)!important;border:2px solid var(--goldline)!important;border-radius:10px;
-  padding:10px 14px!important;min-height:44px;display:flex;align-items:center;color:var(--fg)!important}
-label.tick,.cbox,.genre,.bg{border:2px solid var(--goldline)!important;border-radius:10px;padding:8px 12px}
-.goldnote{background:var(--goldsoft);border:2px solid var(--goldline);border-radius:10px;padding:10px 14px;margin:0 0 16px;
-  font-size:18px;color:var(--fg)}
-</style>
-
-<script id="preview-base">
-/* 11 Oct PREVIEW: served from .../preview/, every link the page builds stays inside .../preview/ */
-function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?String(b).replace(/\/?$/,'/')+'preview/':b; }catch(e){ return b; } }
-</script>
-
-<script id="preview-note">
-/* 11 Oct PREVIEW: the first time on this page, one line saying what a gold box is - "tap" on a touch screen, "click" on a
-   computer, both when the page can't tell. */
-(function(){
-  var key='mf_goldnote_'+(location.pathname.split('/').pop()||'index.html');
-  try{ if(localStorage.getItem(key)) return; }catch(e){}
-  var coarse=false, fine=false;
-  try{ coarse=matchMedia('(pointer:coarse)').matches; fine=matchMedia('(pointer:fine)').matches; }catch(e){}
-  var how=(coarse&&!fine)?'tap it.':(fine&&!coarse)?'click it.':'tap it (or click it on a computer).';
-  function show(){
-    if(document.getElementById('goldnote')) return;
-    var p=document.createElement('p'); p.id='goldnote'; p.className='goldnote';
-    p.textContent='Anything in a gold box is a button - '+how;
-    var w=document.querySelector('.wrap')||document.body; w.insertBefore(p,w.firstChild);
-    try{ localStorage.setItem(key,'1'); }catch(e){}
-  }
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',show); else show();
-})();
-</script>
-
-<style id="back-to-film">
-/* 15 Oct: the "Your data" way back - a filled gold button, full width on a phone */
-a.b.back{display:inline-flex!important;align-items:center;justify-content:center;min-height:48px!important;background:var(--brass)!important;
-  color:#1F1A12!important;border:2px solid var(--goldline)!important;border-radius:10px;padding:10px 18px!important;font-size:18px!important;
-  font-weight:700;text-decoration:none!important}
-.backrow{margin:0 0 16px}
-#data .backrow:last-child{margin:20px 0 0}
-@media (max-width:560px){ a.b.back{display:flex!important;width:100%;box-sizing:border-box} }
-</style>
 </head>
 <body>
 <div class="wrap"><div id="stage"><p class="lede">Opening your film…</p></div></div>
@@ -189,7 +106,7 @@ window.addEventListener('error',ev=>report('uncaught',ev.error||ev.message));
 window.addEventListener('unhandledrejection',ev=>report('unhandled promise',ev.reason));
 
 let D=null, FILM=null, ERASE_STEP=0, SHARE_STEP=0, SITE_BASE=null;
-try{ rpc('get_start_config').then(c=>{ if(c&&__pv(c.site_base_url)) SITE_BASE=String(__pv(c.site_base_url)).replace(/\/?$/,'/'); }).catch(()=>{}); }catch(_){}
+try{ rpc('get_start_config').then(c=>{ if(c&&c.site_base_url) SITE_BASE=String(c.site_base_url).replace(/\/?$/,'/'); }).catch(()=>{}); }catch(_){}
 const pageUrl=(page,q)=>(SITE_BASE||new URL('.',location.href).href)+page+'?'+q;
 const fmtDate=d=>new Date(d).toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'});
 
@@ -221,28 +138,14 @@ function paint(){
   }else{
     h+=`<h1>Your film</h1><p class="lede">Your film isn’t ready yet. We’ll let you know when it is.</p>`;
   }
-  h+=`<div class="box" id="data">${backHTML('databack1')}<h2>Your data</h2>
+  h+=`<div class="box" id="data"><h2>Your data</h2>
       <p class="lede">Everything you gave us and everything we made from it is yours.</p>
       ${keepHTML()}
-      ${dataHTML()}${backHTML('databack2')}</div>`;
+      ${dataHTML()}</div>`;
   $('stage').innerHTML=h;
   const f=$('rfile'); if(f){ f.addEventListener('change',sendReaction); offerReady(); }
 }
 /* 4 Oct: how long we keep it - the server's numbers (get_delivery.retention), with dates once the film is delivered */
-/* 15 Oct (Nigel): "Your data" needs a clear way back - top and bottom. Back to where they came from: their own page
-   (index.html) when they came from there; otherwise the top of this page when the film is here, else their own page. */
-function cameFrom(){
-  try{ const r=new URL(document.referrer); return r.origin===location.origin&&/\/index\.html$/.test(r.pathname)?r.href:''; }catch(e){ return ''; }
-}
-function backHTML(id){
-  const from=cameFrom();
-  const href=from||(D&&D.film_ready?'#top':`index.html?t=${encodeURIComponent(TOKEN)}`);
-  return `<div class="backrow"><a class="b back" id="${id}" href="${esc(href)}">← Back to my film</a></div>`;
-}
-document.addEventListener('click',e=>{
-  const a=e.target.closest&&e.target.closest('a.back'); if(!a) return;
-  if(a.getAttribute('href')==='#top'){ e.preventDefault(); history.replaceState(null,'',location.pathname+location.search); window.scrollTo(0,0); }
-});
 function keepHTML(){
   const r=D.retention; if(!r||!r.working_days||!r.film_months) return '';
   const fmt=d=>d.toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'});
