@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="build" content="2026-10-16b">
+<title>Add photos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,300;6..72,400&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<!--
+  addphotos.html - MORE PHOTOS (Nigel 16 Oct 2026). Opened two ways, always with a photo request's OWN 64-hex token (never the
+  film's upload token): addphotos.html?r=<token>
+    * from the "more_photos" email (notify v6) after they submitted - Done sends the film back to 'submitted';
+    * from their own page before they submit (index.html -> start_photo_request) - Done takes them back to their page, using the
+      address the SERVER returns for this request (never one from this page's URL).
+  It shows ONLY the memories that need photos - each in the customer's own words with its count ("1 photo - add 3 more"), the
+  photos already there and its own gold "Add photos" button - a line for the whole film when it is short, and Done. Nothing else
+  on the film can be seen or changed. Every call goes to the upload function (v17) with this token only:
+    {photo_request, action:'request'}  -> {kind, film:{usable,min}, items:[{chapter_id, phrase, usable, min, photos:[{id,url}]}]}
+    {photo_request, action:'sign', chapter_id, filename, mime, size, ...} -> {asset_id, signed_url}; PUT the file;
+    {photo_request, action:'confirm', asset_id, chapter_id} -> {ok, added}   (the server puts it into that LISTED memory)
+    {photo_request, action:'done'} -> {ok, added, kind, back_token?}         (410 everywhere: this link has finished)
+  Photos only (no videos). New photos then go through the normal checks on our side.
+  The look: the live pages' warm look (18 px text, 7:1 contrast, 44 px targets, every button a gold box). Phone first.
+  Test: Song/pipeline/page_tests_16_addphotos.py (phone 390 x 844).
+-->
+<style>
+:root{--ink:#FBF6EC;--panel:#FFFDF8;--line:#CDBB9A;--l2:#A8926B;--fg:#1F1A12;--fg2:#3F3628;--brass:#D4A24C;--green:#2A5234;
+  --red:#7A2812;--goldtext:#5A3B06;--goldsoft:#F6E7C4;--goldline:#A87A22}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--ink);color:var(--fg)}
+body{margin:0;font-family:"Public Sans",sans-serif;font-size:18px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:640px;margin:0 auto;padding:24px 16px 60px}
+h1{font-family:"Newsreader",serif;font-weight:400;font-size:clamp(30px,7.5vw,40px);margin:8px 0 12px;line-height:1.15;color:var(--fg)}
+h2.mem{font-family:"Newsreader",serif;font-weight:400;font-size:26px;margin:0 0 4px;color:var(--fg)}
+p{font-size:18px;margin:0 0 14px;color:var(--fg)}
+.lede{color:var(--fg2)}
+.count{font-weight:600;color:var(--fg)}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin:0 0 18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin:6px 0 4px}
+.ph{position:relative;border-radius:8px;overflow:hidden;background:#EFE5D2;aspect-ratio:1/1;box-shadow:0 1px 3px rgba(60,40,10,.28),0 0 0 1px #E2D3B6}
+.ph img{width:100%;height:100%;object-fit:cover;display:block}
+.ph .tag{position:absolute;left:6px;top:6px;background:var(--panel);color:var(--fg);border:2px solid var(--goldline);border-radius:8px;
+  font-size:18px;padding:2px 8px}
+.ph .none{display:flex;align-items:center;justify-content:center;height:100%;font-size:18px;color:var(--fg2);text-align:center;padding:8px}
+button{font:inherit;font-size:20px;font-weight:600;min-height:56px;min-width:44px;border-radius:12px;cursor:pointer;
+  background:var(--goldsoft);color:var(--fg);border:2px solid var(--goldline);padding:12px 22px}
+button.go{background:var(--brass);color:#1F1A12;width:100%;font-size:22px;min-height:60px}
+button#done{width:100%}
+button:disabled{opacity:.55;cursor:default}
+button:focus-visible{outline:3px solid var(--goldline);outline-offset:2px}
+.row{margin:14px 0}
+.err{color:var(--red)}
+.ok{color:var(--green)}
+#file{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+</style>
+</head>
+<body>
+<div class="wrap" id="stage"><p class="lede">One moment…</p></div>
+<input type="file" id="file" accept="image/*,.heic,.heif" multiple>
+<script>
+const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
+const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
+const HDR={'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY};
+const R=(new URLSearchParams(location.search).get('r')||'').trim().toLowerCase();
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const cap=s=>s?s.charAt(0).toUpperCase()+s.slice(1):'';
+const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
+let REQ=null, BUSY=null, FOR=null;
+const IMG=/\.(jpe?g|png|webp|heic|heif|tiff?)$/i;
+function mimeOf(f){ if(f.type) return f.type; const e=(f.name.split('.').pop()||'').toLowerCase();
+  return {jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',heic:'image/heic',heif:'image/heif',tif:'image/tiff',tiff:'image/tiff'}[e]||''; }
+async function call(body){
+  const r=await fetch(`${SB}/functions/v1/upload`,{method:'POST',headers:HDR,body:JSON.stringify({photo_request:R,...body})});
+  let j={}; try{ j=await r.json(); }catch(e){}
+  return {status:r.status,j};
+}
+function finished(j){
+  $('stage').innerHTML=`<h1>This link has finished</h1><p class="lede">${esc((j&&j.detail)||'Thank you - we have everything we need.')}</p>`;
+}
+function countLine(it){
+  const more=Math.max(0,(it.min||0)-(it.usable||0));
+  return more>0?`${plural(it.usable||0,'photo')} - add ${more} more`:`${plural(it.usable||0,'photo')} - that's enough, but more are welcome`;
+}
+function filmLine(){
+  const f=REQ.film||{}, more=Math.max(0,(f.min||0)-(f.usable||0));
+  return more>0?`<p class="box" id="filmline">Your whole film has ${plural(f.usable||0,'photo')}. A song needs about ${f.min}, so please add ${more} more to any of these moments.</p>`:'';
+}
+function itemHTML(it,k){
+  const all=it.photos||[], extra=Math.max(0,all.length-4);      // at most 4 a moment on screen - the rest as "+N more"
+  const ph=all.slice(0,extra?3:4).map(p=>`<div class="ph">${p.url?`<img src="${esc(p.url)}" alt="A photo already in this moment">`:'<div class="none">A photo</div>'}</div>`).join('')
+    +(extra?`<div class="ph"><div class="none">+${extra+1} more</div></div>`:'')
+    +(it.fresh||[]).map(u=>`<div class="ph"><img src="${esc(u)}" alt="A photo you just added"><span class="tag">Added ✓</span></div>`).join('');
+  return `<div class="box item" data-item="${k}">
+    <h2 class="mem">${esc(cap(it.phrase))}</h2>
+    <p class="count" id="count${k}">${esc(countLine(it))}</p>
+    ${ph?`<div class="grid">${ph}</div>`:''}
+    <div class="row"><button class="go" type="button" data-add="${k}" ${BUSY!==null?'disabled':''}>${BUSY===k?'Adding…':'Add photos'}</button></div>
+    <p class="${it.note&&it.note.bad?'err':'ok'}" role="status" id="note${k}">${esc(it.note?it.note.text:'')}</p></div>`;
+}
+function paint(){
+  const before=REQ.kind==='before_submit';
+  $('stage').innerHTML=`<h1>${before?'A few more photos':'A few more photos, please'}</h1>
+    <p class="lede">In your song, each moment gets about a line for every photo. ${REQ.items.length===1?'This moment needs':'These moments need'} a few more to get a proper verse.</p>
+    ${filmLine()}
+    ${REQ.items.map(itemHTML).join('')}
+    <div class="row"><button id="done" type="button" ${BUSY!==null?'disabled':''}>Done</button></div>
+    <p class="lede">Tap the button, add your photos, tap Done - nothing else changes.</p>`;
+}
+async function load(){
+  if(!/^[0-9a-f]{64}$/.test(R)){ finished({detail:'Please open the link exactly as it came.'}); return; }
+  let res; try{ res=await call({action:'request'}); }catch(e){ $('stage').innerHTML='<h1>One moment</h1><p class="err">We couldn’t reach us just now. Please try again in a minute.</p>'; return; }
+  if(res.status===410||res.status===401){ finished(res.j); return; }
+  if(!res.j||!Array.isArray(res.j.items)||!res.j.items.length){ $('stage').innerHTML='<h1>One moment</h1><p class="err">Something went wrong on our side. Please try again in a minute.</p>'; return; }
+  REQ=res.j; paint();
+}
+async function sha256(f){ try{ const b=await crypto.subtle.digest('SHA-256',await f.arrayBuffer()); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join(''); }catch(e){ return null; } }
+async function addOne(it,f){
+  const mime=mimeOf(f);
+  if(!/^image\//.test(mime)&&!IMG.test(f.name)) return {bad:`“${f.name}” isn’t a photo - this is for photos only.`};
+  const s=await call({action:'sign',chapter_id:it.chapter_id,filename:f.name,mime,size:f.size,
+                      taken_at:f.lastModified?new Date(f.lastModified).toISOString():null,date_source:f.lastModified?'modified':'none',sha256:await sha256(f)});
+  if(s.status===410){ finished(s.j); return {stop:true}; }
+  if(s.j&&s.j.duplicate) return {bad:'You’ve already added that one.'};
+  if(!s.j||!s.j.signed_url) return {bad:(s.j&&(s.j.detail||s.j.error))||'That one didn’t go through. Please try again.'};
+  const put=await fetch(s.j.signed_url,{method:'PUT',headers:{'Content-Type':mime||'application/octet-stream'},body:f});
+  if(!put.ok){ await call({action:'discard',asset_id:s.j.asset_id}); return {bad:'That one didn’t go through. Please try again.'}; }
+  const c=await call({action:'confirm',asset_id:s.j.asset_id,chapter_id:it.chapter_id});
+  if(c.status===410){ finished(c.j); return {stop:true}; }
+  if(!c.j||!c.j.ok) return {bad:(c.j&&(c.j.detail||c.j.error))||'That one didn’t go through. Please try again.'};
+  it.usable=(it.usable||0)+1; if(REQ.film) REQ.film.usable=(REQ.film.usable||0)+1;
+  (it.fresh=it.fresh||[]).push(URL.createObjectURL(f));
+  return {ok:true};
+}
+$('file').addEventListener('change',async()=>{
+  const files=[...$('file').files]; $('file').value='';
+  const k=FOR; FOR=null;
+  if(!files.length||k===null||!REQ.items[k]) return;
+  const it=REQ.items[k];
+  BUSY=k; it.note={text:'Adding your photo'+(files.length>1?'s':'')+'…'}; paint();
+  let added=0, bad=null;
+  for(const f of files){
+    let r; try{ r=await addOne(it,f); }catch(e){ r={bad:'That one didn’t go through. Please check your connection and try again.'}; }
+    if(r.stop) return;
+    if(r.ok) added++; else bad=r.bad;
+  }
+  BUSY=null;
+  it.note=bad?{bad:true,text:bad}:{text:`Thank you - ${added===1?'that photo is':'those photos are'} in.`};
+  paint();
+});
+document.addEventListener('click',async e=>{
+  const t=e.target.closest('button'); if(!t||t.disabled) return;
+  if(t.dataset.add!==undefined){ FOR=+t.dataset.add; $('file').click(); return; }
+  if(t.id==='done'){
+    t.disabled=true; t.textContent='One moment…';
+    let d; try{ d=await call({action:'done'}); }catch(x){ d=null; }
+    if(d&&d.status===410){ finished(d.j); return; }
+    if(!d||!d.j||!d.j.ok){ t.disabled=false; t.textContent='Done'; return; }
+    if(d.j.back_token&&/^[A-Za-z0-9_-]{32,128}$/.test(d.j.back_token)){        // from their own page: back there (the server's value)
+      location.href=`index.html?t=${encodeURIComponent(d.j.back_token)}`; return;
+    }
+    $('stage').innerHTML=`<h1>Thank you</h1><p>${(d.j.added||0)>0?'We’ll put your new photos into your film and its song.'
+      :'That’s fine - we’ll carry on with the photos you sent.'} We’ll email you when the words are ready to read.</p>
+      <p class="lede">You can close this page now.</p>`;
+  }
+});
+load();
+</script>
+</body>
+</html>

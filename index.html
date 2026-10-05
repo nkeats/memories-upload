@@ -1173,8 +1173,58 @@ function lockForQuote(){
   if(f) f.disabled=QUOTE;
 }
 function uploadNav(){
-  nav(`<button class="go" id="allin" ${inSoFar?'':'disabled'}>That's all my photos →</button>`,
-      inSoFar?`<b>${inSoFar}</b><br>photo${inSoFar===1?'':'s'} in`:`nothing in yet`);
+  nav(`<button class="go" id="allin" ${inSoFar?'':'disabled'}>That's all my photos →</button>`, countLine(),
+      false, '');
+  photoCounts().then(c=>{ const el=$('nav')&&$('nav').querySelector('#pcount'); if(c&&el&&el.innerHTML!==countInner()) el.innerHTML=countInner(); });
+}
+/* 16 Oct (Nigel: NO FILM UNDER 3 MINUTES). The USABLE count is the server's (photo_counts: burst extras, duplicates, blurry and
+   excluded photos set aside; a video counts its seconds; the occasion's OWN minimum). It is shown as they upload; "That's all
+   my photos" and "Finished" go on only at the minimums - or with "I don't have enough photos", which sends what they have and
+   tells Nigel. Never a dead end: if the server can't count (photo_counts missing), nothing is held back. */
+let PC=null, PC_AT=0, SHORT_FOR=null;
+async function photoCounts(force){
+  if(!force&&PC&&Date.now()-PC_AT<5000) return PC;
+  try{ const r=await rpc('photo_counts',{p_token:TOKEN}); if(r&&r.film){ PC=r; PC_AT=Date.now(); } }catch(_){}
+  return PC;
+}
+function countInner(){
+  if(!PC||!PC.film) return inSoFar?`<b>${inSoFar}</b><br>photo${inSoFar===1?'':'s'} in`:`nothing in yet`;
+  const f=PC.film;
+  return f.short>0?`<b>${f.usable} of ${f.min}</b> photos<br>add ${f.short} more`:`<b>${f.usable}</b> photos<br>enough for your film`;
+}
+function countLine(){ return `<span id="pcount">${countInner()}</span>`; }
+function needsMore(c){ return !!(c&&c.film&&!c.ok&&!c.passed&&!c.sent_short); }
+function shortSheet(c,where){
+  const f=c.film, mems=(c.memories||[]).filter(m=>m.usable<m.min);
+  const occ=esc((J.occasion_label||J.occasion||'').toLowerCase()||'your');
+  let h=`<div class="in" id="shortsheet"><h3>A few more photos, please</h3>`;
+  if(f.short>0) h+=`<p>You have <b>${f.usable}</b> photo${f.usable===1?'':'s'} we can use. ${/^[aeiou]/.test(occ)?'An':'A'} ${occ} film needs at least <b>${f.min}</b> to make a 3-minute song - please add <b>${f.short}</b> more if you have them.</p>`;
+  if(where==='finish'&&mems.length){
+    h+=`<p>${f.short>0?'And these':'These'} moments need a few more photos each:</p><ul class="shortmems">`+
+       mems.map(m=>`<li><b>${esc(m.title||'A moment')}</b>: ${m.usable} photo${m.usable===1?'':'s'} - add ${m.short} more</li>`).join('')+`</ul>`;
+  }
+  h+=`<p class="small">A moment with only one photo only gets a line in the song. Photos that are almost the same as another, or blurry, don't count.</p>
+    <div class="acts"><button class="yes" id="shortAdd" type="button">Add more photos</button>
+    <button id="shortSend" type="button">I don't have enough photos</button></div>
+    <p class="small" id="shortmsg" role="status"></p></div>`;
+  return h;
+}
+function showShort(c,where){ SHORT_FOR=where; const s=$('sheet'); s.innerHTML=shortSheet(c,where); s.classList.remove('hide'); }
+async function shortAdd(){
+  if(SHORT_FOR==='upload'){ $('sheet').classList.add('hide'); return; }
+  const m=$('shortmsg'); if(m) m.textContent='One moment…';
+  try{ const r=await rpc('start_photo_request',{p_token:TOKEN});
+    if(r&&r.token){ location.href=`addphotos.html?r=${encodeURIComponent(r.token)}`; return; }
+    throw new Error((r&&r.error)||'start_photo_request'); }
+  catch(e){ report('start_photo_request',e); if(m) m.textContent='We couldn’t open that just now. Please try again in a minute, or press "I don’t have enough photos".'; }
+}
+async function shortSend(){
+  const b=$('shortSend'), m=$('shortmsg'); if(b) b.disabled=true; if(m) m.textContent='One moment…';
+  try{ const r=await rpc('send_without_enough_photos',{p_token:TOKEN}); if(!r||r.error) throw new Error((r&&r.error)||'send_without_enough_photos'); }
+  catch(e){ report('send_without_enough_photos',e); if(b) b.disabled=false; if(m) m.textContent='That didn’t go through. Please try again.'; return; }
+  if(PC) PC.sent_short=true;
+  $('sheet').classList.add('hide');
+  if(SHORT_FOR==='upload') askAllIn(true); else finishFilm($('tomusic'),true);
 }
 
 /* date detection: EXIF, then filename, then file date.
@@ -1444,7 +1494,9 @@ async function look(){
   }).join('');
   uploadNav();
 }
-function askAllIn(){
+async function askAllIn(sent){
+  const c=sent?null:await photoCounts(true);       // sent: they chose to send what they have
+  if(needsMore(c)&&c.film.short>0){ showShort(c,'upload'); return; }
   const s=$('sheet');
   s.innerHTML=`<div class="in"><h3>Are they all in?</h3>
     <p>You have ${plural(inSoFar,'photo')} in. After this we get them ready for you, and you won't be able to add more.</p>
@@ -2650,7 +2702,9 @@ async function toMusic(){
   if(G.chosen&&G.chosen.confirmed){ await finishFilm(b); return; }
   prog({screen:'genre'}); showGenre();
 }
-async function finishFilm(b){
+async function finishFilm(b,sent){
+  const c=sent?null:await photoCounts(true);                 // 16 Oct: the minimums before the film is sent
+  if(needsMore(c)){ if(b){ b.disabled=false; b.textContent='Finished'; } showShort(c,'finish'); return; }
   try{ await setStage('submitted'); }
   catch(e){ report('set_stage submitted',e); if(b){ b.disabled=false; b.textContent='Finished'; }
     const before=$('nav').querySelector('.before'); if(before) before.textContent="That didn't go through. Please press Finished again."; return; }
@@ -3065,6 +3119,8 @@ document.addEventListener('click',async e=>{
   /* upload */
   if(t.dataset.anyway!==undefined){ const q=queue[+t.dataset.anyway]; if(q&&q.status==='dup'&&!QUOTE){ q.status='ready'; q.force=true; paintQueue(); $('send').disabled=false; } return; }
   if(t.id==='allin'){ askAllIn(); return; }
+  if(t.id==='shortAdd'){ shortAdd(); return; }
+  if(t.id==='shortSend'){ shortSend(); return; }
   if(t.id==='allinNo'){ $('sheet').classList.add('hide'); return; }
   if(t.id==='allinYes'){ finishUpload(); return; }
   if(t.id==='bznext'){ burstNext(); return; }
