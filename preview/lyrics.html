@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="build" content="2026-10-04a">
+<title>The words to your song</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Great+Vibes&family=Newsreader:opsz,wght@6..72,300;6..72,400&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<!--
+  lyrics.html?t=<the film owner's token> - 27 Sep 2026.
+  The customer reads the lyric, changes any line, and approves it. NOTHING is sung until they do
+  (memory-film-customer: lyric approval is the category's #1 missing feature, and it catches our
+  fact errors). Approving sets lyrics.status = 'approved'; the PC worker then makes the song.
+  RPCs: get_lyric, edit_lyric_line, approve_lyric - all check the token and answer HTTP 200 with
+  {"error": ...} on a refusal, so every body is read. Only the owner's token opens this page;
+  a second answerer's link does not (the lyric is the buyer's to approve).
+  1 Oct: THE CARDS above the lyric - "Your film opens with... and ends with..." - from get_lyric's cards {start, finish,
+  start_suggested, finish_suggested}. The customer changes the words (start <= 60, finish <= 90 characters) or removes a
+  card; set_cards(p_token, p_start, p_finish): "" = no card, null = use our suggestion. approve_lyric writes the cards
+  shown into the film. Nothing is put on screen in their film that they have not seen here.
+  3 Oct (Nigel): THE CARD PHOTOGRAPHS beside the words - the opening and closing photographs we chose (get_card_photos: {start:
+  {auto, chosen}, finish: {auto, chosen}, choices: [asset ids of the film's photographs that show its people], locked}); "Choose a
+  different photo" opens those; "Use our choice" goes back to ours. set_card_photo(p_token, p_which, p_asset) - null = ours.
+  Pictures come from gallery (signed URLs). No photo answer (an older lyric, the RPC missing) = the words alone, as before.
+  4 Oct (Nigel): THE CARD STYLE beside the card words and photographs - a preview of each style the pipeline has (framed,
+  plain: pipeline/cards), drawn with THEIR words and THEIR photograph; they tap one. get_frame_style(p_token) -> {style,
+  locked, styles}; set_frame_style(p_token, p_style) -> collections.frame_style. Framed is the default; fixed once the lyric is
+  approved (like the words and photographs). The preview is the style's look (frame, lettering, darkening), not the exact
+  frame: in the film the words are placed away from faces and beside a photograph that does not fill the screen - the
+  preview says so. No style answer (the RPC missing) = no style section, as before. Test: pipeline/page_tests_front "STYLE".
+-->
+<style>
+:root{--ink:#0C0D10;--panel:#15171C;--p2:#1D1F26;--line:#2A2E37;--l2:#3C414C;
+  --fg:#F4F1EA;--fg2:#9BA0AB;--fg3:#6B707A;--brass:#D4A24C;--green:#5E8C6A;--red:#B4543A}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--ink);color:var(--fg);font-family:"Public Sans",sans-serif;
+  font-size:17px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding:20px 16px calc(170px + env(safe-area-inset-bottom))}
+h1{font-family:"Newsreader",serif;font-weight:300;font-size:clamp(28px,7vw,38px);margin:10px 0 8px;line-height:1.18}
+p.do{font-size:clamp(19px,4.6vw,23px);line-height:1.5;margin:0 0 14px;max-width:56ch}
+p.lede{color:var(--fg2);font-size:16.5px;line-height:1.6;margin:0 0 26px;max-width:56ch}
+.sec{margin:0 0 26px}
+.sec h3{font-size:13px;color:var(--fg3);letter-spacing:.06em;text-transform:uppercase;font-weight:500;margin:0 0 8px}
+.ln{display:block;width:100%;text-align:left;background:none;border:1px solid transparent;border-radius:7px;
+  color:var(--fg);font-family:"Newsreader",serif;font-size:clamp(19px,4.8vw,22px);line-height:1.45;
+  padding:7px 10px;margin:0 -10px;cursor:pointer}
+.ln{text-decoration:underline dotted var(--l2);text-underline-offset:6px;text-decoration-thickness:1px}
+.ln:hover,.ln:focus{border-color:var(--line);outline:none}
+.ln.readonly{text-decoration:none}
+.ln.edited{border-left:3px solid var(--green);border-radius:0 7px 7px 0}
+.ln.readonly{cursor:default}
+.ln.readonly:hover{border-color:transparent}
+.ed{margin:4px 0 12px}
+.ed textarea{width:100%;background:var(--panel);border:1px solid var(--brass);border-radius:8px;color:var(--fg);
+  font-family:"Newsreader",serif;font-size:20px;line-height:1.45;padding:12px 14px;min-height:64px;resize:vertical}
+.ed .row{display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap}
+.ed .hint{font-size:14px;color:var(--fg3);flex-basis:100%;margin-top:4px}
+.ed .hint.warn{color:var(--brass)}
+.q{background:#241F18;border:1px solid var(--brass);border-radius:8px;padding:10px 13px;margin:2px 0 10px;
+  font-size:15.5px;line-height:1.5;color:var(--fg)}
+.q b{color:var(--brass);font-weight:600}
+button.b{background:none;border:1px solid var(--line);color:var(--fg);border-radius:7px;padding:12px 18px;
+  font:inherit;font-size:16px;cursor:pointer}
+button.b.go{background:var(--brass);border-color:var(--brass);color:#20180A;font-weight:600}
+button:disabled{opacity:.35;cursor:default}
+.nav{position:fixed;left:0;right:0;bottom:0;background:rgba(12,13,16,.97);backdrop-filter:blur(12px);
+  border-top:1px solid var(--line);padding:13px 16px calc(14px + env(safe-area-inset-bottom));z-index:30}
+.nin{max-width:720px;margin:0 auto;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.nin .tally{font-size:13.5px;color:var(--fg3);line-height:1.4;flex:1;min-width:160px}
+.nin .tally b{color:var(--fg)}
+.confirm{flex-basis:100%;font-size:15.5px;color:var(--fg2);line-height:1.5}
+.msg{padding:28px 0;color:var(--fg2);line-height:1.6}
+.err{color:var(--red);font-size:14.5px;margin-top:6px}
+.hide{display:none}
+.cards{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:14px 16px;margin:0 0 30px}
+.cards h2{font-family:"Newsreader",serif;font-weight:400;font-size:21px;margin:0 0 4px}
+.cards p.sub{color:var(--fg2);font-size:15px;line-height:1.5;margin:0 0 12px}
+.card{border-top:1px solid var(--line);padding:12px 0 4px}
+.card .lab{font-size:13px;color:var(--fg3);letter-spacing:.06em;text-transform:uppercase;font-weight:500;margin:0 0 4px}
+.card .words{font-family:"Newsreader",serif;font-size:clamp(20px,5vw,24px);line-height:1.35;margin:0 0 6px;overflow-wrap:anywhere}
+.card .none{color:var(--fg3);font-style:italic;font-size:17px;margin:0 0 6px}
+.card .tag{font-size:13px;color:var(--fg3);margin:0 0 8px}
+.card .row{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 6px}
+.card button.b{padding:9px 14px;font-size:15px}
+.card textarea{width:100%;background:var(--ink);border:1px solid var(--brass);border-radius:8px;color:var(--fg);
+  font-family:"Newsreader",serif;font-size:20px;line-height:1.4;padding:10px 12px;min-height:52px;resize:vertical}
+.card .count{font-size:13.5px;color:var(--fg3);margin:4px 0 0}
+.cph{display:flex;gap:12px;align-items:center;margin:4px 0 8px}
+.cph img{width:132px;height:88px;object-fit:cover;border-radius:6px;border:1px solid var(--line);flex:none}
+.cph .who{font-size:14px;color:var(--fg2);line-height:1.4}
+.pick{position:fixed;inset:0;background:rgba(12,13,16,.96);z-index:40;overflow:auto;padding:20px 16px 40px}
+.pick .in{max-width:720px;margin:0 auto}
+.pick h2{font-family:"Newsreader",serif;font-weight:400;font-size:24px;margin:6px 0 4px}
+.pick .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:14px 0 18px}
+.pick .grid button{padding:0;border:2px solid transparent;border-radius:8px;background:none;cursor:pointer;position:relative}
+.pick .grid button.now{border-color:var(--brass)}
+.pick .grid img{width:100%;aspect-ratio:3/2;object-fit:cover;border-radius:6px;display:block}
+.pick .grid .tag{position:absolute;left:6px;bottom:6px;background:var(--brass);color:#20180A;font-size:12px;border-radius:4px;padding:2px 6px}
+.sty-wrap{border-top:1px solid var(--line);padding:14px 0 4px;margin-top:6px}
+.sty-wrap .lab{font-size:13px;color:var(--fg3);letter-spacing:.06em;text-transform:uppercase;font-weight:500;margin:0 0 4px}
+.stys{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:8px 0 6px}
+.stys button{padding:0;background:none;border:2px solid var(--line);border-radius:10px;cursor:pointer;text-align:left;color:var(--fg);overflow:hidden;font:inherit}
+.stys button.on{border-color:var(--brass)}
+.stys button:disabled{opacity:1;cursor:default}
+.stys .nm{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;font-size:15px;line-height:1.35}
+.stys .nm .says{color:var(--fg3);font-size:13.5px;display:block}
+.stys .nm .ch{font-size:12.5px;background:var(--brass);color:#20180A;border-radius:4px;padding:2px 7px;font-weight:600;flex:none}
+.sty{position:relative;aspect-ratio:16/9;overflow:hidden;background:#111;container-type:inline-size}
+.sty .bg{position:absolute;inset:0;background-size:cover;background-position:center}
+.sty .w{position:absolute;left:0;right:0;text-align:center;color:#FAF3E6;font-family:"Cormorant Garamond",serif;line-height:1.05}
+.sty.framed .ov{position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(10,8,6,.5) 30%,rgba(10,8,6,.86) 100%)}
+.sty.framed .fr{position:absolute;inset:6cqw 3.4cqw;border:1px solid #C9A86A;outline:1px solid rgba(201,168,106,.5);outline-offset:-.9cqw}
+.sty.framed .fr i{position:absolute;width:1.3cqw;height:1.3cqw;border-radius:50%;background:#DEBE80}
+.sty.framed .fr i:nth-child(1){left:1.6cqw;top:1.6cqw}.sty.framed .fr i:nth-child(2){right:1.6cqw;top:1.6cqw}
+.sty.framed .fr i:nth-child(3){left:1.6cqw;bottom:1.6cqw}.sty.framed .fr i:nth-child(4){right:1.6cqw;bottom:1.6cqw}
+.sty.framed .w{top:50%;transform:translateY(-50%);padding:0 9cqw}
+.sty.framed .nmA{font-size:7.4cqw;font-weight:600;letter-spacing:.06em;text-transform:uppercase;text-shadow:0 .3cqw 1.2cqw rgba(0,0,0,.6)}
+.sty.framed .amp,.sty.framed .dt{font-family:"Great Vibes",cursive;color:#DEBE80;text-shadow:0 .3cqw 1.2cqw rgba(0,0,0,.6)}
+.sty.framed .amp{font-size:8cqw;line-height:.9}
+.sty.framed .dt{font-size:4.6cqw;margin-top:1.2cqw}
+.sty.framed .ttl{font-size:6.4cqw;font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+.sty.framed .msg{font-size:5.4cqw;font-style:italic;font-weight:500}
+.sty.framed .rule{width:32cqw;height:1px;background:#DEBE80;margin:2cqw auto 0}
+.sty.plain .ov{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.66) 0%,rgba(0,0,0,.42) 34%,rgba(0,0,0,.08) 62%,rgba(0,0,0,0) 100%)}
+.sty.plain .w{top:79%;transform:translateY(-50%);padding:0 6cqw;text-shadow:0 .4cqw 1.6cqw rgba(0,0,0,.75)}
+.sty.plain .ttl{font-size:6.4cqw;font-weight:500}
+.sty.plain .msg{font-size:4.6cqw;font-weight:500}
+.sty.plain .dt{font-size:3.4cqw;margin-top:1.4cqw;font-weight:500}
+.sty-note{font-size:13.5px;color:var(--fg3);line-height:1.45;margin:4px 0 6px}
+</style>
+
+<style id="preview-warm">
+/* 11 Oct PREVIEW - the warm, light look (pipeline/make_preview_pages.py). Contrast >= 7:1, body text >= 18 px, targets >= 44 px. */
+:root{--ink:#FBF6EC;--panel:#FFFDF8;--p2:#F3EBDC;--line:#CDBB9A;--l2:#A8926B;--fg:#1F1A12;--fg2:#3F3628;--fg3:#4E4434;
+  --brass:#D4A24C;--green:#2A5234;--red:#7A2812;--goldtext:#5A3B06;--goldsoft:#F6E7C4;--goldline:#A87A22}
+html,body{background:var(--ink)!important;color:var(--fg)!important}
+body{font-size:18px!important;line-height:1.55}
+p,li,label,dd,dt,td,th,blockquote,textarea,select,input,.lede,.do,.small,.err,.hint,.note,.said,.fqhint{font-size:18px!important}
+h1,h2,h3,h4{color:var(--fg)!important}
+.small,.hint,.fqhint{color:var(--fg2)!important}
+.err,.fqerr,[role=alert]{color:var(--red)!important}
+.ok,.done{color:var(--green)!important}
+a{color:var(--goldtext)!important;text-decoration:underline!important;text-underline-offset:2px}
+a:hover{text-decoration-thickness:2px!important}
+/* every button is a gold box: main actions filled gold, the rest gold-bordered on pale gold */
+button,.b,.chip,.quiet,input[type=button],input[type=submit]{min-height:44px!important;min-width:44px!important;font-size:18px!important;
+  background:var(--goldsoft)!important;color:var(--fg)!important;border:2px solid var(--goldline)!important;border-radius:10px!important;
+  padding:10px 16px!important;cursor:pointer;font-weight:600}
+button.go,button.yes,button.big,button.b.yes,#go,#open,#fqnext,#tosort,#send,#allinYes,#rpick,.acts .yes{background:var(--brass)!important;
+  color:#1F1A12!important;border-color:var(--goldline)!important}
+button[aria-pressed=true]{background:var(--brass)!important;color:#1F1A12!important}
+button:disabled{opacity:.55}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--goldline)!important;outline-offset:2px}
+input[type=text],input[type=email],input:not([type]),textarea,select{background:#fff!important;color:var(--fg)!important;
+  border:2px solid var(--l2)!important;min-height:48px;border-radius:8px}
+input::placeholder,textarea::placeholder{color:#6A5E4C!important;opacity:1}
+input[type=checkbox],input[type=radio]{width:26px!important;height:26px!important;accent-color:var(--goldline)}
+label.tick,label:has(> input[type=checkbox]),label:has(> input[type=radio]){min-height:44px;display:flex!important;align-items:center;gap:10px}
+.card,.box,.person,.c,.sheet .in,.in{background:var(--panel)!important;border-color:var(--line)!important;color:var(--fg)}
+.c img,.lo img,.side img,.dup img,figure img,.photo img,.strip img,.ph,video{box-shadow:0 1px 3px rgba(60,40,10,.28),0 0 0 1px #E2D3B6;border-radius:6px}
+#nav,.nav{background:var(--panel)!important;border-color:var(--line)!important;color:var(--fg)!important}
+.tag,.chk,.stamp,.step,.n,.badge{font-size:15px!important}
+.goldnote{background:var(--goldsoft);border:2px solid var(--goldline);border-radius:10px;padding:10px 14px;margin:0 0 16px;
+  font-size:18px;color:var(--fg)}
+</style>
+
+<script id="preview-base">
+/* 11 Oct PREVIEW: served from .../preview/, every link the page builds stays inside .../preview/ */
+function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?String(b).replace(/\/?$/,'/')+'preview/':b; }catch(e){ return b; } }
+</script>
+
+<script id="preview-note">
+/* 11 Oct PREVIEW: the first time on this page, one line saying what a gold box is - "tap" on a touch screen, "click" on a
+   computer, both when the page can't tell. */
+(function(){
+  var key='mf_goldnote_'+(location.pathname.split('/').pop()||'index.html');
+  try{ if(localStorage.getItem(key)) return; }catch(e){}
+  var coarse=false, fine=false;
+  try{ coarse=matchMedia('(pointer:coarse)').matches; fine=matchMedia('(pointer:fine)').matches; }catch(e){}
+  var how=(coarse&&!fine)?'tap it.':(fine&&!coarse)?'click it.':'tap it (or click it on a computer).';
+  function show(){
+    if(document.getElementById('goldnote')) return;
+    var p=document.createElement('p'); p.id='goldnote'; p.className='goldnote';
+    p.textContent='Anything in a gold box is a button - '+how;
+    var w=document.querySelector('.wrap')||document.body; w.insertBefore(p,w.firstChild);
+    try{ localStorage.setItem(key,'1'); }catch(e){}
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',show); else show();
+})();
+</script>
+</head>
+<body>
+<div class="wrap">
+  <div id="stage"><p class="msg">Opening your song…</p></div>
+</div>
+<div class="nav hide" id="nav"><div class="nin" id="nin"></div></div>
+
+<script>
+const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
+const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
+const HDR={'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY};
+const TOKEN=new URLSearchParams(location.search).get('t')||'';
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const words=s=>s&&s.trim()?s.trim().split(/\s+/).length:0;
+
+async function rpc(name,args){
+  const r=await fetch(`${SB}/rest/v1/rpc/${name}`,{method:'POST',headers:HDR,body:JSON.stringify(args)});
+  if(!r.ok) throw new Error(`${name}: HTTP ${r.status}`);
+  const t=await r.text(); return t?JSON.parse(t):null;
+}
+// A caught error that is not reported is a silent failure.
+function report(what,e){
+  try{ fetch(SB+'/functions/v1/flow',{method:'POST',keepalive:true,headers:HDR,
+    body:JSON.stringify({token:TOKEN,action:'report_error',page:'lyrics.html',at:what,what,
+      message:(e&&e.message)||String(e||''),url:location.href,user_agent:navigator.userAgent})}).catch(()=>{}); }catch(_){}
+}
+window.addEventListener('error',ev=>report('uncaught',ev.error||ev.message));
+window.addEventListener('unhandledrejection',ev=>report('unhandled promise',ev.reason));
+
+let L=null;          // the lyric: {lyric_id, version, status, lines:[{id,section,seq,text,words_was,question,edited}]}
+let CP=null;         // 3 Oct: the card photographs {start:{auto,chosen}, finish:{auto,chosen}, choices:[ids], locked} - null = not shown
+let PICS={};         // asset id -> picture URL (gallery)
+let picking=null;    // 'start' | 'finish' while the picker is open
+let STY=null;        // 4 Oct: {style, locked, styles:[...]} - null = no style section
+let open=null;       // id of the line being edited
+let confirming=false;
+
+// "[Verse 1]" / "verse_1" / "Chorus" -> "Verse 1"
+const secName=s=>{ s=String(s||'').replace(/[\[\]_]/g,' ').replace(/\s+/g,' ').trim();
+  return s? s.charAt(0).toUpperCase()+s.slice(1) : ''; };
+
+function paint(){
+  const done=L.status==='approved';
+  const changed=L.lines.filter(l=>l.edited).length;
+  const asks=L.lines.filter(l=>l.question&&!l.edited).length;
+  let h=`<h1>The words to your song</h1>`;
+  h+= done
+    ? `<p class="do">Thank you — these are the words we are singing.</p>
+       <p class="lede">We're making your song now. You don't need to do anything else.</p>`
+    : `<p class="do">Read the words to your song. Tap any line that isn't right and change it.</p>
+       <p class="lede">Nothing is sung until you say the words are right. It's your story — if we've got a detail wrong, you're the one who knows.${asks?` Where we weren't sure of something, we've asked you under the line.`:''}</p>`;
+  h+=cardsHTML(done);
+  let sec=null;
+  for(const l of L.lines){
+    if(l.section!==sec){ if(sec!==null) h+='</div>'; sec=l.section; h+=`<div class="sec"><h3>${esc(secName(sec))}</h3>`; }
+    if(open===l.id){
+      const was=l.words_was||words(l.text);
+      h+=`<div class="ed"><textarea id="ta" aria-label="Change this line">${esc(l.text)}</textarea>
+          <div class="row"><button class="b go" data-save="${l.id}">Save this line</button>
+          <button class="b" data-cancel="1">Cancel</button>
+          <div class="hint" id="hint">Keep it about ${was} words so it still fits the tune.</div>
+          <div class="err hide" id="err"></div></div></div>`;
+    }else{
+      h+=`<button class="ln${l.edited?' edited':''}${done?' readonly':''}" ${done?'tabindex="-1"':`data-line="${l.id}"`}>${esc(l.text)}</button>`;
+    }
+    if(l.question && !l.edited && !done) h+=`<div class="q"><b>Is this right?</b> ${esc(l.question)} If not, tap the line above and change it.</div>`;
+  }
+  if(sec!==null) h+='</div>';
+  h+=pickerHTML();
+  $('stage').innerHTML=h;
+
+  if(done){ $('nav').classList.add('hide'); return; }
+  $('nav').classList.remove('hide');
+  $('nin').innerHTML = confirming
+    ? `<div class="confirm">Once you say yes, we start singing these words. ${changed?`You've changed ${changed} line${changed===1?'':'s'}.`:'You haven\'t changed anything.'}</div>
+       <button class="b" data-back="1">Not yet</button>
+       <button class="b go" data-approve="1">Yes — make my song</button>`
+    : `<div class="tally">${changed?`<b>${changed}</b> line${changed===1?'':'s'} changed`:'No changes yet'}</div>
+       <button class="b go" data-ready="1" ${open||cardOpen?'disabled':''}>These words are right</button>`;
+  const ta=$('ta');
+  if(ta){ ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length); ta.addEventListener('input',hint); hint(); }
+  const cta=$('cta');
+  if(cta){ cta.focus(); cta.setSelectionRange(cta.value.length,cta.value.length); cta.addEventListener('input',ccount); ccount(); }
+}
+
+/* THE CARDS (1 Oct). One card at a time is open for editing (cardOpen 'start' | 'finish'). */
+let cardOpen=null;
+const CARD={start:{lab:'Your film opens with',max:60,none:'No opening card',remove:'No opening card',add:'Add an opening card'},
+            finish:{lab:'and ends with',max:90,none:'No closing card',remove:'No closing card',add:'Add a closing card'}};
+const cardOf=k=>{ const c=(L&&L.cards)||{}; const t=c[k]; return {text:(t==null?'':String(t)), suggested:!!c[k+'_suggested']}; };
+function cardsHTML(done){
+  let h=`<div class="cards"><h2>The words on screen</h2>
+    <p class="sub">${done?'These are the words at the start and the end of your film.':'Your film opens and closes on a photograph with a few words over it. Change them, or take a card away if you would rather not have one.'}</p>`;
+  for(const k of ['start','finish']){
+    const c=cardOf(k), m=CARD[k];
+    h+=`<div class="card"><p class="lab">${m.lab}…</p>`;
+    if(cardOpen===k&&!done){
+      h+=`<textarea id="cta" maxlength="${m.max}" aria-label="${esc(m.lab)}">${esc(c.text)}</textarea>
+          <p class="count" id="ccount"></p>
+          <div class="row"><button class="b go" data-csave="${k}">Save</button><button class="b" data-ccancel="1">Cancel</button></div>
+          <div class="err hide" id="cerr"></div>`;
+    }else if(c.text){
+      h+=`<p class="words">${esc(c.text)}</p>${c.suggested&&!done?`<p class="tag">Our suggestion, from what you told us.</p>`:''}`;
+      h+=photoHTML(k,done);
+      if(!done) h+=`<div class="row"><button class="b" data-cedit="${k}">Change the words</button><button class="b" data-cremove="${k}">${m.remove}</button></div>`;
+    }else{
+      h+=`<p class="none">${m.none}</p>`;
+      if(!done) h+=`<div class="row"><button class="b" data-cedit="${k}">${m.add}</button></div>`;
+    }
+    h+=`</div>`;
+  }
+  return h+styleHTML(done)+`</div>`;
+}
+/* THE CARD STYLE (4 Oct). Each style drawn with the customer's own words and photograph. */
+const STYLE_NAME={framed:'Framed',plain:'Plain'};
+const STYLE_SAYS={framed:'A gold frame, the names in capitals, the date in script.',plain:'Just the words, softly over the photograph.'};
+function styleHTML(done){
+  if(!STY||!(STY.styles||[]).length) return '';
+  const k=cardOf('start').text?'start':(cardOf('finish').text?'finish':null);
+  if(!k) return '';
+  const text=cardOf(k).text, pid=CP&&CP[k]?(CP[k].chosen||CP[k].auto):null, pic=pid&&PICS[pid]?PICS[pid]:'';
+  const locked=done||STY.locked, cur=STY.style||'framed';
+  const list=locked?[cur]:STY.styles;
+  return `<div class="sty-wrap" id="styles"><p class="lab">How the words look</p>
+    <p class="sub" style="margin:0 0 4px">${locked?'Your cards will look like this.':'Choose a style for the cards at the start and the end of your film.'}</p>
+    <div class="stys">${list.map(st=>`<button data-style="${esc(st)}" class="${st===cur?'on':''}" ${locked?'disabled':''} aria-pressed="${st===cur}">
+      ${styleTile(st,k,text,pic)}<div class="nm"><span><b>${esc(STYLE_NAME[st]||st)}</b><span class="says">${esc(STYLE_SAYS[st]||'')}</span></span>${st===cur?'<span class="ch">Chosen</span>':''}</div></button>`).join('')}</div>
+    <p class="sty-note">A preview with your words and photograph. In your film the words are placed away from faces, and beside the photograph when it doesn’t fill the screen.</p>
+    <div class="err hide" id="serr"></div></div>`;
+}
+function styleTile(st,k,text,pic){
+  let words='';
+  if(k==='start'){
+    const i=text.lastIndexOf(' \u2014 '); let head=text, date='';     // "Names — date", as titles.start_parts
+    if(i>0&&text.length-i-3>0&&text.length-i-3<=20){ head=text.slice(0,i).trim(); date=text.slice(i+3).trim(); }
+    const amp=head.split(' & ');
+    if(st==='framed') words=(amp.length===2?`<div class="nmA">${esc(amp[0])}</div><div class="amp">&amp;</div><div class="nmA">${esc(amp[1])}</div>`:`<div class="ttl">${esc(head)}</div>`)+(date?`<div class="dt">${esc(date)}</div>`:'');
+    else words=`<div class="ttl">${esc(head)}</div>`+(date?`<div class="dt">${esc(date)}</div>`:'');
+  }else{
+    words=`<div class="msg">${esc(text)}</div>`+(st==='framed'?'<div class="rule"></div>':'');
+  }
+  return `<div class="sty ${esc(st)}"><div class="bg" style="${pic?`background-image:url('${esc(pic)}')`:''}"></div><div class="ov"></div>
+    ${st==='framed'?'<div class="fr"><i></i><i></i><i></i><i></i></div>':''}<div class="w">${words}</div></div>`;
+}
+async function loadStyle(){
+  try{ const r=await rpc('get_frame_style',{p_token:TOKEN}); if(!r||r.error) throw new Error((r&&r.error)||'get_frame_style'); STY=r; }
+  catch(e){ STY=null; if(!/no lyric yet|HTTP 404/.test(String(e&&e.message))) report('card style',e); }
+}
+/* THE CARD PHOTOGRAPHS (3 Oct). */
+function photoHTML(k,done){
+  if(!CP||!CP[k]) return '';
+  const id=CP[k].chosen||CP[k].auto; if(!id||!PICS[id]) return '';
+  const mine=!!CP[k].chosen, locked=done||CP.locked;
+  return `<div class="cph"><img src="${esc(PICS[id])}" alt="The ${k==='start'?'opening':'closing'} photograph" data-cph="${k}">
+    <div class="who">${mine?'You chose this photograph.':'We chose this photograph of you.'}</div></div>
+    ${locked?'':`<div class="row"><button class="b" data-cpick="${k}">Choose a different photo</button>${mine?`<button class="b" data-creset="${k}">Use our choice</button>`:''}</div>`}`;
+}
+function pickerHTML(){
+  if(!picking) return '';
+  const k=picking, now=CP[k].chosen||CP[k].auto;
+  const ids=(CP.choices||[]).filter(id=>PICS[id]);
+  return `<div class="pick" id="pick"><div class="in"><h2>Choose the ${k==='start'?'opening':'closing'} photograph</h2>
+    <p class="lede" style="margin:0">These are your photographs that show ${esc(CP.people||'the people the film is about')}. Tap one.</p>
+    <div class="grid">${ids.map(id=>`<button data-cphoto="${id}" class="${id===now?'now':''}"><img src="${esc(PICS[id])}" alt="">${id===now?'<span class="tag">Now</span>':''}</button>`).join('')}</div>
+    <div class="err hide" id="perr"></div>
+    <button class="b" data-pclose="1">Cancel</button></div></div>`;
+}
+async function setPhoto(k,id){
+  const r=await rpc('set_card_photo',{p_token:TOKEN,p_which:k,p_asset:id});
+  if(r&&r.error) throw new Error(r.error);
+  await load();
+}
+async function loadPhotos(){
+  try{
+    const r=await rpc('get_card_photos',{p_token:TOKEN});
+    if(!r||r.error) throw new Error((r&&r.error)||'get_card_photos failed');
+    const g=await fetch(`${SB}/functions/v1/gallery`,{method:'POST',headers:HDR,body:JSON.stringify({token:TOKEN})});
+    const j=await g.json();
+    PICS={}; (j.assets||[]).forEach(a=>{ if(a.id&&(a.thumb_url||a.url)) PICS[a.id]=a.url||a.thumb_url; });
+    CP=r;
+  }catch(e){ CP=null; if(!/no lyric yet/.test(String(e&&e.message))) report('card photos',e); }
+}
+
+function ccount(){ const ta=$('cta'); if(!ta) return; $('ccount').textContent=`${ta.value.length} of ${CARD[cardOpen].max} letters`; }
+/* set_cards takes both: the one being changed, and the other as it stands - "" = no card, null = keep our suggestion
+   (1 Oct: the server now keeps null as the suggestion; the earlier workaround of sending its words is gone) */
+async function setCard(k,value){
+  const cur=kk=>{ const c=cardOf(kk); return c.suggested? null : c.text; };
+  const args={p_token:TOKEN,p_start:k==='start'?value:cur('start'),p_finish:k==='finish'?value:cur('finish')};
+  const r=await rpc('set_cards',args);
+  if(r&&r.error) throw new Error(r.error);
+  await load();
+}
+
+function hint(){
+  const l=L.lines.find(x=>x.id===open); const n=words($('ta').value); const was=l.words_was||words(l.text);
+  const el=$('hint'); const off=Math.abs(n-was);
+  if(off>=3){ el.className='hint warn';
+    el.textContent=`This line is now ${n>was?'longer':'shorter'} (${n} words, it was ${was}). It may be sung ${n>was?'faster':'slower'} than the lines around it.`; }
+  else { el.className='hint'; el.textContent=`Keep it about ${was} words so it still fits the tune.`; }
+}
+
+async function save(id){
+  const l=L.lines.find(x=>x.id===id); const text=$('ta').value.trim();
+  const err=$('err');
+  if(!text){ err.textContent='A line can’t be empty — if it should go, change it to something shorter instead.'; err.classList.remove('hide'); return; }
+  if(text===l.text){ open=null; paint(); return; }
+  try{
+    const r=await rpc('edit_lyric_line',{p_token:TOKEN,p_line:id,p_text:text});
+    if(r&&r.error) throw new Error(r.error);
+    await load(); open=null; paint();
+  }catch(e){ report('save line',e); err.textContent='That didn’t save. Please try again.'; err.classList.remove('hide'); }
+}
+
+function alertLine(msg){ $('nin').insertAdjacentHTML('afterbegin',`<div class="err" style="flex-basis:100%">${esc(msg)}</div>`); }
+
+async function approve(){
+  try{
+    const r=await rpc('approve_lyric',{p_token:TOKEN});
+    if(r&&r.error) throw new Error(r.error);
+    await load(); confirming=false; paint(); window.scrollTo(0,0);
+  }catch(e){ report('approve',e); confirming=false; paint();
+    $('nin').insertAdjacentHTML('afterbegin','<div class="err" style="flex-basis:100%">That didn’t go through. Please try again.</div>'); }
+}
+
+document.addEventListener('click',ev=>{
+  const t=ev.target.closest('button'); if(!t) return;
+  if(t.dataset.style){
+    const st=t.dataset.style; if(!STY||STY.locked||st===STY.style) return;
+    t.disabled=true;
+    rpc('set_frame_style',{p_token:TOKEN,p_style:st}).then(r=>{ if(!r||r.error) throw new Error((r&&r.error)||'set_frame_style');
+        STY.style=st; paint(); })
+      .catch(e=>{ report('set card style',e); t.disabled=false; const er=$('serr'); if(er){ er.textContent='That didn’t save. Please try again.'; er.classList.remove('hide'); } });
+    return;
+  }
+  if(t.dataset.cpick){ picking=t.dataset.cpick; paint(); return; }
+  if(t.dataset.pclose){ picking=null; paint(); return; }
+  if(t.dataset.cphoto||t.dataset.creset){
+    const k=picking||t.dataset.creset, id=t.dataset.cphoto||null;
+    const auto=CP&&CP[k]&&CP[k].auto;
+    t.disabled=true;
+    setPhoto(k, id&&id===auto?null:id).then(()=>{ picking=null; paint(); })   // choosing ours again = "ours"
+      .catch(e=>{ report('set card photo',e); t.disabled=false; const er=$('perr');
+        if(er){ er.textContent='That didn’t save. Please try again.'; er.classList.remove('hide'); }
+        else alertLine('That didn’t save. Please try again.'); });
+    return;
+  }
+  if(t.dataset.cedit){ cardOpen=t.dataset.cedit; open=null; confirming=false; paint(); return; }
+  if(t.dataset.ccancel){ cardOpen=null; paint(); return; }
+  if(t.dataset.csave||t.dataset.cremove){
+    const k=t.dataset.csave||t.dataset.cremove;
+    const v=t.dataset.cremove?'':($('cta').value||'').trim().slice(0,CARD[k].max);   // an emptied card is no card
+    t.disabled=true;
+    setCard(k,v).then(()=>{ cardOpen=null; paint(); })
+      .catch(e=>{ report('set cards',e); t.disabled=false; const er=$('cerr');
+        if(er){ er.textContent='That didn’t save. Please try again.'; er.classList.remove('hide'); }
+        else alertLine('That didn’t save. Please try again.'); });
+    return;
+  }
+  if(t.dataset.line){ open=t.dataset.line; cardOpen=null; confirming=false; paint(); }
+  else if(t.dataset.cancel){ open=null; paint(); }
+  else if(t.dataset.save){ t.disabled=true; save(t.dataset.save); }
+  else if(t.dataset.ready){ confirming=true; paint(); }
+  else if(t.dataset.back){ confirming=false; paint(); }
+  else if(t.dataset.approve){ t.disabled=true; approve(); }
+});
+
+async function load(){
+  const r=await rpc('get_lyric',{p_token:TOKEN});
+  if(r&&r.error) throw Object.assign(new Error(r.error),{refusal:r.error});
+  L=r;
+  await loadPhotos();
+  await loadStyle();
+}
+
+(async()=>{
+  if(!TOKEN){ $('stage').innerHTML='<p class="msg">This link is missing its code. Please open the link we sent you again.</p>'; return; }
+  try{ await load(); paint(); }
+  catch(e){
+    if(e.refusal==='no lyric yet'){ $('stage').innerHTML='<h1>The words to your song</h1><p class="msg">We’re still writing them. We’ll let you know when they’re ready to read.</p>'; return; }
+    if(e.refusal==='unknown token'){ $('stage').innerHTML='<p class="msg">We couldn’t find your film from this link. Please open the link we sent you again.</p>'; return; }
+    report('load',e); $('stage').innerHTML='<p class="msg">Something went wrong opening your song. Please try again in a minute.</p>';
+  }
+})();
+</script>
+</body>
+</html>
