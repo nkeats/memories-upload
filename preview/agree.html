@@ -70,6 +70,8 @@ label.tick,label:has(> input[type=checkbox]),label:has(> input[type=radio]){min-
 /* 12 Oct: EVERY label at least 18 px (Nigel) - captions, counters, tallies, section names, the drop zone's line */
 .tag,.chk,.stamp,.step,.n,.badge,.tally,.tally *,.drop span,summary,.tips summary,h3,h4,.meta,.count,small{font-size:18px!important}
 .n{width:auto!important;min-width:32px;height:32px!important;padding:0 6px}
+/* 13 Oct: the "checking" badge sits on the photo's top-left corner, clear of the date under it (at 18 px it covered the date) */
+.c .chk{top:6px!important;bottom:auto!important;left:6px!important}
 /* 12 Oct: every clickable thing is a gold box (Nigel: "text they can click on needs to have something saying click") -
    the photo drop zone is a gold button like every other action; the "What helps" opener, tick boxes' labels, genre cards and
    group boxes are gold-bordered */
