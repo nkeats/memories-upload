@@ -857,6 +857,7 @@ async function sayNames(){
    she carries on with the other names. Eight new spellings a film; cached
    ones never count. */
 const NEW_TAKES_CAP=8;
+const TAKE_OVER='Leave it with us \u2014 we\u2019ll make sure this name is sung right before your song is made.';
 function takeState(x){ return x.take&&x.take.ready?'ready':x.making?'making':'idle'; }
 async function lookForTake(i,sung){
   const x=P.say[i]; if(!x||!sung) return;
@@ -871,20 +872,30 @@ async function tryTake(i){
   try{
     const r=await rpc('take_for',{p_sung:sung});
     if(r&&!r.error&&r.ready){ x.take=r; x.making=false; x.busy=false; paintSayRow(i); return; }     // cached: instant
-    if(P.newTakes>=NEW_TAKES_CAP){ x.busy=false; x.note='That\u2019s the eight new spellings for this film \u2014 the ones already made still play.'; paintSayRow(i); return; }
+    if(P.newTakes>=NEW_TAKES_CAP){ x.busy=false; x.note=TAKE_OVER; paintSayRow(i); return; }
     const q=await rpc('ask_for_take',{p_token:TOKEN,p_sung:sung,p_said_as:x.said_as||sung});
     if(!q||q.error) throw new Error((q&&q.error)||'ask_for_take failed');
+    /* 15 Oct: the server's own limit (server-wanted-2026-10-15.sql): over it, she is told plainly and Nigel is told (pc_notice);
+       already made: it plays now */
+    if(q.status==='over_limit'){ x.busy=false; x.making=false; x.note=TAKE_OVER; paintSayRow(i); return; }
+    if(q.status==='ready'&&q.sample){ x.take={...q,ready:true}; x.making=false; x.busy=false; paintSayRow(i); return; }
     P.newTakes++; x.making=true; x.busy=false; x.note=''; paintSayRow(i);
     pollTake(i,sung);
   }catch(e){ report('ask_for_take',e,{sung}); x.busy=false; x.making=false; x.note="That didn\u2019t go through \u2014 try again in a moment."; paintSayRow(i); }
 }
+/* 15 Oct (Nigel's own film: "Hear this spelling" waited for ever): THE PAGE NEVER WAITS FOREVER. No sample within 2 minutes ->
+   plain words, and she carries on ("That's right" never waits for a sample). It keeps listening quietly for a while longer, so a
+   late sample still plays. */
+const TAKE_GIVE_UP_MS=120000, TAKE_LISTEN_MS=600000;
+const TAKE_LATE='We couldn\u2019t play this one just now. That\u2019s fine \u2014 we check every name before the song is made.';
 async function pollTake(i,sung){
-  for(let n=0;n<40;n++){                         // up to ~3½ minutes
-    await sleep(n<6?5000:8000);
+  const t0=Date.now(); let n=0, gaveUp=false;
+  while(Date.now()-t0<TAKE_LISTEN_MS){
+    await sleep(n++<6?5000:8000);
     const x=P.say[i]; if(!x||x.tried!==sung||P.mode!=='say') return;
-    try{ const r=await rpc('take_for',{p_sung:sung}); if(r&&r.ready){ x.take=r; x.making=false; paintSayRow(i); return; } }catch(_){}
+    try{ const r=await rpc('take_for',{p_sung:sung}); if(r&&r.ready){ x.take=r; x.making=false; if(x.note===TAKE_LATE) x.note=''; paintSayRow(i); return; } }catch(_){}
+    if(!gaveUp&&Date.now()-t0>=TAKE_GIVE_UP_MS){ gaveUp=true; x.making=false; x.note=TAKE_LATE; paintSayRow(i); }
   }
-  const x=P.say[i]; if(x&&x.tried===sung){ x.making=false; x.note='It\u2019s taking longer than usual. Press the button again in a minute.'; paintSayRow(i); }
 }
 async function chooseTake(i){
   const x=P.say[i]; if(!x||!x.take||!x.take.ready||x.busy) return;
@@ -905,7 +916,7 @@ function sayRow(x,i){
       ${btn}
       ${st==='ready'&&!x.chosen?`<button class="yes" data-choosetake="${i}" style="padding:9px 14px;font-size:15px">That\u2019s it</button>`:''}</div>
     ${st==='making'?`<p class="note">We\u2019re making that one \u2014 about a minute. Carry on with the other names; it\u2019ll be ready when you come back to it.</p>`:''}
-    ${st==='ready'&&t.verified===false?`<p class="note bad">We couldn\u2019t hear the name clearly in this one \u2014 try another spelling.</p>`:''}
+    ${st==='ready'&&(t.verified===false||t.verdict==='wrong'||t.verdict==='not_heard')?`<p class="note bad">We couldn\u2019t hear the name clearly in this one \u2014 try another spelling.</p>`:''}
     ${st==='ready'&&+t.chosen_by>0?`<p class="note">Most people spell it this way${+t.chosen_by>1?` \u2014 ${t.chosen_by} so far`:''}.</p>`:''}
     ${x.note?`<p class="note">${esc(x.note)}</p>`:''}
     ${x.needs&&!x.chosen?`<div class="acts" style="margin-top:10px">
