@@ -295,6 +295,18 @@ function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?S
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',show); else show();
 })();
 </script>
+<style id="film-meter">
+/* 18 Oct: the film-length meter - 18 px and up, the same warm look, phone first */
+#filmmeter{margin:14px 0 6px}
+.meterbig{font-size:28px!important;font-weight:700;margin:0 0 10px;color:var(--fg)}
+.meterbar{position:relative;height:18px;border-radius:9px;background:var(--p2,#F3EBDC);border:2px solid var(--goldline,#A87A22);margin:0 0 30px}
+.meterfill{position:absolute;left:0;top:0;bottom:0;border-radius:7px;background:var(--brass,#D4A24C)}
+.meterfill.short{background:#E9C98A}
+.metermark{position:absolute;top:-6px;bottom:-6px;width:2px;background:var(--fg,#1F1A12)}
+.metermark span{position:absolute;top:26px;left:50%;transform:translateX(-50%);font-size:18px;white-space:nowrap;color:var(--fg2,#3F3628)}
+.metertier{font-size:18px!important;margin:0 0 6px;color:var(--fg)}
+.meterline{font-size:20px!important;font-weight:600;margin:0 0 6px;color:var(--fg)}
+</style>
 <style id="nav-fit">
 /* 17 Oct: the bottom bar's button keeps its full width - a long count line wraps instead of squeezing the button (on a phone
    the "Looking at your photos..." line had squeezed it to 44 px, its word cut off) */
@@ -1135,6 +1147,7 @@ async function showUploadPage(){
     <div class="drop" id="drop"><b>Choose photos</b>
       <span>Or drag them here. You can send video too.</span>
       <input type="file" id="file" multiple accept="image/*,video/*,.heic,.heif" class="hide"></div>
+    <div id="filmmeter" class="hide" aria-live="polite"></div>
     <p class="lede" id="songline" aria-live="polite" style="margin:12px 0 18px"></p>
     <div id="unotices" aria-live="polite"></div>
     <div id="picked" class="card hide">
@@ -1161,6 +1174,51 @@ async function showUploadPage(){
     catch(e){ report('load exifr',e); } }   // without it, dates come from the filename or file date
   startNotices();
 }
+/* 18 Oct (Nigel: "one easy-to-miss sentence"): THE FILM-LENGTH METER - a big running time, a bar marked at the 3-minute
+   minimum and at each tier, one plain line, and what was set aside. Every number is the SERVER's (rpc film_meter: the
+   usable photos x the occasion's measured pace, the tier by photo count - the same estimate the song is made to), never
+   ours; a tier's price only once it is set (nothing while empty), so the tier and its price are seen before paying.
+   filmMeter(container) is used on the upload page and the sort page. Without film_meter (not applied yet) it shows nothing
+   and the line below carries on as before. */
+function meterCurrency(){
+  const l=(navigator.language||'').toUpperCase();
+  return /-NZ$/.test(l)?'nzd':/-GB$|-UK$/.test(l)?'gbp':'aud';
+}
+function mmssLong(sec){ const m=Math.floor(sec/60), s=Math.round(sec%60); return `${m} min ${String(s).padStart(2,'0')} s`; }
+function money(c,cur){ const sym={aud:'A$',nzd:'NZ$',gbp:'\u00a3'}[cur]||'$'; return sym+(c%100?(c/100).toFixed(2):String(c/100)); }
+async function filmMeter(container){
+  if(!container) return null;
+  let m=null;
+  try{ m=await rpc('film_meter',{p_token:TOKEN,p_currency:meterCurrency()}); if(!m||m.error||m.usable===undefined) throw new Error((m&&m.error)||'no meter'); }
+  catch(e){ container.classList.add('hide'); return null; }
+  const tiers=(m.tiers||[]).filter(t=>t.max_seconds!=null);
+  const cur=(m.tiers||[]).find(t=>t.slug===m.tier)||{};
+  const secs=Math.round(cur.max_seconds!=null?Math.min(+m.photo_seconds,+cur.max_seconds):+m.photo_seconds);
+  const top=Math.max(600,...tiers.map(t=>+t.max_seconds));
+  const pct=x=>Math.max(0,Math.min(100,x/top*100));
+  const marks=[{at:180,label:'3 min'},...tiers.filter(t=>+t.max_seconds<top).map(t=>({at:+t.max_seconds,label:`${Math.round(t.max_seconds/60)} min`}))];
+  let line='';
+  if(+m.to_minimum>0) line=`Add ${plural(+m.to_minimum,'more photo')} to reach 3 minutes.`;
+  else{
+    const next=(m.tiers||[]).find(t=>+t.photos_from>+m.usable&&t.max_seconds!=null);
+    if(next&&!m.needs_quote) line=`${plural(+next.more_photos,'more photo')} ${+next.more_photos===1?'moves':'move'} you to the ${String(next.label||'').replace(/^./,c=>c.toLowerCase())} film.`;
+  }
+  const sa=m.set_aside||{}, aside=[];
+  if(+sa.bursts) aside.push(`${sa.bursts} near-identical shot${+sa.bursts===1?'':'s'} set aside`);
+  if(+sa.duplicates) aside.push(`${sa.duplicates} repeat${+sa.duplicates===1?'':'s'} not counted`);
+  if(+sa.blurry) aside.push(`${sa.blurry} blurry photo${+sa.blurry===1?'':'s'} set aside`);
+  const price=cur.price_cents!=null&&!m.needs_quote?` \u00b7 ${money(+cur.price_cents,m.currency)}`:'';
+  container.innerHTML=`<p class="meterbig" id="metertime">Your film: ${mmssLong(secs)}</p>
+    <div class="meterbar" role="img" aria-label="Your film is ${mmssLong(secs)} long; the shortest film is 3 minutes">
+      <div class="meterfill${secs<180?' short':''}" style="width:${pct(secs).toFixed(1)}%"></div>
+      ${marks.map(k=>`<span class="metermark" style="left:${pct(k.at).toFixed(1)}%"><span>${esc(k.label)}</span></span>`).join('')}
+    </div>
+    <p class="metertier" id="metertier">${m.needs_quote?'':esc(cur.label||'')}${esc(price)}</p>
+    ${line?`<p class="meterline" id="meterline">${esc(line)}</p>`:''}
+    ${aside.length?`<p class="lede" id="meteraside">${esc(aside.join(' \u00b7 '))}</p>`:''}`;
+  container.classList.remove('hide');
+  return m;
+}
 async function songGuide(n){
   const el=$('songline'); if(!el) return null;
   if(!n){ GUIDE_N=0; QUOTE=false; el.textContent=''; lockForQuote(); return null; }
@@ -1185,6 +1243,7 @@ async function songGuide(n){
       (inSoFar>n?` (Repeats aren't counted.)`:'');
   }
   lockForQuote();
+  filmMeter($('filmmeter')).then(m=>{ if(m&&!QUOTE) el.textContent=''; });   // 18 Oct: the meter says it, plainly
   return e;
 }
 async function countedNow(){                                // the server's figure: gallery's stats.counted + tier
@@ -1218,7 +1277,11 @@ function countInner(){
   return f.short>0?`<b>${f.usable} of ${f.min}</b> photos<br>add ${f.short} more`:`<b>${f.usable}</b> photos<br>enough for your film`;
 }
 function countLine(){ return `<span id="pcount">${countInner()}</span>`; }
-function needsMore(c){ return !!(c&&c.film&&!c.ok&&!c.passed&&!c.sent_short); }
+function needsMore(c){
+  if(!(c&&c.film&&!c.ok&&!c.passed&&!c.sent_short)) return false;
+  if(c.film.short>0) return true;
+  return !(c.limits&&(c.limits.kept||c.limits.memories_ok)) && !KEPT;      // 18 Oct: a small memory, the film has enough
+}
 function shortSheet(c,where){
   const f=c.film, mems=(c.memories||[]).filter(m=>m.usable<m.min);
   const occ=esc((J.occasion_label||J.occasion||'').toLowerCase()||'your');
@@ -1228,9 +1291,13 @@ function shortSheet(c,where){
     h+=`<p>${f.short>0?'And these':'These'} moments need a few more photos each:</p><ul class="shortmems">`+
        mems.map(m=>`<li><b>${esc(m.title||'A moment')}</b>: ${m.usable} photo${m.usable===1?'':'s'} - add ${m.short} more</li>`).join('')+`</ul>`;
   }
+  const joinFirst=where==='finish'&&f.short<=0&&mems.length;               // 18 Oct: enough photos overall - JOIN first, add second
   h+=`<p class="small">A moment with only one photo only gets a line in the song. Photos that are almost the same as another, or blurry, don't count.</p>
-    <div class="acts"><button class="yes" id="shortAdd" type="button">Add more photos</button>
-    <button id="shortSend" type="button">I don't have enough photos</button></div>
+    <div class="acts">${joinFirst?`<button class="yes" id="shortJoin" type="button">Go back and join the small ones</button>
+    <button id="shortAdd" type="button">Add more photos</button>
+    <button id="keepas2" type="button">Keep them as they are</button>`
+    :`<button class="yes" id="shortAdd" type="button">Add more photos</button>
+    <button id="shortSend" type="button">I don't have enough photos</button>`}</div>
     <p class="small" id="shortmsg" role="status"></p></div>`;
   return h;
 }
@@ -1969,6 +2036,7 @@ async function showSort(){
       plain(`<h1>No photos yet</h1><p class="do">We couldn't find any photos in your film. Please get in touch with whoever sent you this link.</p>`);
       report('sort with no assets',new Error('no assets')); return; }
     A.sort((a,b)=>new Date(a.taken_at)-new Date(b.taken_at));
+    photoCounts(true).then(()=>{ if(page==='sort'&&(screen==='organise'||screen==='board')) paint(); });   // 18 Oct: the limits
     name=d.collection.owner_name||'';
     skew=detectSkew();
     UN=[]; BSEL=null; UNASK=false;
@@ -2120,6 +2188,7 @@ function paintBoard(){
 function boardNext(){
   for(let j=M.length-1;j>=0;j--) if(!M[j].photos.length) M.splice(j,1);   // empty groups: dropped, never named
   if(UN.length&&!UNASK){ unsortedChoice(); return; }
+  if(limitsHold()) return;                                                // 18 Oct: fewer, fuller memories (or kept)
   if(!M.length){ const s=$('sheet'); s.innerHTML=`<div class="in"><h3>Put at least one photo in a group</h3><button class="done" id="cancel">OK</button></div>`; s.classList.remove('hide');
     M=SUG.map(g=>({title:g.title,hint:g.hint||'',register:'warm',story:'',photos:[]})); UNASK=false; return; }
   screen='organise'; cur=0; sel=null; BSEL=null; queueSave(); prog({screen:'organise'}); paint(); scrollTo(0,0);
@@ -2160,6 +2229,62 @@ function paintDups(){
     <button class="big" id="bothd">They're different — keep both</button>`;
   nav(`<button id="dnext" class="go">${cur<dups.length-1?'Next':'Done'}</button>`,`${dups.length} to look at`);
 }
+/* 18 Oct (Nigel 6 Oct: "fewer, bigger memories - not more photos"; a tester's 87 photos were in 15 memories, 8 under 4): AT THE
+   SORT STEP - a live line "4 memories works best for a film this length - you have 9", a one-tap "Join with the next one" on any
+   memory under the minimum, and Done held until both are met - EXCEPT "I'd like to keep these as they are", which tells Nigel
+   (never a dead end). The limits are the server's (photo_counts -> limits: max_memories from the film's seconds; the minimum);
+   while sorting the page counts each group's photos itself, and the server checks again at Finished. Nothing changes a film by
+   itself - only her taps. */
+let KEPT=false;
+function limitsNow(){
+  const L=(PC&&PC.limits)||null, min=+(((PC&&PC.memories||[])[0]||{}).min)||4;
+  const groups=M.filter(hasPhotos), n=groups.length;
+  const max=L?(+L.max_memories||0):0;
+  const small=M.map((m,j)=>({j,n:m.photos.filter(p=>!p.excluded).length,title:m.title})).filter(x=>x.n>0&&x.n<min);
+  return {known:!!L,max,min,n,tooMany:!!L&&n>max,small,kept:KEPT||!!(L&&L.kept)};
+}
+function limitsLine(){
+  const l=limitsNow(); if(!l.known) return '';
+  const a=l.tooMany?`${l.max} memories works best for a film this length - you have ${l.n}.`:'';
+  const b=l.small.length?`${l.small.length===1?'One memory has':l.small.length+' memories have'} fewer than ${l.min} photos.`:'';
+  return (a||b)?`<p class="goldnote" id="memline">${esc([a,b].filter(Boolean).join(' '))} Joining small ones makes each a fuller verse.</p>`:'';
+}
+function joinNext(j){
+  /* the small memory and its neighbour become one - the bigger one's name kept; the last joins the one before */
+  const k=j<M.length-1?j+1:j-1; if(k<0||!M[k]) return;
+  const [a,b]=j<k?[j,k]:[k,j];
+  const keepB=M[b].photos.length>M[a].photos.length;
+  const into=keepB?M[b]:M[a], from=keepB?M[a]:M[b];
+  into.photos=into.photos.concat(from.photos).sort(byTime);
+  M.splice(M.indexOf(from),1);
+  cur=Math.max(0,Math.min(M.indexOf(into),M.length-1)); sel=null;
+  queueSave(); paint(); scrollTo(0,0);
+}
+function limitsSheet(){
+  const l=limitsNow(), s=$('sheet');
+  const rows=l.small.map(x=>{ const k=x.j<M.length-1?x.j+1:x.j-1; const other=M[k]?(M[k].title||('Group '+(k+1))):'';
+    return `<li><b>${esc(x.title||('Group '+(x.j+1)))}</b>: ${plural(x.n,'photo')} <button class="b" data-join="${x.j}" type="button">Join with \u201c${esc(other)}\u201d</button></li>`; }).join('');
+  const many=l.tooMany&&!l.small.length?M.map((m,j)=>j<M.length-1?`<li><b>${esc(m.title||('Group '+(j+1)))}</b> <button class="b" data-join="${j}" type="button">Join with the next one</button></li>`:'').join(''):'';
+  s.innerHTML=`<div class="in" id="limitsheet"><h3>Fewer, fuller memories</h3>
+    <p>${l.tooMany?`A film this length works best with up to <b>${l.max}</b> memories - you have <b>${l.n}</b>. `:''}${l.small.length?`Each memory works best with at least <b>${l.min}</b> photos - it gets a fuller verse in the song.`:''}</p>
+    <ul class="shortmems">${rows||many}</ul>
+    <div class="acts"><button id="keepas" type="button">I'd like to keep these as they are</button></div>
+    <p class="small" id="keepmsg" role="status"></p></div>`;
+  s.classList.remove('hide');
+}
+async function keepAsTheyAre(){
+  const m=$('keepmsg'); if(m) m.textContent='One moment…';
+  try{ const r=await rpc('keep_memories_as_they_are',{p_token:TOKEN}); if(!r||r.error) throw new Error((r&&r.error)||'keep'); }
+  catch(e){ report('keep_memories_as_they_are',e); if(m) m.textContent='That didn\u2019t go through. Please try again.'; return; }
+  KEPT=true; $('sheet').classList.add('hide');
+  if(screen==='board') boardNext(); else finishSort();
+}
+function limitsHold(){
+  /* Done / Next on the sort step: held while the limits aren't met (and not kept), with the sheet that fixes it */
+  const l=limitsNow();
+  if(l.known&&!l.kept&&(l.tooMany||l.small.length)){ limitsSheet(); return true; }
+  return false;
+}
 function paintOrg(){
   const m=M[cur]; if(!m) return;
   const inn=m.photos.filter(p=>!p.excluded), gone=m.photos.filter(p=>p.excluded);
@@ -2176,10 +2301,13 @@ function paintOrg(){
       <p class="do">It will be dropped when you move on${UN.length?' — or put a photo in it from below':''}.</p>`;
     h+=unsortedStrip();
     $('stage').innerHTML=h; orgNav(); sheet(); return; }
+  h+=limitsLine();
+  h+=`<div id="filmmeter2"></div>`;                                        // 18 Oct: the film-length meter on the sort page too
   h+=`<h2>What do you call this group?</h2>
     <input type="text" id="nm" class="beside" value="${esc(m.title)}" placeholder="Anything you like" autocomplete="off">
     <p class="do" style="font-size:16.5px;margin:9px 0 22px;color:var(--fg2)">
       ${plural(inn.length,'photo')} · about ${mmss(secs(m))} of film · tap a photo to move it, or leave it out</p>
+    ${(()=>{ const l=limitsNow(); const me=l.small.find(x=>x.j===cur); return me&&M.length>1?`<p class="goldnote">Only ${plural(me.n,'photo')} here - a memory works best with at least ${l.min}. <button class="b" data-join="${cur}" type="button">Join with the ${cur<M.length-1?'next':'previous'} one</button></p>`:''; })()}
     <div class="chips"><span class="lab">How did this time feel?</span>
       ${Object.keys(REG).map(r=>`<button class="chip" data-reg="${r}" aria-pressed="${m.register===r}">${LAB[r]}</button>`).join('')}</div>
     <div class="grid">`;
@@ -2192,6 +2320,7 @@ function paintOrg(){
   if(gone.length){ h+=`<div class="leftout"><h4>Left out</h4><p>Tap one to put it back.</p><div class="lostrip">`;
     gone.forEach(p=>{h+=`<div class="lo" data-back="${p.id}"><img src="${p.thumb_url||p.url}" loading="lazy" decoding="async"><div class="put">put back</div></div>`;});
     h+='</div></div>'; }
+  setTimeout(()=>{ const fm=$('filmmeter2'); if(fm&&typeof filmMeter==='function') filmMeter(fm); },0);
   $('stage').innerHTML=h;
   orgNav();
   sheet();
@@ -2259,6 +2388,7 @@ async function finishSort(){
   const b=$('sortDone'); if(!b) return;
   for(let j=M.length-1;j>=0;j--) dropEmptyAt(j);                         // 2 Oct: empty groups are dropped, never named
   if(UN.length&&!UNASK){ unsortedChoice(); return; }
+  if(limitsHold()) return;                                                // 18 Oct: fewer, fuller memories (or kept)
   b.disabled=true; b.textContent='One moment…';
   clearTimeout(saveTimer);
   /* She may press Done a second after typing the last name, while that save
@@ -3276,6 +3406,8 @@ document.addEventListener('click',async e=>{
   if(t.id==='failedRetry'){ $('sheet').classList.add('hide'); send(); return; }
   if(t.id==='failedSkip'){ SKIP_FAILED=true; $('sheet').classList.add('hide'); askAllIn(); return; }
   if(t.id==='shortAdd'){ shortAdd(); return; }
+  if(t.id==='shortJoin'){ $('sheet').classList.add('hide'); showSort(); return; }
+  if(t.id==='keepas2'){ (async()=>{ try{ const r=await rpc('keep_memories_as_they_are',{p_token:TOKEN}); if(!r||r.error) throw new Error((r&&r.error)||'keep'); KEPT=true; $('sheet').classList.add('hide'); finishFilm($('tomusic'),true); }catch(e){ report('keep',e); } })(); return; }
   if(t.id==='shortSend'){ shortSend(); return; }
   if(t.id==='allinNo'){ $('sheet').classList.add('hide'); return; }
   if(t.id==='allinYes'){ finishUpload(); return; }
@@ -3320,6 +3452,8 @@ document.addEventListener('click',async e=>{
     scrollTo(0,0); return; }
   if(t.id==='tofirst'){ if(dropEmptyAt(cur)) cur=Math.min(cur,M.length-1); const i=M.findIndex(x=>hasPhotos(x)&&!(x.title||'').trim());
     if(i>=0){ cur=i; sel=null; picking=false; paint(); scrollTo(0,0); } return; }
+  if(t.dataset&&t.dataset.join!==undefined){ $('sheet').classList.add('hide'); joinNext(+t.dataset.join); return; }
+  if(t.id==='keepas'){ keepAsTheyAre(); return; }
   if(t.id==='sortDone'){ finishSort(); return; }
   /* 2 Oct: the board, remove a group, photos in no group */
   if(t.id==='bnext'){ boardNext(); return; }
