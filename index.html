@@ -1566,7 +1566,34 @@ async function look(){
   }).join('');
   uploadNav();
 }
+/* 17 Oct (a live tester: 48 photos failed with "Load failed", the page let her move on and submit, and the second half of her
+   trip was missing): NEVER past the upload step while any photo of this visit failed or is still going in - unless she is told
+   plainly ("48 photos didn't go in") and CHOOSES to carry on without them. */
+let SKIP_FAILED=false;
+function notIn(){
+  return {failed:queue.filter(q=>q.status==='failed'),
+          going:SENDING||queue.some(q=>['adding','ready','reading','converting'].includes(q.status))};
+}
+function failedSheet(n){
+  const s=$('sheet');
+  s.innerHTML=`<div class="in" id="failedsheet"><h3>${n===1?'One photo':n+' photos'} didn't go in</h3>
+    <p>${n===1?'It is':'They are'} not in your film yet. Try again - on Wi-Fi if you can, with this page open - or carry on without ${n===1?'it':'them'}.</p>
+    <p class="small">${queue.filter(q=>q.status==='failed').slice(0,6).map(q=>esc(q.file.name)).join(', ')}${n>6?' and '+(n-6)+' more':''}</p>
+    <div class="acts"><button class="yes" id="failedRetry" type="button">Try again</button>
+    <button id="failedSkip" type="button">Carry on without ${n===1?'it':'them'}</button></div></div>`;
+  s.classList.remove('hide');
+}
+function goingSheet(){
+  const s=$('sheet');
+  s.innerHTML=`<div class="in" id="goingsheet"><h3>Your photos are still going in</h3>
+    <p>Please wait until it says "All in" - keep this page open and your phone unlocked.</p>
+    <div class="acts"><button class="yes" id="allinNo" type="button">OK</button></div></div>`;
+  s.classList.remove('hide');
+}
 async function askAllIn(sent){
+  const ni=notIn();
+  if(ni.going){ goingSheet(); return; }
+  if(ni.failed.length&&!SKIP_FAILED){ failedSheet(ni.failed.length); return; }
   const c=sent?null:await photoCounts(true);       // sent: they chose to send what they have
   if(needsMore(c)&&c.film.short>0){ showShort(c,'upload'); return; }
   const s=$('sheet');
@@ -2701,7 +2728,9 @@ async function paintAllDone(){
     <h1>That\u2019s all the questions</h1>
     <p class="do">${ASK?'You\u2019ve told us about every group. Press Finished and your memories go into the song.'
       :'You\u2019ve told us about every group. Press Finished and we\u2019ll make your film from your photos and your words.'}</p>
+    <p class="lede" id="photosin">${+J.photos?`Your film has ${plural(+J.photos,'photo')} in it.`:''}</p>
     <p class="lede">Want to change something? Use \u2190 to go back through the groups.</p>${inviteCard()}`;
+  photoCounts(true).then(c=>{ const e=$('photosin'); if(e&&c&&c.film) e.textContent=`Your film has ${plural(c.film.usable,'photo')} in it.`; });
   $('stage').className='';
   nav('<button class="go" id="tomusic">Finished</button>',`${M.length} of ${M.length} groups done`,true,
       ASK?'When you press Finished, that’s everything from you.'
@@ -3241,6 +3270,8 @@ document.addEventListener('click',async e=>{
   /* upload */
   if(t.dataset.anyway!==undefined){ const q=queue[+t.dataset.anyway]; if(q&&q.status==='dup'&&!QUOTE){ q.status='ready'; q.force=true; paintQueue(); $('send').disabled=false; } return; }
   if(t.id==='allin'){ askAllIn(); return; }
+  if(t.id==='failedRetry'){ $('sheet').classList.add('hide'); send(); return; }
+  if(t.id==='failedSkip'){ SKIP_FAILED=true; $('sheet').classList.add('hide'); askAllIn(); return; }
   if(t.id==='shortAdd'){ shortAdd(); return; }
   if(t.id==='shortSend'){ shortSend(); return; }
   if(t.id==='allinNo'){ $('sheet').classList.add('hide'); return; }
