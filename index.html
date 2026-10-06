@@ -1305,6 +1305,7 @@ const CLS={exif:'exif',filename:'',modified:'',none:'none'};
    from her side is losing them. Rows already in, already refused or failed
    stay where she can see them. */
 let pickRun=0;
+const MAX_VIDEO_B=50*1024*1024, MAX_PHOTO_B=25*1024*1024;     // the upload function's own limits (413 above them)
 async function pick(files){
   if(QUOTE){ songGuide(COUNTED); return; }                // over the long tier: nothing more until a price is agreed
   const run=++pickRun;
@@ -1335,7 +1336,13 @@ async function pick(files){
       item.phash=item.thumb?await phashOf(new File([item.thumb],'frame.jpg',{type:'image/jpeg'})):null;
     }else{ item.phash=await phashOf(item.file); const th=await thumbOf(item.file);
       item.thumb=th.blob; item.sharpness=th.sharpness; item.brightness=th.brightness; }
-    if(item.sha&&(alreadyIn(item.sha)||batch.includes(item.sha))) item.status='dup';
+    /* 16 Oct (her 115 MB .mov): too big is said BEFORE anything is sent - the server's own limits (a video 50 MB, a photo 25 MB) */
+    const mb=Math.round(item.file.size/1048576);
+    if(item.video&&item.file.size>MAX_VIDEO_B){ item.status='toobig';
+      item.err=`this video is ${mb} MB - we can take videos up to 50 MB. Trim it on your phone, or choose a shorter one.`; }
+    else if(!item.video&&item.file.size>MAX_PHOTO_B){ item.status='toobig';
+      item.err=`this photo is ${mb} MB - we can take photos up to 25 MB.`; }
+    else if(item.sha&&(alreadyIn(item.sha)||batch.includes(item.sha))) item.status='dup';
     else { item.status='ready'; if(item.sha) batch.push(item.sha); }
     paintQueue();
   }
@@ -1357,19 +1364,58 @@ function paintQueue(){
     (dups.length?`<br><span class="ok">You've already added ${dups.length===1?'one of these':dups.length+' of these'}</span> — we'll skip ${dups.length===1?'it':'them'}.`:'');
   const word={reading:'having a look',converting:'converting',ready:'ready',adding:'adding'};
   $('rows').innerHTML=queue.map(q=>`<div class="row"><span class="nm">${esc(q.file.name)}</span>
-    <span class="st ${q.status==='done'||q.status==='dup'?'ok':q.status==='failed'||q.status==='held'?'bad':'wait'}">
-      ${q.status==='done'?'in':q.status==='dup'?(q.err?esc(q.err):"you've already added this one")+(q.err||QUOTE?'':` <button class="chip" type="button" data-anyway="${queue.indexOf(q)}" style="padding:4px 10px;font-size:12.5px;margin-left:6px">Add it anyway</button>`):q.status==='failed'||q.status==='held'?(esc(q.err)||"didn't go in"):(word[q.status]||esc(q.status))}
+    <span class="st ${q.status==='done'||q.status==='dup'?'ok':q.status==='failed'||q.status==='held'||q.status==='toobig'?'bad':'wait'}">
+      ${q.status==='done'?'in':q.status==='dup'?(q.err?esc(q.err):"you've already added this one")+(q.err||QUOTE?'':` <button class="chip" type="button" data-anyway="${queue.indexOf(q)}" style="padding:4px 10px;font-size:12.5px;margin-left:6px">Add it anyway</button>`):q.status==='failed'||q.status==='held'||q.status==='toobig'?(esc(q.err)||"didn't go in"):(word[q.status]||esc(q.status))}
       ${q.video?`<span class="tagd">video${q.duration?' · '+Math.round(q.duration)+' s':''}${q.has_speech?' · someone talking':''}${q.noFrame?' · no still — it’ll still be in your film':''}</span>`:''}
       ${q.src&&q.status!=='dup'?`<span class="tagd ${CLS[q.src]}">${LABEL[q.src]}</span>`:''}</span></div>`).join('');
 }
+/* 16 Oct (Isabelle, iPhone Safari): ONE send loop at a time - two loops signed the same photo 0.1-0.4 s apart and left
+   orphan rows. While it runs, a line asks her to keep the page open; the same film open in another tab gets a gentle note. */
+let SENDING=false;
 async function send(){
+  if(SENDING) return;
+  SENDING=true; keepOpen(true);
+  try{ await sendLoop(); } finally{ SENDING=false; keepOpen(false); }
+}
+function keepOpen(on){
+  let el=$('keepopen');
+  if(!el){ const b=$('send'); if(!b||!b.parentNode) return; el=document.createElement('p'); el.id='keepopen'; el.className='lede';
+    el.setAttribute('role','status'); b.parentNode.insertBefore(el,b.nextSibling); }
+  el.textContent=on?'Keep this page open and your phone unlocked until it says done.':'';
+  el.classList.toggle('hide',!on);
+}
+(function otherTab(){
+  try{
+    const ch=new BroadcastChannel('mf_film_'+TOKEN), me=Math.random().toString(36).slice(2);
+    const note=()=>{ if($('othertab')) return; const p=document.createElement('p'); p.id='othertab'; p.className='goldnote';
+      p.textContent='This film is also open in another tab or window. Please use just one, so nothing is sent twice.';
+      const w=document.querySelector('.wrap')||document.body; w.insertBefore(p,w.firstChild); };
+    ch.onmessage=e=>{ const m=e.data||{}; if(m.from===me) return; if(m.t==='hello') ch.postMessage({t:'here',from:me}); note(); };
+    ch.postMessage({t:'hello',from:me});
+  }catch(_){}
+})();
+const PUT_TRIES=3, PUT_WAIT_MS=[2000,4000,6000];
+async function putOnce(q){
+  /* "Load failed" (the phone lost the connection): the same file again, up to 3 times, with a short wait */
+  for(let i=0;;i++){
+    try{ return await fetch(q.signed_url,{method:'PUT',headers:{'Content-Type':mimeOf(q.file)},body:q.file}); }
+    catch(e){ if(i>=PUT_TRIES-1) throw e; await sleep(PUT_WAIT_MS[i]||6000); }
+  }
+}
+function alreadyThere(status,body){
+  /* 16 Oct: a 409 "The resource already exists" (KeyAlreadyExists) on a retry means the FIRST try arrived - the phone just
+     lost the reply. The file IS in storage: keep the asset and go to confirm (which checks the stored file's size and type). */
+  return status===409||/already exists|KeyAlreadyExists|Duplicate/i.test(body||'');
+}
+async function sendLoop(){
   if(QUOTE){ paintQueue(); return; }                         // over the long tier: nothing more until a price is agreed
   const who=($('who').value||'').trim()||'unknown';
   $('send').disabled=true; if($('allin')) $('allin').disabled=true;
-  const todo=queue.filter(q=>q.status!=='dup');
+  const todo=queue.filter(q=>q.status!=='dup'&&q.status!=='toobig');
   let done=0;
   for(const q of todo){
     if(q.status==='done'){done++;continue;}
+    if(q.status==='toobig'){done++;continue;}               // refused before sending (16 Oct)
     /* Last look before it goes: something with the same hash may have gone in
        moments ago from this very batch, or from another device on the same link. */
     if(!q.force&&alreadyIn(q.sha)){ q.status='dup'; paintQueue(); continue; }
@@ -1398,12 +1444,13 @@ async function send(){
         if(!ok){ const e=new Error(j.detail||j.error||'rejected'); e.detail={http:status,server:j.error||null}; throw e; }
         q.signed_url=j.signed_url; q.asset_id=j.asset_id;
       }
-      const put=await fetch(q.signed_url,{method:'PUT',headers:{'Content-Type':mimeOf(q.file)},body:q.file});
-      if(!put.ok){
+      const put=await putOnce(q);
+      let body='';
+      if(!put.ok){ try{ body=await put.text(); }catch(_){} }
+      if(!put.ok&&!alreadyThere(put.status,body)){
         if(put.status>=400&&put.status<500) q.signed_url=null;   // expired or refused — sign afresh next time
         /* ⚠ Never "upload failed" with no reason. Say what the server said, in
            her words where we know them, and keep the raw reply for the log. */
-        let body=''; try{ body=await put.text(); }catch(_){}
         let why=''; try{ why=JSON.parse(body).message||''; }catch(_){}
         const ext=(q.file.name.split('.').pop()||'').toLowerCase();
         const plainWhy=/mime type/i.test(why)?`we can't take .${ext} files yet`:(why||`the upload was refused (HTTP ${put.status})`);
