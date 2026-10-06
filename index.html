@@ -355,7 +355,7 @@ function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?S
 const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
 const FN=SB+'/functions/v1';
 const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
-const BUILD='2026-10-21a';                                 // bump on every change (1 Oct: there was no stamp before)
+const BUILD='2026-10-21b';                                 // bump on every change (1 Oct: there was no stamp before)
 document.documentElement.dataset.build=BUILD;
 let TOKEN=new URLSearchParams(location.search).get('t')||'';
 /* ?a=<answer token> — somebody else answering the same memories (on a film
@@ -903,7 +903,6 @@ async function sayNames(){
   P.asking=+j.asking||P.say.filter(x=>x.needs).length;
   P.newTakes=0;
   P.mode='say'; paintSay(); scrollTo(0,0);
-  P.say.forEach((x,i)=>lookForTake(i,x.sung));   // cached takes are instant; show them without being asked
 }
 /* ── hearing a name ──────────────────────────────────────────────────
    "If the correct spelling gives the wrong pronunciation, they can play
@@ -964,18 +963,10 @@ async function chooseTake(i){
   x.busy=false; paintSayRow(i); paintSayNav();
 }
 function sayRow(x,i){
-  const open=x.answer==='no', st=takeState(x), t=x.take||{};
-  const btn= st==='ready'?`<button class="play" type="button" data-play="${esc(sampleUrl(t.sample))}" aria-label="Hear ${esc(x.name)} sung">\u25b6 Hear it</button>`
-           : st==='making'?`<button class="play" type="button" disabled>Making it \u2014 about a minute</button>`
-           : `<button class="play" type="button" data-trytake="${i}" ${x.busy?'disabled':''}>${x.busy?'One moment\u2026':'Hear this spelling'}</button>`;
+  /* 21 Oct (queue item 15, Nigel 6 Oct): the START asks only how each name is said (the interview needs it) - no hearing here;
+     the names are heard sung just before Finished (showSung), once the takes have been made and checked in the background */
+  const open=x.answer==='no';
   return `<b>${esc(x.name)}</b> <span class="rel">\u2014 said <i>${esc(x.said_as||'\u2026')}</i></span>${x.chosen?' <span class="sug on">that\u2019s it</span>':''}
-    <div class="sungrow"><label>Spelt for the singer</label>
-      <input type="text" class="sungbox" data-sung="${i}" value="${esc(x.sung)}" autocomplete="off" spellcheck="false" ${x.busy?'disabled':''}>
-      ${btn}
-      ${st==='ready'&&!x.chosen?`<button class="yes" data-choosetake="${i}" style="padding:9px 14px;font-size:15px">That\u2019s it</button>`:''}</div>
-    ${st==='making'?`<p class="note">We\u2019re making that one \u2014 about a minute. Carry on with the other names; it\u2019ll be ready when you come back to it.</p>`:''}
-    ${st==='ready'&&(t.verified===false||t.verdict==='wrong'||t.verdict==='not_heard')?`<p class="note bad">We couldn\u2019t hear the name clearly in this one \u2014 try another spelling.</p>`:''}
-    ${st==='ready'&&+t.chosen_by>0?`<p class="note">Most people spell it this way${+t.chosen_by>1?` \u2014 ${t.chosen_by} so far`:''}.</p>`:''}
     ${x.note?`<p class="note">${esc(x.note)}</p>`:''}
     ${x.needs&&!x.chosen?`<div class="acts" style="margin-top:10px">
         <button class="${x.answer==='yes'?'yes':''}" data-sayok="${i}">${x.answer==='yes'?'Yes \u2014 that\u2019s it':'Yes, that\u2019s how it\u2019s said'}</button>
@@ -986,14 +977,13 @@ function sayRow(x,i){
 function paintSayRow(i){ const el=document.querySelector(`[data-say="${i}"]`); if(!el) return; const x=P.say[i]; el.className=`person ${x.needs&&x.answer===null?'ask':''}`; el.innerHTML=sayRow(x,i); paintSayNav(); }
 function paintSayNav(){
   const ready=P.say.every(x=>!x.needs||x.answer==='yes'||(x.answer==='no'&&x.typed.trim()));
-  const left=NEW_TAKES_CAP-(P.newTakes||0);
-  nav(`<button class="go" id="sayDone" ${ready?'':'disabled'}>That\u2019s right \u2192</button>`, left<NEW_TAKES_CAP?`${left} new spelling${left===1?'':'s'} left to try`:'', true, '');
+  nav(`<button class="go" id="sayDone" ${ready?'':'disabled'}>That\u2019s right \u2192</button>`, '', true, '');
 }
 function paintSay(){
   const st=$('stage'); st.className=''; $('sheet').classList.add('hide');
   let h=`<div class="step">First \u00b7 the people</div><h1>Here\u2019s how we\u2019ll say these</h1>
     <p class="do">${P.asking?`Check the ${P.asking===1?'one':P.asking} we\u2019re not sure of. The rest you can change if we\u2019ve got them wrong.`:'Tap any that we\u2019ve got wrong. Otherwise you\u2019re done here.'}</p>
-    <p class="lede">Press \u25b6 to hear each name sung. If it doesn\u2019t sound right, change the spelling and hear that \u2014 keep going until it sounds like them. A spelling that\u2019s been tried before plays straight away; a new one takes about a minute to make.</p>
+    <p class="lede">You\u2019ll hear each name sung near the end, just before you finish.</p>
     <div class="people">`;
   P.say.forEach((x,i)=>{ h+=`<div class="person ${x.needs&&x.answer===null?'ask':''}" data-say="${i}">${sayRow(x,i)}</div>`; });
   h+='</div>';
@@ -2743,6 +2733,8 @@ async function toGroups(){
     /* Everything answered. She may have been on the music page, or be back
        to press Finished. */
     if(pr.screen==='genre'&&!ASK){ cur=M.length-1; showGenre(); return; }
+    if(pr.screen==='names'&&!ASK){ cur=M.length-1; showSung(null); return; }      // 21 Oct: back on the names step
+    if(pr.names_heard) NS.done=true;
     cur=M.length-1; paintAllDone(); scrollTo(0,0); return; }
   cur=need; draft='';
   await arrive();
@@ -3031,9 +3023,73 @@ async function toMusic(){
   if(G.chosen&&G.chosen.confirmed){ await finishFilm(b); return; }
   prog({screen:'genre'}); showGenre();
 }
+/* ═══ 21 Oct · "HERE'S HOW YOUR NAMES WILL BE SUNG" — JUST BEFORE FINISHED (queue item 15) ════════════════
+   Nigel, 6 Oct: hearing the names at the start delayed the start; once they've uploaded and answered, hearing their names sung
+   properly is a good lead-in to committing (and, once checkout exists, paying - this is the step right before it). The names and
+   how they're said are still asked at the start (one question - the interview needs them). The takes are made SILENTLY once the
+   photos are sorted (pipeline.names_ahead on the PC) and checked there: a take our check didn't pass is NEVER played - it says
+   "we'll check this one". "Fix a name" takes the correction and they carry on to Finished at once - nothing here ever waits for a
+   take (the end is the worst place for friction); the corrected take is made and checked before the song is made. */
+let NS={rows:[],done:false,fixed:0,b:null,sent:false};
+const SUNG_PLAYS=v=>v==='sung'||v==='unsure';            // our check passed it, or heard the name and can't judge the vowel - they can
+async function namesSung(){
+  try{ const r=await rpc('get_names_sung',{p_token:TOKEN}); if(Array.isArray(r)) return r; if(r&&r.error) throw new Error(r.error); }
+  catch(e){ if(!/get_names_sung|404|PGRST/.test(String(e&&e.message))) report('get_names_sung',e); }
+  /* until server-wanted-2026-10-21-names.sql is applied: the names as written, each spelling's take asked of take_for */
+  let people=[];
+  try{ const r=await rpc('get_people',{p_token:TOKEN}); if(Array.isArray(r)) people=r; }catch(e){ report('get_people (names)',e); }
+  return Promise.all(people.map(async x=>{ const o={name:x.name,said_as:x.said_as||'',sung:x.name,ready:false,sample:null,verdict:null};
+    try{ const t=await rpc('take_for',{p_sung:o.sung}); if(t&&t.ready){ o.ready=true; o.sample=t.sample; o.verdict=t.verdict||null; } }catch(_){}
+    return o; }));
+}
+async function showSung(b){
+  page='answer'; screen='names'; NS.b=b||NS.b;
+  waitScreen('Getting your names ready to hear — a moment…');
+  const rows=await namesSung();
+  if(screen!=='names') return;
+  if(!rows.length){ NS.done=true; await finishFilm(NS.b,NS.sent); return; }
+  NS.rows=rows.map(x=>({...x,open:false,typed:'',saved:false,busy:false,note:''}));
+  prog({screen:'names'});
+  paintSung(); scrollTo(0,0);
+}
+function sungRow(x,i){
+  const plays=x.ready&&x.sample&&SUNG_PLAYS(x.verdict);
+  const btn=plays?`<button class="play" type="button" data-play="${esc(sampleUrl(x.sample))}" aria-label="Hear ${esc(x.name)} sung">▶ Hear it</button>`
+               :`<span class="note" style="display:inline-block;margin:0">We’re still checking this one — we make sure every name is sung right before your song is made.</span>`;
+  return `<b>${esc(x.name)}</b>${x.said_as?` <span class="rel">— said <i>${esc(x.said_as)}</i></span>`:''}
+    <div class="sungrow" style="margin-top:8px">${btn}</div>
+    ${x.saved?`<p class="note">Thanks — we’ll sing it that way, and check it before your song is made.</p>`
+      :x.open?`<label class="note" for="sungtype${i}" style="display:block;margin-top:10px">How is it said? Write it how it sounds, like LAY-sa or shiv-AWN</label>
+        <input type="text" id="sungtype${i}" class="saytype" data-sungtype="${i}" value="${esc(x.typed)}" autocomplete="off" style="margin-top:6px">
+        <div class="acts" style="margin-top:8px"><button class="yes" data-sungsave="${i}" ${x.busy?'disabled':''}>${x.busy?'One moment…':'Save'}</button>
+        <button data-sungfix="${i}">Cancel</button></div>`
+      :`<button class="chip" data-sungfix="${i}" style="margin-top:8px">Fix this name</button>`}
+    ${x.note?`<p class="note">${esc(x.note)}</p>`:''}`;
+}
+function paintSung(){
+  const st=$('stage'); st.className=''; $('sheet').classList.add('hide');
+  let h=`<div class="step">Before you finish · the names</div><h1>Here’s how your names will be sung</h1>
+    <p class="do">Press ▶ to hear each one. If one doesn’t sound right, tap <b>Fix this name</b> and tell us how it’s said — you won’t have to wait.</p>
+    <div class="people">`;
+  NS.rows.forEach((x,i)=>{ h+=`<div class="person" data-sungrow="${i}">${sungRow(x,i)}</div>`; });
+  st.innerHTML=h+'</div>';
+  nav(`<button class="go" id="sungdone">${NS.fixed?'Carry on →':'Sounds right →'}</button>`,'',true,'');
+}
+function paintSungRow(i){ const el=document.querySelector(`[data-sungrow="${i}"]`); if(el) el.innerHTML=sungRow(NS.rows[i],i); }
+async function saveSungFix(i){
+  const x=NS.rows[i]; if(!x||x.busy) return;
+  const said=(x.typed||'').trim(); if(!said){ const f=$('sungtype'+i); if(f) f.focus(); return; }
+  x.busy=true; x.note=''; paintSungRow(i);
+  try{ const r=await rpc('confirm_person_sound',{p_token:TOKEN,p_name:x.name,p_corrected_said_as:said}); if(!r||r.error) throw new Error((r&&r.error)||'confirm failed');
+    x.saved=true; x.open=false; x.said_as=said; NS.fixed++; prog({screen:'names',names_fixed:NS.fixed}); }
+  catch(e){ report('confirm_person_sound (names)',e,{name:x.name}); x.note='That didn’t go through — try again in a moment.'; }
+  x.busy=false; paintSungRow(i); paintSung();
+}
+
 async function finishFilm(b,sent){
   const c=sent?null:await photoCounts(true);                 // 16 Oct: the minimums before the film is sent
   if(needsMore(c)){ if(b){ b.disabled=false; b.textContent='Finished'; } showShort(c,'finish'); return; }
+  if(!NS.done){ NS.sent=!!sent; await showSung(b); return; }  // 21 Oct: the names, heard sung, right before Finished (the minimums answered stay answered)
   try{ await setStage('submitted'); }
   catch(e){ report('set_stage submitted',e); if(b){ b.disabled=false; b.textContent='Finished'; }
     const before=$('nav').querySelector('.before'); if(before) before.textContent="That didn't go through. Please press Finished again."; return; }
@@ -3458,6 +3514,9 @@ document.addEventListener('click',async e=>{
   if(t.id==='psayagain'){ sayNames(); return; }
   if(t.id==='pmore'){ paintOthers(); scrollTo(0,0); return; }
   if(t.dataset.sayok!==undefined){ const i=+t.dataset.sayok, x=P.say[i]; x.answer='yes'; x.typed=''; paintSayRow(i); return; }
+  if(t.id==='sungdone'){ t.disabled=true; t.textContent='One moment…'; NS.done=true; prog({screen:'names',names_heard:true,names_fixed:NS.fixed}); await finishFilm(t,NS.sent); return; }
+  if(t.dataset.sungfix!==undefined){ const i=+t.dataset.sungfix, x=NS.rows[i]; if(!x) return; x.open=!x.open; x.note=''; paintSungRow(i); if(x.open){ const f=$('sungtype'+i); if(f) f.focus(); } return; }
+  if(t.dataset.sungsave!==undefined){ saveSungFix(+t.dataset.sungsave); return; }
   if(t.dataset.sayno!==undefined){ const i=+t.dataset.sayno, x=P.say[i]; x.answer=x.answer==='no'?null:'no'; paintSayRow(i); if(x.answer==='no'){ const f=document.querySelector(`input[data-saytype="${i}"]`); if(f) f.focus(); } return; }
   if(t.dataset.trytake!==undefined){ tryTake(+t.dataset.trytake); return; }
   if(t.dataset.choosetake!==undefined){ chooseTake(+t.dataset.choosetake); return; }
@@ -3508,6 +3567,7 @@ document.addEventListener('click',async e=>{
     if(page==='upload'&&P.mode==='others'){ paintMe(); scrollTo(0,0); return; }
     if(screen==='film'){ if(FQ.i>0&&!FQ.busy) goFilmQ(FQ.i-1); scrollTo(0,0); return; }
     if(screen==='genre'){ screen='answer'; gotoGroup(M.length-1); scrollTo(0,0); return; }
+    if(screen==='names'){ NS.done=false; screen='answer'; gotoGroup(M.length-1); scrollTo(0,0); return; }
     if(screen==='answer'){ if(atEnd){ atEnd=false; gotoGroup(M.length-1); } else if(cur>0) gotoGroup(cur-1); scrollTo(0,0); return; }
     if(screen==='organise'&&dropEmptyAt(cur)){ cur=Math.max(0,cur-1); } else if(cur>0){cur--;} sel=null; picking=false;
     paint();
@@ -3641,6 +3701,7 @@ document.addEventListener('keydown',e=>{
 });
 document.addEventListener('input',e=>{
   if(e.target.classList&&e.target.classList.contains('anchor')){ G.answers[e.target.dataset.key]=e.target.value; return; }
+  if(e.target.dataset&&e.target.dataset.sungtype!==undefined){ const x=NS.rows[+e.target.dataset.sungtype]; if(x) x.typed=e.target.value; return; }
   if(e.target.dataset&&e.target.dataset.saytype!==undefined){ const x=P.say[+e.target.dataset.saytype]; x.typed=e.target.value;
     const b=$('sayDone'); if(b) b.disabled=!P.say.every(y=>!y.needs||y.answer==='yes'||(y.answer==='no'&&y.typed.trim())); return; }
   if(e.target.dataset&&e.target.dataset.sung!==undefined){ const i=+e.target.dataset.sung, x=P.say[i]; x.sung=e.target.value;
