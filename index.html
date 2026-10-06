@@ -2249,9 +2249,22 @@ function limitsLine(){
   const b=l.small.length?`${l.small.length===1?'One memory has':l.small.length+' memories have'} fewer than ${l.min} photos.`:'';
   return (a||b)?`<p class="goldnote" id="memline">${esc([a,b].filter(Boolean).join(' '))} Joining small ones makes each a fuller verse.</p>`:'';
 }
-function joinNext(j){
-  /* the small memory and its neighbour become one - the bigger one's name kept; the last joins the one before */
-  const k=j<M.length-1?j+1:j-1; if(k<0||!M[k]) return;
+/* 19 Oct (Nigel: "Sleeping on the job" was offered "Mummy's juice" - both 1-2 photos - so the joined memory was STILL too small):
+   a small memory is offered the neighbour that brings it UP TO THE MINIMUM - the next one, else the one before - and only if
+   neither does, the bigger neighbour. The same rule as the server's memory_limits_for (server-wanted-2026-10-19-joins.sql). */
+function memN(x){ return M[x]?M[x].photos.filter(p=>!p.excluded).length:0; }
+function joinTarget(j){
+  const min=limitsNow().min, n=memN(j);
+  const c=[j+1,j-1].filter(x=>x>=0&&x<M.length);
+  return c.find(x=>n+memN(x)>=min) ?? c.slice().sort((a,b)=>memN(b)-memN(a)||(b===j+1)-(a===j+1))[0];
+}
+function joinWords(j,k){
+  const other=M[k]?(M[k].title||('Group '+(k+1))):'', t=memN(j)+memN(k);
+  return `Join with \u201c${esc(other)}\u201d - together they make ${t}`;
+}
+function joinNext(j,k){
+  /* the small memory and its neighbour become one - the bigger one's name kept */
+  if(k===undefined) k=joinTarget(j); if(k===undefined||k<0||!M[k]) return;
   const [a,b]=j<k?[j,k]:[k,j];
   const keepB=M[b].photos.length>M[a].photos.length;
   const into=keepB?M[b]:M[a], from=keepB?M[a]:M[b];
@@ -2262,9 +2275,9 @@ function joinNext(j){
 }
 function limitsSheet(){
   const l=limitsNow(), s=$('sheet');
-  const rows=l.small.map(x=>{ const k=x.j<M.length-1?x.j+1:x.j-1; const other=M[k]?(M[k].title||('Group '+(k+1))):'';
-    return `<li><b>${esc(x.title||('Group '+(x.j+1)))}</b>: ${plural(x.n,'photo')} <button class="b" data-join="${x.j}" type="button">Join with \u201c${esc(other)}\u201d</button></li>`; }).join('');
-  const many=l.tooMany&&!l.small.length?M.map((m,j)=>j<M.length-1?`<li><b>${esc(m.title||('Group '+(j+1)))}</b> <button class="b" data-join="${j}" type="button">Join with the next one</button></li>`:'').join(''):'';
+  const rows=l.small.map(x=>{ const k=joinTarget(x.j); if(k===undefined) return '';
+    return `<li><b>${esc(x.title||('Group '+(x.j+1)))}</b>: ${plural(x.n,'photo')} <button class="b" data-join="${x.j}" data-with="${k}" type="button">${joinWords(x.j,k)}</button></li>`; }).join('');
+  const many=l.tooMany&&!l.small.length?M.map((m,j)=>j<M.length-1?`<li><b>${esc(m.title||('Group '+(j+1)))}</b> <button class="b" data-join="${j}" data-with="${j+1}" type="button">Join with the next one</button></li>`:'').join(''):'';
   s.innerHTML=`<div class="in" id="limitsheet"><h3>Fewer, fuller memories</h3>
     <p>${l.tooMany?`A film this length works best with up to <b>${l.max}</b> memories - you have <b>${l.n}</b>. `:''}${l.small.length?`Each memory works best with at least <b>${l.min}</b> photos - it gets a fuller verse in the song.`:''}</p>
     <ul class="shortmems">${rows||many}</ul>
@@ -2307,7 +2320,7 @@ function paintOrg(){
     <input type="text" id="nm" class="beside" value="${esc(m.title)}" placeholder="Anything you like" autocomplete="off">
     <p class="do" style="font-size:16.5px;margin:9px 0 22px;color:var(--fg2)">
       ${plural(inn.length,'photo')} · about ${mmss(secs(m))} of film · tap a photo to move it, or leave it out</p>
-    ${(()=>{ const l=limitsNow(); const me=l.small.find(x=>x.j===cur); return me&&M.length>1?`<p class="goldnote">Only ${plural(me.n,'photo')} here - a memory works best with at least ${l.min}. <button class="b" data-join="${cur}" type="button">Join with the ${cur<M.length-1?'next':'previous'} one</button></p>`:''; })()}
+    ${(()=>{ const l=limitsNow(); const me=l.small.find(x=>x.j===cur); return me&&M.length>1?`<p class="goldnote">Only ${plural(me.n,'photo')} here - a memory works best with at least ${l.min}. ${(k=>k===undefined?'':`<button class="b" data-join="${cur}" data-with="${k}" type="button">${joinWords(cur,k)}</button>`)(joinTarget(cur))}</p>`:''; })()}
     <div class="chips"><span class="lab">How did this time feel?</span>
       ${Object.keys(REG).map(r=>`<button class="chip" data-reg="${r}" aria-pressed="${m.register===r}">${LAB[r]}</button>`).join('')}</div>
     <div class="grid">`;
@@ -3452,7 +3465,7 @@ document.addEventListener('click',async e=>{
     scrollTo(0,0); return; }
   if(t.id==='tofirst'){ if(dropEmptyAt(cur)) cur=Math.min(cur,M.length-1); const i=M.findIndex(x=>hasPhotos(x)&&!(x.title||'').trim());
     if(i>=0){ cur=i; sel=null; picking=false; paint(); scrollTo(0,0); } return; }
-  if(t.dataset&&t.dataset.join!==undefined){ $('sheet').classList.add('hide'); joinNext(+t.dataset.join); return; }
+  if(t.dataset&&t.dataset.join!==undefined){ $('sheet').classList.add('hide'); joinNext(+t.dataset.join,t.dataset.with!==undefined?+t.dataset.with:undefined); return; }
   if(t.id==='keepas'){ keepAsTheyAre(); return; }
   if(t.id==='sortDone'){ finishSort(); return; }
   /* 2 Oct: the board, remove a group, photos in no group */
