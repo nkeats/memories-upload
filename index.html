@@ -2085,6 +2085,9 @@ function unsortedStrip(){
   if(!UN.length) return '';
   let h=`<div class="leftout"><h4>Not in a group yet (${UN.length})</h4><p>${screen==='organise'&&M[cur]?`Tap one to put it in “${esc(M[cur].title||'this group')}”.`:'Tap one, then tap its group.'}</p><div class="lostrip">`;
   UN.forEach(p=>{ h+=`<div class="lo" data-unput="${p.id}"><img src="${p.thumb_url||p.url}" loading="lazy" decoding="async"><div class="put">put here</div></div>`; });
+  /* 17 Oct (a film reopened for 48 photos that never went in): all of them into ONE new group in a tap - she names it, and can
+     split it after with "Different group". One at a time would be 96 taps. */
+  if(screen==='organise'&&UN.length>1) h+=`</div><p style="margin:12px 0 0"><button class="b" id="unall" type="button">Put all ${UN.length} in a new group</button></p><div>`;
   return h+'</div></div>';
 }
 /* THE BOARD (2 Oct): every photo and every suggested group on one screen. Tap a photo, then the group it belongs in;
@@ -3334,6 +3337,9 @@ document.addEventListener('click',async e=>{
     cur=M.length-1; paint(); scrollTo(0,0); return; }
   if(t.id==='unleave'){ $('sheet').classList.add('hide'); UNASK=true; if(screen==='board') boardNext(); else finishSort(); return; }
   if(t.id==='unkeep'){ UNASK=false; $('sheet').classList.add('hide'); return; }
+  if(t.id==='unall'&&screen==='organise'&&UN.length){             // 17 Oct: every photo not in a group -> one new group at the end
+    M.push({title:'',register:'warm',story:'',photos:UN.splice(0)}); cur=M.length-1; sel=null; queueSave(); paint(); scrollTo(0,0);
+    setTimeout(()=>{ const n=$('nm'); if(n) n.focus(); },50); return; }
   const unp=t.closest('[data-unput]');
   if(unp&&screen==='organise'){ putIn(unp.dataset.unput,cur); queueSave(); paint(); return; }
   const bp=t.closest('[data-bp]');
