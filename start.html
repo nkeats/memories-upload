@@ -178,6 +178,19 @@ function occTiming(){
   if(t.kind==='finish_by'&&t.by&&t.day) return `To have it for ${dayMonth(t.day)}, finish your answers by ${dayMonth(t.by)}.`;
   return '';
 }
+/* 17 Oct: THE ORDER-BY PROMISE - only what the film queue can actually keep (the server's occasion_promise: the occasion's own
+   dates, never hard-coded, and the PC queue measured against finish_by). Promised: "Order by 10 February to have your film by
+   Valentine's Day." Not any more: the honest date, before they pay. No answer from the server: the timing line as before. */
+const PROMISE={};
+async function loadPromise(slug){
+  if(!(slug in PROMISE)){ try{ PROMISE[slug]=await rpc('occasion_promise',{p_slug:slug}); }catch(e){ PROMISE[slug]=null; } }
+  if(slug!==OCC) return;
+  const p=PROMISE[slug], tm=$('occtiming'), o=(C.occasions||[]).find(x=>x.slug===slug);
+  if(!tm||!p||!p.order_by||!o) return;
+  if(p.can_promise) tm.textContent=`Order by ${dayMonth(p.order_by)} to have your film by ${o.label}.`;
+  else if(p.ready_by) tm.textContent=`Start now and your film will most likely be ready by ${dayMonth(p.ready_by)}`+
+    (p.day&&p.ready_by>p.day?` - after ${o.label}.`:'.');
+}
 function form(){
   const r=C.retention||{};
   $('stage').innerHTML=`<h1>Turn your memories into a film, with its own song</h1>
@@ -266,7 +279,7 @@ function done(token){
 }
 document.addEventListener('click',ev=>{
   const b=ev.target.closest('button'); if(!b) return;
-  if(b.dataset.occ){ OCC=b.dataset.occ; document.querySelectorAll('[data-occ]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.occ===OCC))); const n=$('occnote'); if(n) n.textContent=occNote(); const tm=$('occtiming'); if(tm) tm.textContent=occTiming(); ready(); }
+  if(b.dataset.occ){ OCC=b.dataset.occ; document.querySelectorAll('[data-occ]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.occ===OCC))); const n=$('occnote'); if(n) n.textContent=occNote(); const tm=$('occtiming'); if(tm) tm.textContent=occTiming(); loadPromise(OCC); ready(); }
   if(b.id==='go') start();
 });
 (async()=>{

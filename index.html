@@ -295,6 +295,12 @@ function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?S
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',show); else show();
 })();
 </script>
+<style id="nav-fit">
+/* 17 Oct: the bottom bar's button keeps its full width - a long count line wraps instead of squeezing the button (on a phone
+   the "Looking at your photos..." line had squeezed it to 44 px, its word cut off) */
+#nav .nin>button,#nav .nin>a.b{flex:0 0 auto;white-space:nowrap}
+#nav .tally{flex:1 1 auto;min-width:0}
+</style>
 </head>
 <body>
 <div class="wrap"><p class="helpline hide" id="helpline"><button class="quiet" id="helpOpen" type="button">Something not right?</button> <a class="quiet hide" id="dataLink" href="#">Your data</a></p><div id="stage" class="load">Opening your film…</div></div>
@@ -337,15 +343,34 @@ const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 
 /* Postgres functions (journey, set_stage). ⚠ These answer HTTP 200 with
    {"error":"unknown token"} on a bad token — the body must be checked. */
+/* 17 Oct (a tester on a phone that kept dropping): a call whose connection drops ("Load failed" / "Failed to fetch") is sent
+   again by itself - 3 tries with a short wait - before anything is shown. Only a NETWORK failure is retried; an answer from the
+   server (even an error) is returned as it is. The upload's own send loop handles its retries (a re-sign would add a row). */
+const NET_WAITS=[1500,3000,5000];
+function isNetErr(e){ return e&&(e.name==='TypeError'||/load failed|failed to fetch|network/i.test(String(e.message||e))); }
+async function fetchRetry(url,opts){
+  for(let i=0;;i++){
+    try{ return await fetch(url,opts); }
+    catch(e){ if(!isNetErr(e)||i>=NET_WAITS.length) { if(isNetErr(e)) e.network=true; throw e; } await sleep(NET_WAITS[i]); }
+  }
+}
 async function rpc(name,args){
-  const r=await fetch(`${SB}/rest/v1/rpc/${name}`,{method:'POST',headers:HDR,body:JSON.stringify(args)});
+  const r=await fetchRetry(`${SB}/rest/v1/rpc/${name}`,{method:'POST',headers:HDR,body:JSON.stringify(args)});
   if(!r.ok) throw new Error(`${name}: HTTP ${r.status}`);
   const t=await r.text();
   return t?JSON.parse(t):null;
 }
+/* 17 Oct (Nigel: "people are very impatient these days"; NN/g: show what is happening for any wait over about a second):
+   every wait screen says WHAT is happening and why it matters to them; one that runs past 8 s adds a calm line. */
+let WAIT_T=null;
+function waitScreen(line){
+  plain(`<p class="load" data-wait="1">${esc(line)}</p><p class="lede hide" id="waitslow">Still working on it - on a slow connection this can take up to a minute.</p>`);
+  clearTimeout(WAIT_T); WAIT_T=setTimeout(()=>{ const w=$('waitslow'); if(w) w.classList.remove('hide'); },8000);
+}
 /* Edge functions (flow, upload, gallery, describe, questions). */
 async function post(fn,body){
-  const r=await fetch(`${FN}/${fn}`,{method:'POST',headers:HDR,body:JSON.stringify({token:TOKEN,...body})});
+  const go=fn==='upload'?fetch:fetchRetry;
+  const r=await go(`${FN}/${fn}`,{method:'POST',headers:HDR,body:JSON.stringify({token:TOKEN,...body})});
   let j={}; try{ j=await r.json(); }catch(_){}
   return {ok:r.ok, status:r.status, j};
 }
@@ -667,7 +692,7 @@ function whoWords(){
 }
 async function showUpload(){
   page='upload';
-  plain('<p class="load">One moment…</p>');
+  waitScreen('Opening your film - bringing in the people and photos you\u2019ve added so far\u2026');
   let people=[];
   try{ const r=await rpc('get_people',{p_token:TOKEN}); if(Array.isArray(r)) people=r; else if(r&&r.error) throw new Error(r.error); }
   catch(e){ report('get_people',e); }
@@ -832,7 +857,7 @@ async function removePerson(i){
 async function sayNames(){
   const bad=P.people.find(x=>joinedNames(x.name));
   if(bad){ paintOthers(); warnName(oneNameOnly(bad.name)+` Remove “${bad.name}” and add them one at a time.`); return; }
-  plain('<p class="load">One moment…</p>');
+  waitScreen('Working out how we\u2019ll sing each name - a few seconds\u2026');
   const names=P.people.map(x=>x.name);
   const {ok,status,j}=await post('say-name',{names});
   if(page!=='upload') return;
@@ -1631,13 +1656,38 @@ async function burstNext(){
    here invites her to leave; a reload lands back here and carries on. When
    the scan is finished the page says so and the button to sorting appears. */
 let describeRun=0, scan={described:0,total:0,done:false,stalled:false};
+/* 17 Oct: THE WAIT, SAID. "Looking at each of your photos so we can ask you the right questions - 52 of 87, about 4 minutes
+   left": the estimate from the MEASURED rate (the first minute: about 4 s a photo, measured 19 Sep) and only when more than
+   10 seconds are left (NN/g). A dropped reply is retried quietly - the server keeps what it already described, so a retry
+   carries on from there and never pays twice. After 3 failed tries in a row: "Your connection dropped - we'll carry on as
+   soon as it's back." Never "snag" or "error" for something we retry. Describing also carries on WITHOUT the page (the PC
+   takes over when the phone goes quiet - pipeline/describe_driver.py), so she can truly close it. */
+const DESC_S_PER_PHOTO=4;
+let RATE=[];                                   // [ms, described] as the count moves
 function showDescribing(){
   page='describing'; screen='describing';
   setTimeout(()=>{ const st=$('stage'); if(st&&!$('unotices')){ const d=document.createElement('div'); d.id='unotices'; st.prepend(d); } startNotices(); },0);
-  scan={described:+J.progress_n||+J.described||0,total:+J.progress_of||+J.photos||0,done:false,stalled:false};
-  plain('<p class="load">One moment…</p>');
+  scan={described:+J.progress_n||+J.described||0,total:+J.progress_of||+J.photos||0,done:false,stalled:false,fails:0,stalls:0,seen:''};
+  RATE=[];
+  waitScreen('Getting the music ready while we start looking at your photos\u2026');
   G.finishMode=false;
   loadMusic().then(()=>{ if(page!=='describing') return; paintMusic(); scrollTo(0,0); describeLoop(++describeRun); });
+}
+function noteRate(){
+  const now=Date.now(); const last=RATE[RATE.length-1];
+  if(!last||last[1]!==scan.described) RATE.push([now,scan.described]);
+  if(RATE.length>12) RATE.shift();
+}
+function secondsLeft(){
+  const left=Math.max(0,scan.total-scan.described); if(!left) return 0;
+  if(RATE.length>=2){ const [t0,d0]=RATE[0], [t1,d1]=RATE[RATE.length-1];
+    if(d1>d0&&t1>t0) return left*((t1-t0)/1000)/(d1-d0); }
+  return left*DESC_S_PER_PHOTO;
+}
+function leftWords(sec){
+  if(sec<=10) return '';
+  if(sec<60) return 'less than a minute left';
+  const m=Math.round(sec/60); return m<=1?'about a minute left':`about ${m} minutes left`;
 }
 async function describeLoop(run){
   let wait=3000;
@@ -1647,30 +1697,38 @@ async function describeLoop(run){
       if(!ok||j.error) throw new Error(j.error||('describe: HTTP '+status));
       if(page!=='describing'||run!==describeRun) return;
       scan.described=+j.described||0; scan.total=+j.total||(scan.described+(+j.remaining||0));
-      scan.stalled=!!j.stalled&&!j.done; scan.done=!!j.done; scan.trouble=false;
+      scan.done=!!j.done; scan.trouble=false; scan.fails=0; scan.offline=false;
       scan.checking=+j.checking||0; scan.removed=+j.removed||0; scan.unchecked=+j.could_not_check||0;
-      paintScan();
-      if(j.done){ prog({screen:'describing',done:true}); return; }
+      if(Array.isArray(j.just)&&j.just.length){ const d=j.just[j.just.length-1]; scan.seen=String((d&&d.description)||'').slice(0,140); }
+      noteRate();
+      if(j.done){ scan.stalled=false; paintScan(); prog({screen:'describing',done:true}); return; }
       if(j.stalled){
-        /* ⚠ 19 Sep: describe fails on every clip and stalls with the photos all
-           done. If what's left is only clips, she may carry on — the clips are
-           still in the film — rather than sit at a dead end. */
-        report('describe stalled',new Error('stalled'),{described:scan.described,total:scan.total,remaining:+j.remaining||0,failed:+j.failed||0});
-        try{ const cs=await rpc('clip_state',{p_token:TOKEN}); const undone=(cs&&cs.clips||[]).filter(c=>!c.described).length;
-          scan.onlyClipsLeft=undone>0&&undone>=(+j.remaining||0); }catch(_){ scan.onlyClipsLeft=false; }
-        paintScan(); return; }
+        /* a stall is retried quietly first (a reply lost mid-batch can look like one); only a stall that persists is said - and
+           calmly. If what's left is only clips, she may carry on: the clips are still in the film. */
+        scan.stalls=(scan.stalls||0)+1;
+        if(scan.stalls>=3){
+          scan.stalled=true;
+          if(scan.stalls===3) report('describe stalled',new Error('stalled'),{described:scan.described,total:scan.total,remaining:+j.remaining||0,failed:+j.failed||0});
+          try{ const cs=await rpc('clip_state',{p_token:TOKEN}); const undone=(cs&&cs.clips||[]).filter(c=>!c.described).length;
+            scan.onlyClipsLeft=undone>0&&undone>=(+j.remaining||0); }catch(_){ scan.onlyClipsLeft=false; }
+        }
+        paintScan();
+        await sleep(scan.stalls>=3?15000:4000); continue;
+      }
+      scan.stalls=0; scan.stalled=false;
+      paintScan();
       /* a call that did nothing: don't hammer. 7 Oct: when all that is left is photos still being CHECKED on our side (the
          worker looks every couple of minutes), ask every 15 s, not every 3. */
       wait=3000; await sleep(+j.this_call>0?400:(scan.checking>0?15000:3000));
     }catch(e){
-      report('describe',e); scan.trouble=true; paintScan();
-      await sleep(wait); wait=Math.min(wait*2,30000);
+      scan.fails=(scan.fails||0)+1;
+      if(scan.fails>=3) scan.offline=true;                 // fetchRetry already tried 3 times under each of these
+      if(scan.fails===3) report('describe',e,{network:!!e.network});
+      paintScan();
+      await sleep(wait); wait=Math.min(wait*2,15000);
     }
   }
 }
-/* The count, quietly — "Looking at your photos — 34 of 55". No bar, no
-   percentage, no estimate: a count is what people tolerate waiting for, and a
-   bar that stalls is worse than none. */
 /* 7 Oct: photos we didn't use are SAID - never a silent drop. 'removed' is the nudity check; 'could_not_check' is our fault. */
 function notUsedLine(){
   const out=[];
@@ -1680,17 +1738,34 @@ function notUsedLine(){
 }
 function scanLine(){
   if(scan.done) return `All ${plural(scan.total,'photo')} looked at.`+(notUsedLine()?' '+notUsedLine():'');
-  if(scan.checking>0&&!scan.stalled&&!scan.trouble) return `Checking your photos — ${scan.checking} still being checked`;
-  if(scan.stalled&&scan.onlyClipsLeft) return `All your photos looked at. We couldn't look inside your video clips — they'll still be in your film.`;
-  if(scan.stalled) return `We've hit a snag looking at your photos.`;
-  if(scan.trouble) return `Looking at your photos — taking a little longer than usual.`;
-  return scan.total?`Looking at your photos — ${scan.described} of ${scan.total}`:`Looking at your photos…`;
+  if(scan.offline) return `Your connection dropped - we'll carry on as soon as it's back.`;
+  if(scan.checking>0&&!scan.stalled) return `Checking your photos so they're safe to use - ${scan.checking} still being checked`;
+  if(scan.stalled&&scan.onlyClipsLeft) return `All your photos looked at. We couldn't look inside your video clips - they'll still be in your film.`;
+  if(scan.stalled) return `Some photos are taking longer to look at - we're still on it.`;
+  if(!scan.total) return `Looking at each of your photos so we can ask you the right questions\u2026`;
+  const left=leftWords(secondsLeft());
+  return `Looking at each of your photos so we can ask you the right questions - ${scan.described} of ${scan.total}${left?', '+left:''}`;
+}
+function scanShort(){
+  if(scan.done) return `All ${scan.total} looked at`;
+  if(scan.offline) return 'Connection dropped - carrying on when it’s back';
+  if(scan.stalled) return 'Still on it';
+  if(!scan.total) return 'Looking at your photos';
+  const left=leftWords(secondsLeft());
+  return `${scan.described} of ${scan.total}${left?' · '+left:''}`;
+}
+function scanExtra(){
+  if(scan.done) return '';
+  return (scan.seen?`<span class="seen">Just looked at: \u201c${esc(scan.seen)}\u201d</span><br>`:'')+
+    `<span class="leave">You can close this page - we'll keep going, and the link in your email brings you back here.</span>`;
 }
 function paintScan(){
-  const el=$('scan'); if(el) el.textContent=scanLine();
-  const t=document.querySelector('#nav .tally'); if(t) t.innerHTML=scanLine();
+  const el=$('scan'); if(el){ el.textContent=scanLine();
+    let x=$('scanx'); if(!x){ x=document.createElement('p'); x.id='scanx'; x.className='lede'; el.parentNode&&el.parentNode.insertBefore(x,el.nextSibling); }
+    x.innerHTML=scanExtra(); }
+  const t=document.querySelector('#nav .tally'); if(t) t.innerHTML=esc(scanShort());   // 17 Oct: short in the bar - the button keeps its room
   const go=scan.done||(scan.stalled&&scan.onlyClipsLeft);
-  const b=$('tosort'); if(b){ b.disabled=!go; b.textContent=go?'Next: put them in order →':'Looking at your photos…'; }
+  const b=$('tosort'); if(b){ b.disabled=!go; b.textContent=go?'Next: put them in order →':'Looking…'; }
   const r=$('dretry'); if(r) r.classList.toggle('hide',!(scan.stalled&&!scan.onlyClipsLeft));
 }
 async function toSort(){
@@ -1859,7 +1934,7 @@ function tile(p){
 }
 async function showSort(){
   page='sort';
-  plain('<p class="load">Loading your photos…</p>');
+  waitScreen('Bringing in your photos so you can put them in order\u2026');
   try{
     const d=await api('load',{});
     A=d.assets.filter(a=>a.url&&a.in_film!==false);   // a burst frame she didn't pick stays in her full album, not in the film
@@ -2412,7 +2487,7 @@ async function linkStory(turn,asset){
 }
 async function showAnswer(){
   page='answer'; screen='answer';
-  plain('<p class="load">Loading your photos…</p>');
+  waitScreen('Bringing in your photos and your groups\u2026');
   try{
     let d=ASK?await answerLoad():await api('load',{});
     A=d.assets.filter(a=>a.url&&a.in_film!==false);   // a burst frame she didn't pick stays in her full album, not in the film
@@ -2604,7 +2679,7 @@ let atEnd=false;
    here, on to the next memory with something left. */
 async function arrive(){
   const m=M[cur]; if(!m) return;
-  plain(`<p class="load">One moment \u2014 thinking about \u201c${esc(m.title||'this group')}\u201d\u2026</p>`);
+  waitScreen(`Thinking about \u201c${m.title||'this group'}\u201d so we can ask you the right questions - a few seconds\u2026`);
   $('nav').classList.add('hide');
   let t;
   try{ t=await openTurn(m); }
@@ -2789,7 +2864,7 @@ async function loadMusic(){
 async function showGenre(){
   /* the fallback: Finished pressed with no sound chosen */
   page='answer'; screen='genre'; G.finishMode=true;
-  plain('<p class="load">One moment…</p>');
+  waitScreen('Bringing in the music choices\u2026');
   await loadMusic(); if(page!=='answer') return;
   paintMusic(); scrollTo(0,0);
 }
@@ -2844,7 +2919,7 @@ function paintMusic(){
     nav(`<button class="go" id="gdone" ${ready?'':'disabled'}>Finished</button>`,'',true,
         ready?'When you press Finished, that\u2019s everything — your film is made from your photos, your words and this music.':'Choose a sound first — tap one above, or tell us what you love.');
   }else{
-    nav(`<button class="go" id="tosort" ${scan.done?'':'disabled'}>${scan.done?'Next: put them in order →':'Looking at your photos…'}</button>`, scanLine(), false, '');
+    nav(`<button class="go" id="tosort" ${scan.done?'':'disabled'}>${scan.done?'Next: put them in order →':'Looking…'}</button>`, scanLine(), false, '');
   }
 }
 /* Her answers → set_anchor each; the joined music note → translate-genre;
