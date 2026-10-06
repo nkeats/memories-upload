@@ -29,7 +29,7 @@ p.lede{color:var(--fg2);font-size:16.5px;line-height:1.6;margin:0 0 22px;max-wid
 .consent .crow{display:flex;gap:10px;margin:0 0 6px}
 .consent .chip.on{background:var(--brass);border-color:var(--brass);color:#20180A}
 .consent .cin{width:100%;background:var(--ink);border:1px solid var(--line);border-radius:8px;color:var(--fg);font:inherit;padding:11px 12px;margin:0 0 14px}
-.step b{color:var(--brass)}
+.step b{color:var(--goldtext,var(--brass))}
 
 input[type=text],textarea{width:100%;background:var(--panel);border:1px solid var(--l2);
   border-radius:8px;color:var(--fg);font:inherit;font-size:18px;padding:16px 17px}
@@ -122,7 +122,7 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 
 /* the plain statement before a one-way button */
 .before{font-size:16px;line-height:1.5;color:var(--fg);margin:0 0 12px}
-.before b{color:var(--brass)}
+.before b{color:var(--goldtext,var(--brass))}
 
 .sheet{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--l2);
   padding:15px 18px calc(16px + env(safe-area-inset-bottom));z-index:40}
@@ -161,7 +161,7 @@ textarea{min-height:170px;line-height:1.65;resize:vertical}
 
 .clock{background:#241F18;border:1px solid var(--brass);border-radius:8px;padding:16px;
   margin-bottom:22px;font-size:16px;line-height:1.55}
-.clock b{color:var(--brass)}
+.clock b{color:var(--goldtext,var(--brass))}
 .clock .row{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;border:none;padding:0}
 .clock button{background:var(--brass);border:none;border-radius:6px;color:#20180A;font:inherit;
   font-weight:600;font-size:15px;padding:12px 18px;cursor:pointer}
@@ -313,6 +313,27 @@ function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?S
 #nav .nin>button,#nav .nin>a.b{flex:0 0 auto;white-space:nowrap}
 #nav .tally{flex:1 1 auto;min-width:0}
 </style>
+<script id="a11y-focus">
+/* 20 Oct (WCAG 2.2 AA - focus order 2.4.3, status messages 4.1.3; the US launch): when a screen is redrawn and the control that
+   had the focus has gone, the focus moves to the new screen's heading - not lost to the top of the page - so a screen reader
+   reads the new screen. Only when the heading is new (a screen that redraws itself is not read again), and never while the
+   focus is still on something. */
+(function(){
+  var last='';
+  function root(){ return document.getElementById('stage')||document.querySelector('.wrap'); }
+  function fix(){
+    var a=document.activeElement; if(a&&a!==document.body&&document.contains(a)) return;
+    var st=root(), h=st&&st.querySelector('h1,h2'); if(!h) return;
+    var t=(h.textContent||'').trim(); if(!t||t===last) return; last=t;
+    if(!h.hasAttribute('tabindex')) h.setAttribute('tabindex','-1');
+    try{ h.focus({preventScroll:true}); }catch(e){}
+  }
+  function start(){ var st=root(); if(!st||!window.MutationObserver) return; var tm=null;
+    new MutationObserver(function(){ clearTimeout(tm); tm=setTimeout(fix,80); }).observe(st,{childList:true}); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start();
+})();
+</script>
+<style id="a11y-focus-style">h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus{outline:none}</style>
 </head>
 <body>
 <div class="wrap"><p class="helpline hide" id="helpline"><button class="quiet" id="helpOpen" type="button">Something not right?</button> <a class="quiet hide" id="dataLink" href="#">Your data</a></p><div id="stage" class="load">Opening your film…</div></div>
@@ -376,7 +397,7 @@ async function rpc(name,args){
    every wait screen says WHAT is happening and why it matters to them; one that runs past 8 s adds a calm line. */
 let WAIT_T=null;
 function waitScreen(line){
-  plain(`<p class="load" data-wait="1">${esc(line)}</p><p class="lede hide" id="waitslow">Still working on it - on a slow connection this can take up to a minute.</p>`);
+  plain(`<p class="load" data-wait="1" role="status">${esc(line)}</p><p class="lede hide" id="waitslow">Still working on it - on a slow connection this can take up to a minute.</p>`);
   clearTimeout(WAIT_T); WAIT_T=setTimeout(()=>{ const w=$('waitslow'); if(w) w.classList.remove('hide'); },8000);
 }
 /* Edge functions (flow, upload, gallery, describe, questions). */
@@ -1151,7 +1172,7 @@ async function showUploadPage(){
     <p class="lede" id="songline" aria-live="polite" style="margin:12px 0 18px"></p>
     <div id="unotices" aria-live="polite"></div>
     <div id="picked" class="card hide">
-      <div id="summary"></div><div class="bar"><i id="prog"></i></div>
+      <div id="summary" aria-live="polite"></div><div class="bar"><i id="prog"></i></div>
       <div class="rows" id="rows"></div>
       <div style="margin-top:16px"><button class="big" id="send">Add these</button></div>
     </div>
@@ -1180,12 +1201,16 @@ async function showUploadPage(){
    ours; a tier's price only once it is set (nothing while empty), so the tier and its price are seen before paying.
    filmMeter(container) is used on the upload page and the sort page. Without film_meter (not applied yet) it shows nothing
    and the line below carries on as before. */
+/* 20 Oct: US prices - 'usd' only for a US English browser in an American time zone (many Australians' browsers say en-US);
+   the server answers before_tax for USD, and the page then says so under the price. */
 function meterCurrency(){
   const l=(navigator.language||'').toUpperCase();
+  let tz=''; try{ tz=Intl.DateTimeFormat().resolvedOptions().timeZone||''; }catch(e){}
+  if(/-US$/.test(l)&&/^(America\/|Pacific\/Honolulu$|US\/)/.test(tz)) return 'usd';
   return /-NZ$/.test(l)?'nzd':/-GB$|-UK$/.test(l)?'gbp':'aud';
 }
 function mmssLong(sec){ const m=Math.floor(sec/60), s=Math.round(sec%60); return `${m} min ${String(s).padStart(2,'0')} s`; }
-function money(c,cur){ const sym={aud:'A$',nzd:'NZ$',gbp:'\u00a3'}[cur]||'$'; return sym+(c%100?(c/100).toFixed(2):String(c/100)); }
+function money(c,cur){ const sym={aud:'A$',nzd:'NZ$',gbp:'\u00a3',usd:'US$'}[cur]||'$'; return sym+(c%100?(c/100).toFixed(2):String(c/100)); }
 async function filmMeter(container){
   if(!container) return null;
   let m=null;
@@ -1214,6 +1239,7 @@ async function filmMeter(container){
       ${marks.map(k=>`<span class="metermark" style="left:${pct(k.at).toFixed(1)}%"><span>${esc(k.label)}</span></span>`).join('')}
     </div>
     <p class="metertier" id="metertier">${m.needs_quote?'':esc(cur.label||'')}${esc(price)}</p>
+    ${price&&(m.before_tax||m.currency==='usd')?`<p class="lede" id="metertax">US prices are before sales tax.</p>`:''}
     ${line?`<p class="meterline" id="meterline">${esc(line)}</p>`:''}
     ${aside.length?`<p class="lede" id="meteraside">${esc(aside.join(' \u00b7 '))}</p>`:''}`;
   container.classList.remove('hide');
@@ -1890,6 +1916,7 @@ let A=[], M=[], dups=[], screen='welcome', cur=0, sel=null, picking=false,
          refused by the server: HTTP 409 {error:'answered_groups', groups:[titles], message} with nothing changed. The
          page then shows that message and the names (refusedNote) and reloads the groups from the server. */
 let UN=[], SUG=[], BSEL=null, UNASK=false;
+window.__sort={get M(){return M},get cur(){return cur},set cur(v){cur=v;sel=null;picking=false},get screen(){return screen},get page(){return page},paint:()=>paint(),save:()=>queueSave()};   // 20 Oct: sortsplit.js (one memory, several times - the split suggestion)
 
 const secs=m=>m.photos.filter(p=>!p.excluded)
   .reduce((t,p)=>t+REG[m.register]+(p.faces==null?0:p.faces>=4?1.5:p.faces>=2?0.5:p.faces?0:-0.5),0);
@@ -2017,10 +2044,14 @@ function propose(){
 let CLIPS={};
 const isClip=p=>/\.(mp4|mov|m4v|3gp|webm|avi|mkv)$/i.test(p.storage_path||'');
 const clipOf=p=>CLIPS[p.id]||{};
+/* 20 Oct (WCAG 2.2 AA, the US launch): every photo says what it is to a screen reader - its description when we have one, else
+   "Your photo" and its date. */
+function photoAlt(p){ const d=p&&p.taken_at?new Date(p.taken_at):null, desc=String((p&&p.description)||'').trim().slice(0,140);
+  return esc((desc||'Your photo')+(d&&!isNaN(d)?', '+d.toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}):'')); }
 function tile(p){
-  if(!isClip(p)) return `<img src="${p.thumb_url||p.url}" loading="lazy" decoding="async">`;
+  if(!isClip(p)) return `<img src="${p.thumb_url||p.url}" alt="${photoAlt(p)}" loading="lazy" decoding="async">`;
   const c=clipOf(p), secs=c.seconds_in_film||c.duration_s||null, talk=c.has_speech?(c.voice_wanted===false?'voice kept quiet':'someone talking'):'';
-  if(p.thumb_url&&c.frame_ok!==false) return `<img src="${p.thumb_url}" loading="lazy" decoding="async"><div class="tag">VIDEO${secs?' · '+Math.round(secs)+' s':''}</div>`;
+  if(p.thumb_url&&c.frame_ok!==false) return `<img src="${p.thumb_url}" alt="Your video" loading="lazy" decoding="async"><div class="tag">VIDEO${secs?' · '+Math.round(secs)+' s':''}</div>`;
   return `<div class="ph clip"><b>${esc(p.original_filename||'video')}</b>
     <span>${secs?Math.round(secs)+' seconds':'video'}${talk?' · '+talk:''}</span>
     <button class="play" type="button" data-playclip="${esc(p.url||'')}" aria-label="Play ${esc(p.original_filename||'this clip')}">▶ Play</button>
@@ -2143,7 +2174,7 @@ function dropEmptyAt(i){                                 // a group with nothing
 /* Photos left in no group when she moves on: one plain choice, nothing lost either way. */
 function unsortedChoice(){ const s=$('sheet'); UNASK=true;
   s.innerHTML=`<div class="in"><h3>${plural(UN.length,'photo')} ${UN.length===1?'isn’t':'aren’t'} in a group yet</h3>
-    <div class="lostrip" style="margin:8px 0 12px">${UN.slice(0,12).map(p=>`<div class="lo"><img src="${p.thumb_url||p.url}" loading="lazy" decoding="async"></div>`).join('')}</div>
+    <div class="lostrip" style="margin:8px 0 12px">${UN.slice(0,12).map(p=>`<div class="lo"><img src="${p.thumb_url||p.url}" alt="${photoAlt(p)}" loading="lazy" decoding="async"></div>`).join('')}</div>
     <div class="acts"><button class="yes" id="unown">Put ${UN.length===1?'it':'them'} in a group of ${UN.length===1?'its':'their'} own</button>
       <button id="unleave">Leave ${UN.length===1?'it':'them'} out of the film</button>
       <button id="unkeep">Keep sorting</button></div>
@@ -2152,7 +2183,7 @@ function unsortedChoice(){ const s=$('sheet'); UNASK=true;
 function unsortedStrip(){
   if(!UN.length) return '';
   let h=`<div class="leftout"><h4>Not in a group yet (${UN.length})</h4><p>${screen==='organise'&&M[cur]?`Tap one to put it in “${esc(M[cur].title||'this group')}”.`:'Tap one, then tap its group.'}</p><div class="lostrip">`;
-  UN.forEach(p=>{ h+=`<div class="lo" data-unput="${p.id}"><img src="${p.thumb_url||p.url}" loading="lazy" decoding="async"><div class="put">put here</div></div>`; });
+  UN.forEach(p=>{ h+=`<div class="lo" data-unput="${p.id}"><img src="${p.thumb_url||p.url}" alt="${photoAlt(p)}" loading="lazy" decoding="async"><div class="put">put here</div></div>`; });
   /* 17 Oct (a film reopened for 48 photos that never went in): all of them into ONE new group in a tap - she names it, and can
      split it after with "Different group". One at a time would be 96 taps. */
   if(screen==='organise'&&UN.length>1) h+=`</div><p style="margin:12px 0 0"><button class="b" id="unall" type="button">Put all ${UN.length} in a new group</button></p><div>`;
@@ -2168,8 +2199,9 @@ function paintBoard(){
     <p class="do">Tap a photo, then tap the group it goes in${matchMedia('(hover:hover)').matches?' — or drag it there':''}. Use as many or as few groups as you like.</p>
     <div class="boardg">`;
   M.forEach((m,j)=>{ const inn=m.photos.filter(p=>!p.excluded);
-    h+=`<div class="bg${BSEL?' target':''}" data-bg="${j}" role="button" tabindex="0" aria-label="Put it in ${esc(m.title)}">
+    h+=`<div class="bg${BSEL?' target':''}" data-bg="${j}">
       <div class="bh"><b>${esc(m.title)}</b> <span class="bn">${inn.length?plural(inn.length,'photo'):'empty'}</span>
+        ${BSEL?`<button class="chip" type="button" data-bg="${j}">Put it in ${esc(m.title)}</button>`:''}
         <button class="quiet bx" type="button" data-rmg="${j}" aria-label="Remove ${esc(m.title)}">Remove</button></div>
       ${m.hint?`<div class="bhint">${esc(m.hint)}</div>`:''}
       <div class="bmini">${inn.map(p=>`<div class="c${BSEL===p.id?' sel':''}" data-bp="${p.id}" draggable="true">${tile(p)}</div>`).join('')||'<span class="bdrop">'+(BSEL?'Tap here to put it in':'Nothing yet')+'</span>'}</div></div>`; });
@@ -2177,7 +2209,7 @@ function paintBoard(){
     <div class="addg"><input type="text" id="newg" placeholder="Add your own group — e.g. The night before" autocomplete="off" maxlength="60">
       <button class="chip" id="addg" type="button">Add</button></div>
     <div class="bun" data-bun="1"><h3 style="margin:22px 0 8px">Not in a group yet (${UN.length})</h3>
-    ${BSEL&&!UN.some(p=>p.id===BSEL)?'<p class="lede" style="margin:0 0 8px">Tap here to take it back out of its group.</p>':''}
+    ${BSEL&&!UN.some(p=>p.id===BSEL)?'<p class="lede" style="margin:0 0 8px">Tap here to take it back out of its group. <button class="chip" type="button" data-bun="1">Take it out</button></p>':''}
     ${UN.length?`<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(92px,1fr))">${UN.map(p=>`<div class="c${BSEL===p.id?' sel':''}" data-bp="${p.id}" draggable="true">${tile(p)}</div>`).join('')}</div>`
       :'<p class="lede">Every photo is in a group.</p>'}</div>`;
   $('stage').innerHTML=h; $('stage').className='';
@@ -2223,8 +2255,8 @@ function paintDups(){
     <h2>These two look like the same photo.</h2>
     <p class="do">Tap the one you'd rather keep. If they're really different, keep both.</p>
     <div class="dup">
-      <div class="side ${d.keep===0?'keep':''}" data-keep="0"><img src="${d[0].thumb_url||d[0].url}" decoding="async"><div class="t">${d.keep===0?'Keeping this one':'Keep this one'}</div></div>
-      <div class="side ${d.keep===1?'keep':''}" data-keep="1"><img src="${d[1].thumb_url||d[1].url}" decoding="async"><div class="t">${d.keep===1?'Keeping this one':'Keep this one'}</div></div>
+      <div class="side ${d.keep===0?'keep':''}" data-keep="0"><img src="${d[0].thumb_url||d[0].url}" alt="The first of the two: ${photoAlt(d[0])}" decoding="async"><div class="t">${d.keep===0?'Keeping this one':'Keep this one'}</div></div>
+      <div class="side ${d.keep===1?'keep':''}" data-keep="1"><img src="${d[1].thumb_url||d[1].url}" alt="The second of the two: ${photoAlt(d[1])}" decoding="async"><div class="t">${d.keep===1?'Keeping this one':'Keep this one'}</div></div>
     </div>
     <button class="big" id="bothd">They're different — keep both</button>`;
   nav(`<button id="dnext" class="go">${cur<dups.length-1?'Next':'Done'}</button>`,`${dups.length} to look at`);
@@ -2331,7 +2363,7 @@ function paintOrg(){
   h+=`<p class="lede" style="margin-top:14px">${SUG.length?'<button class="chip" id="toboard" type="button">See all photos and groups</button> ':''}<button class="quiet" id="rmgroup" type="button">Remove this group</button></p>`;
   h+=unsortedStrip();
   if(gone.length){ h+=`<div class="leftout"><h4>Left out</h4><p>Tap one to put it back.</p><div class="lostrip">`;
-    gone.forEach(p=>{h+=`<div class="lo" data-back="${p.id}"><img src="${p.thumb_url||p.url}" loading="lazy" decoding="async"><div class="put">put back</div></div>`;});
+    gone.forEach(p=>{h+=`<div class="lo" data-back="${p.id}"><img src="${p.thumb_url||p.url}" alt="${photoAlt(p)}" loading="lazy" decoding="async"><div class="put">put back</div></div>`;});
     h+='</div></div>'; }
   setTimeout(()=>{ const fm=$('filmmeter2'); if(fm&&typeof filmMeter==='function') filmMeter(fm); },0);
   $('stage').innerHTML=h;
@@ -2354,7 +2386,7 @@ function orgNav(){
 }
 function nav(right,tally,back,before){
   const n=$('nav'); n.classList.remove('hide');
-  n.innerHTML=`${before?`<p class="before">${before}</p>`:''}<div class="nin">
+  n.innerHTML=`${before?`<p class="before" aria-live="polite">${before}</p>`:''}<div class="nin">
     ${back?'<button id="back">←</button>':''}
     <div class="tally">${tally||''}</div><span class="saved" id="saved">saved</span>
     <span class="sp"></span>${right}</div>`;
@@ -2387,7 +2419,7 @@ function drawZoom(){
   const inn=M[cur].photos.filter(p=>!p.excluded), p=inn[zoom];
   if(!p){ zoom=null; if(lb) lb.remove(); return; }
   if(!lb){ lb=document.createElement('div'); lb.id='lb'; lb.className='lb'; document.body.appendChild(lb); }
-  lb.innerHTML=`${isClip(p)?`<video src="${p.url}" controls playsinline style="max-width:94vw;max-height:80vh"></video>`:`<img src="${p.url}">`}
+  lb.innerHTML=`${isClip(p)?`<video src="${p.url}" controls playsinline style="max-width:94vw;max-height:80vh"></video>`:`<img src="${p.url}" alt="${photoAlt(p)}">`}
     <div class="cap"><button data-z="prev" ${zoom===0?'disabled':''}>←</button>
     <span>${zoom+1} of ${inn.length}</span>
     <button data-z="next" ${zoom===inn.length-1?'disabled':''}>→</button>
@@ -2576,7 +2608,7 @@ function inviteCard(){
   const surprise=gift&&INV.for?`<p class="lede" id="invsurprise" style="margin:0 0 10px"><b>This is a surprise for ${esc(INV.for)} - please don\u2019t add them.</b></p>`:'';
   const ask=INV.confirm?`<div class="box" id="invconfirm" style="margin:8px 0"><p class="lede" style="margin:0 0 8px">Is ${esc(INV.confirm.name)} the same person as ${esc(INV.confirm.close)}? This film is a surprise for ${esc(INV.confirm.close)}.</p>
       <div class="acts"><button type="button" class="yes" id="invdiff">No \u2014 someone else, invite them</button><button type="button" id="invsame">Yes \u2014 don\u2019t invite</button></div></div>`:'';
-  const msg=INV.msg?`<p class="err" id="invmsg" style="margin:6px 0">${esc(INV.msg)}</p>`:'';
+  const msg=INV.msg?`<p class="err" id="invmsg" role="alert" style="margin:6px 0">${esc(INV.msg)}</p>`:'';
   const other=gift?`<p class="lede" style="margin:12px 0 6px">Someone else helping with the film?</p>
       <div class="acts"><input type="text" id="invother" maxlength="40" placeholder="Their first name" value="${esc(INV.other)}" autocomplete="off" style="flex:1">
       <button type="button" id="invothergo">Invite</button></div>`:'';
@@ -2738,7 +2770,7 @@ function paintFilmQ(){
     <div style="margin-top:22px">${inviteCard()}</div>`;
   $('stage').className='';
   nav(`<button class="go" id="fqnext" ${FQ.busy?'disabled':''}>${FQ.busy?'Saving…':'Next →'}</button>`,
-      'Before the photos', FQ.i>0&&!FQ.busy, FQ.err?`<span class="fqerr">${esc(FQ.err)}</span>`:'');
+      'Before the photos', FQ.i>0&&!FQ.busy, FQ.err?`<span class="fqerr" role="alert">${esc(FQ.err)}</span>`:'');
   $('sheet').classList.add('hide');
 }
 async function saveFilmQ(skip){
@@ -2922,7 +2954,7 @@ async function answerTurn(skip,thread){
    and nothing changes. Test: Song/pipeline/page_tests.py "ASK ME MORE". */
 function askMoreHTML(i){
   return `<p style="margin:16px 0 0"><button class="quiet" id="askmore" data-group="${i}" type="button">Ask me more about this group</button></p>
-    <p class="hide" id="askmoremsg" style="margin:8px 0 0;font-size:15px;color:var(--red);line-height:1.5"></p>`;
+    <p class="hide" id="askmoremsg" role="alert" style="margin:8px 0 0;font-size:15px;color:var(--red);line-height:1.5"></p>`;
 }
 const MORE_SAY={'the words for this film are already written':'The words for your film are already written, so this group can’t be opened again.',
   'that group has been reopened three times already':'This group has already been opened again three times, so it can’t be opened again.',
@@ -3381,6 +3413,23 @@ document.addEventListener('keydown',e=>{               // a burst photo is a che
   const bz=e.target.closest&&e.target.closest('[data-burst]');
   if(bz&&(e.key===' '||e.key==='Enter')){ e.preventDefault(); bz.click(); }
 });
+/* 20 Oct (WCAG 2.2 AA 2.1.1 keyboard; the US launch): every photo, group box and card that is tapped is also reachable with
+   Tab and works with Enter or Space - it becomes a button to a screen reader (its photo's alt text names it). A box that holds
+   its own buttons is left alone (they are reachable themselves). */
+const TAPPABLE='[data-p],[data-zoom],[data-pick],[data-unput],[data-back],[data-bp],[data-bg],[data-bun],[data-genre],[data-voice],[data-play],[data-stpick],[data-keep]';
+function keyboardTappables(){
+  document.querySelectorAll(TAPPABLE).forEach(el=>{
+    if(el.dataset.kb||/^(BUTTON|A|INPUT|SELECT|TEXTAREA|LABEL)$/.test(el.tagName)) return;
+    if(el.querySelector('button,a[href],input,select,textarea,'+TAPPABLE)) return;
+    el.dataset.kb='1'; el.tabIndex=0; if(!el.hasAttribute('role')) el.setAttribute('role','button');
+  });
+}
+document.addEventListener('keydown',e=>{
+  const el=e.target; if(!el||!el.dataset||el.dataset.kb!=='1') return;
+  if(e.key==='Enter'||e.key===' '){ e.preventDefault(); el.click(); }
+});
+if(window.MutationObserver){ let kbT=null; new MutationObserver(()=>{ clearTimeout(kbT); kbT=setTimeout(keyboardTappables,40); })
+  .observe(document.body,{childList:true,subtree:true}); }
 document.addEventListener('click',async e=>{
   const t=e.target;
   if(t.id==='retryRoute'){ route(); return; }
@@ -3612,5 +3661,6 @@ window.addEventListener('beforeunload',e=>{
 
 route();
 </script>
+<script src="sortsplit.js"></script>
 </body>
 </html>

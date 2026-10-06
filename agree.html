@@ -109,6 +109,27 @@ function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?S
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',show); else show();
 })();
 </script>
+<script id="a11y-focus">
+/* 20 Oct (WCAG 2.2 AA - focus order 2.4.3, status messages 4.1.3; the US launch): when a screen is redrawn and the control that
+   had the focus has gone, the focus moves to the new screen's heading - not lost to the top of the page - so a screen reader
+   reads the new screen. Only when the heading is new (a screen that redraws itself is not read again), and never while the
+   focus is still on something. */
+(function(){
+  var last='';
+  function root(){ return document.getElementById('stage')||document.querySelector('.wrap'); }
+  function fix(){
+    var a=document.activeElement; if(a&&a!==document.body&&document.contains(a)) return;
+    var st=root(), h=st&&st.querySelector('h1,h2'); if(!h) return;
+    var t=(h.textContent||'').trim(); if(!t||t===last) return; last=t;
+    if(!h.hasAttribute('tabindex')) h.setAttribute('tabindex','-1');
+    try{ h.focus({preventScroll:true}); }catch(e){}
+  }
+  function start(){ var st=root(); if(!st||!window.MutationObserver) return; var tm=null;
+    new MutationObserver(function(){ clearTimeout(tm); tm=setTimeout(fix,80); }).observe(st,{childList:true}); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start();
+})();
+</script>
+<style id="a11y-focus-style">h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus{outline:none}</style>
 </head>
 <body>
 <div class="wrap" id="stage"><p class="lede">One moment…</p></div>
@@ -136,16 +157,16 @@ function paint(){
     h+=`<p class="ok" id="state">Thank you — you said yes.</p><p class="lede">${esc(w.withdraw||'')}</p>`;
     h+=WD===0?`<p><button class="warn" id="wd1" type="button">Withdraw my yes</button></p>`
       :`<div class="box" id="wd"><p>We'll stop using the video: out of our ad library now, and out of any running ads within 30 days. This can't be undone.</p>
-         <p><button class="quiet" id="wdno" type="button">Keep my yes</button><button class="warn" id="wd2" type="button">Yes, withdraw</button> <span id="wdmsg"></span></p></div>`;
+         <p><button class="quiet" id="wdno" type="button">Keep my yes</button><button class="warn" id="wd2" type="button">Yes, withdraw</button> <span id="wdmsg" role="status"></span></p></div>`;
     s.innerHTML=h; return;
   }
   h+=`<p class="lede">Someone filmed you watching their film, and would like to share the video with Sing Me A Memory. Here is what that means - it's your choice.</p>
     <div class="box" id="words"><p><b>${esc(w.headline||'')}</b></p><ol>${(w.steps||[]).map(x=>`<li><b>${esc(x.title)}</b> ${esc(x.text)}</li>`).join('')}</ol>
     <p class="lede">${esc(w.agreeing||'')}</p><p class="lede">${esc(w.withdraw||'')}</p><p class="lede">${esc(w.timeout||'')}</p></div>
-    <div class="box" id="form"><p style="margin:0 0 8px">Your first name</p><input class="t" id="tname" maxlength="40" autocomplete="given-name" value="">
+    <div class="box" id="form"><p style="margin:0 0 8px"><label for="tname">Your first name</label></p><input class="t" id="tname" maxlength="40" autocomplete="given-name" value="">
       <label class="tick"><input type="checkbox" id="adult"> <span>${esc(w.person_adult||"I'm 18 or over.")}</span></label>
       <label class="tick"><input type="checkbox" id="lic"> <span>${esc(w.person_licence||'')}</span></label>
-      <p><button class="go" id="yes" type="button" disabled>I agree</button> <span id="msg"></span></p>
+      <p><button class="go" id="yes" type="button" disabled>I agree</button> <span id="msg" role="status"></span></p>
       <p class="lede" style="font-size:15px">If you'd rather not, just close this page. Nothing is used unless everyone in the video says yes.</p></div>`;
   s.innerHTML=h; ready();
 }

@@ -65,7 +65,7 @@ button.b,a.b,label.b{display:inline-block;background:none;border:1px solid var(-
 button.b.go,a.b.go,label.b.go{background:var(--brass);border-color:var(--brass);color:#20180A;font-weight:600}
 button.b.warn{border-color:var(--red);color:#F1B8A8}
 button:disabled{opacity:.4;cursor:default}
-.code{font-family:ui-monospace,Menlo,monospace;font-size:20px;letter-spacing:.08em;color:var(--brass)}
+.code{font-family:ui-monospace,Menlo,monospace;font-size:20px;letter-spacing:.08em;color:var(--goldtext,var(--brass))}
 textarea{width:100%;background:var(--ink);border:1px solid var(--l2);border-radius:8px;color:var(--fg);font:inherit;padding:12px;min-height:90px}
 .ok{color:#9CCBA6;font-size:15px}.err{color:var(--red);font-size:15px}.small{font-size:14px;color:var(--fg3)}
 .hide{display:none}
@@ -160,6 +160,27 @@ a.b.back{display:inline-flex!important;align-items:center;justify-content:center
 #data .backrow:last-child{margin:20px 0 0}
 @media (max-width:560px){ a.b.back{display:flex!important;width:100%;box-sizing:border-box} }
 </style>
+<script id="a11y-focus">
+/* 20 Oct (WCAG 2.2 AA - focus order 2.4.3, status messages 4.1.3; the US launch): when a screen is redrawn and the control that
+   had the focus has gone, the focus moves to the new screen's heading - not lost to the top of the page - so a screen reader
+   reads the new screen. Only when the heading is new (a screen that redraws itself is not read again), and never while the
+   focus is still on something. */
+(function(){
+  var last='';
+  function root(){ return document.getElementById('stage')||document.querySelector('.wrap'); }
+  function fix(){
+    var a=document.activeElement; if(a&&a!==document.body&&document.contains(a)) return;
+    var st=root(), h=st&&st.querySelector('h1,h2'); if(!h) return;
+    var t=(h.textContent||'').trim(); if(!t||t===last) return; last=t;
+    if(!h.hasAttribute('tabindex')) h.setAttribute('tabindex','-1');
+    try{ h.focus({preventScroll:true}); }catch(e){}
+  }
+  function start(){ var st=root(); if(!st||!window.MutationObserver) return; var tm=null;
+    new MutationObserver(function(){ clearTimeout(tm); tm=setTimeout(fix,80); }).observe(st,{childList:true}); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start();
+})();
+</script>
+<style id="a11y-focus-style">h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus{outline:none}</style>
 </head>
 <body>
 <div class="wrap"><div id="stage"><p class="lede">Opening your film…</p></div></div>
@@ -209,14 +230,14 @@ function paint(){
     h+=shareHTML();
     h+=`<div class="box" id="feedback"><h2>Anything you’d like to tell us?</h2>
         <p class="lede">This goes only to us.</p>
-        <textarea id="fbtext" maxlength="2000" placeholder="Something you loved, or something we could do better"></textarea>
-        <p><button class="b" id="fbsend">Send</button> <span id="fbmsg"></span></p></div>`;
+        <textarea id="fbtext" maxlength="2000" aria-label="Anything you’d like to tell us" placeholder="Something you loved, or something we could do better"></textarea>
+        <p><button class="b" id="fbsend">Send</button> <span id="fbmsg" role="status"></span></p></div>`;
     // REFERRAL - theirs to share; we never contact anyone
     if(D.referral&&D.referral.code) h+=`<div class="box" id="referral"><h2>Make one for someone you love</h2>
         <p class="lede">Share your own link with family or friends — by text, WhatsApp or your own email. We never contact them.</p>
         <p>Your code: <span class="code" id="refcode">${esc(D.referral.code)}</span></p>
         ${D.referral.link?`<p class="small" id="reflink">${esc(D.referral.link)}</p>
-        <button class="b" id="refcopy">Copy the message</button><button class="b" id="refshare">Share</button> <span id="refmsg"></span>`:''}</div>`;
+        <button class="b" id="refcopy">Copy the message</button><button class="b" id="refshare">Share</button> <span id="refmsg" role="status"></span>`:''}</div>`;
     h+=reactionHTML();
   }else{
     h+=`<h1>Your film</h1><p class="lede">Your film isn’t ready yet. We’ll let you know when it is.</p>`;
@@ -269,8 +290,8 @@ function dataHTML(){
   else if(ERASE_STEP===1) h+=`<div id="er"><p><b>This deletes your film and everything you gave us</b> - your photos, your answers, the words, the song and the film - from everywhere we keep them. <b>It cannot be undone.</b> If you want a copy, download your data first.</p>
       <p><button class="b" id="erno">Keep everything</button><button class="b warn" id="er2">Yes, I understand - continue</button></p></div>`;
   else h+=`<div id="er"><p>Last step. Type <b>DELETE</b> below and press the button. Once you do, it’s gone.</p>
-      <input id="ertype" autocomplete="off" style="font:inherit;font-size:18px;padding:10px;border-radius:8px;border:1px solid var(--red);background:var(--ink);color:var(--fg)">
-      <p><button class="b" id="erno">Keep everything</button><button class="b warn" id="er3" disabled>Delete everything now</button> <span id="ermsg"></span></p></div>`;
+      <input id="ertype" autocomplete="off" aria-label="Type DELETE to confirm" style="font:inherit;font-size:18px;padding:10px;border-radius:8px;border:1px solid var(--red);background:var(--ink);color:var(--fg)">
+      <p><button class="b" id="erno">Keep everything</button><button class="b warn" id="er3" disabled>Delete everything now</button> <span id="ermsg" role="status"></span></p></div>`;
   return h;
 }
 /* 5 Oct: THE "SHARE YOUR REACTION" OFFER - separate, optional; the server's words; a full release before the file can be chosen */
@@ -304,7 +325,7 @@ function reactionHTML(){
         <label class="tick"><input type="checkbox" id="rlic"> <span>I agree to what’s above, as the person sending the video.</span></label>
         <label class="tick"><input type="checkbox" id="rall"> <span>I’ll send each person their own link. The video is only used if everyone says yes.</span></label>
         <p><label class="b go off" id="rpick" aria-disabled="true">Choose the video<input type="file" id="rfile" accept="video/*" disabled hidden></label>
-           <button class="b" id="rno" type="button">No thanks</button> <span id="rmsg"></span></p></div>`;
+           <button class="b" id="rno" type="button">No thanks</button> <span id="rmsg" role="status"></span></p></div>`;
     }
     else{
       h+=`<div id="rform">
@@ -316,7 +337,7 @@ function reactionHTML(){
         <label class="tick"><input type="checkbox" id="rall"> <span>${esc(w.all_agreed)}</span></label>
         <p class="small">${esc(w.review||'')}</p>
         <p><label class="b go off" id="rpick" aria-disabled="true">Choose the video<input type="file" id="rfile" accept="video/*" disabled hidden></label>
-           <button class="b" id="rno" type="button">No thanks</button> <span id="rmsg"></span></p></div>`;
+           <button class="b" id="rno" type="button">No thanks</button> <span id="rmsg" role="status"></span></p></div>`;
     }
   }
   return h+`</div>`;
@@ -332,17 +353,17 @@ function shareHTML(){
   if(!D.share||!D.film_ready) return '';                          // the server has no share links yet: no box
   const link=D.share.active&&D.share.token?pageUrl('watch.html','s='+encodeURIComponent(D.share.token)):null;
   if(!link) return `<div class="box" id="share"><h2>Share with family</h2><p class="lede">A link that only plays your film — it can’t change anything, see your photos or delete anything. Send it to anyone you like.</p>
-    <p><button class="b go" id="sh1" type="button">Share with family</button> <span id="shmsg"></span></p></div>`;
+    <p><button class="b go" id="sh1" type="button">Share with family</button> <span id="shmsg" role="status"></span></p></div>`;
   return `<div class="box" id="share"><h2>Share with family</h2><p class="lede">Anyone with this link can watch your film — nothing else.</p>
     <div class="plink" id="shlink">${esc(link)}</div>
     <p><button class="b go" id="shcopy" type="button">${navigator.share?'Share the link':'Copy the link'}</button>
     ${SHARE_STEP===0?`<button class="b" id="shstop" type="button">Stop sharing</button>`:`<button class="b warn" id="shstop2" type="button">Yes, stop sharing now</button><button class="b" id="shkeep" type="button">Keep sharing</button>`}
-    <span id="shmsg"></span></p>${SHARE_STEP?'<p class="small">The link stops working straight away. If you share again you get a new link.</p>':''}</div>`;
+    <span id="shmsg" role="status"></span></p>${SHARE_STEP?'<p class="small">The link stops working straight away. If you share again you get a new link.</p>':''}</div>`;
 }
 function withdrawHTML(){
   if(WD_STEP===0) return `<p><button class="b warn" id="wd1" type="button">Withdraw my video</button></p>`;
   return `<div id="wd"><p>We’ll stop using your video: out of our ad library now, and out of any running ads within ${esc((D.retention||{}).reaction_takedown_days||30)} days. Your discount stays yours. This can’t be undone.</p>
-    <p><button class="b" id="wdno" type="button">Keep it</button><button class="b warn" id="wd2" type="button">Yes, withdraw it</button> <span id="wdmsg"></span></p></div>`;
+    <p><button class="b" id="wdno" type="button">Keep it</button><button class="b warn" id="wd2" type="button">Yes, withdraw it</button> <span id="wdmsg" role="status"></span></p></div>`;
 }
 const NAME_OK=/^\p{L}[\p{L} '’.-]{0,39}$/u;
 function cleanNames(){ return NAMES.map(n=>n.trim().replace(/\s+/g,' ')).filter(Boolean); }

@@ -56,10 +56,31 @@ button:focus-visible{outline:3px solid var(--goldline);outline-offset:2px}
 .ok{color:var(--green)}
 #file{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
 </style>
+<script id="a11y-focus">
+/* 20 Oct (WCAG 2.2 AA - focus order 2.4.3, status messages 4.1.3; the US launch): when a screen is redrawn and the control that
+   had the focus has gone, the focus moves to the new screen's heading - not lost to the top of the page - so a screen reader
+   reads the new screen. Only when the heading is new (a screen that redraws itself is not read again), and never while the
+   focus is still on something. */
+(function(){
+  var last='';
+  function root(){ return document.getElementById('stage')||document.querySelector('.wrap'); }
+  function fix(){
+    var a=document.activeElement; if(a&&a!==document.body&&document.contains(a)) return;
+    var st=root(), h=st&&st.querySelector('h1,h2'); if(!h) return;
+    var t=(h.textContent||'').trim(); if(!t||t===last) return; last=t;
+    if(!h.hasAttribute('tabindex')) h.setAttribute('tabindex','-1');
+    try{ h.focus({preventScroll:true}); }catch(e){}
+  }
+  function start(){ var st=root(); if(!st||!window.MutationObserver) return; var tm=null;
+    new MutationObserver(function(){ clearTimeout(tm); tm=setTimeout(fix,80); }).observe(st,{childList:true}); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start();
+})();
+</script>
+<style id="a11y-focus-style">h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus{outline:none}</style>
 </head>
 <body>
 <div class="wrap" id="stage"><p class="lede">One moment…</p></div>
-<input type="file" id="file" accept="image/*,.heic,.heif" multiple>
+<input type="file" id="file" accept="image/*,.heic,.heif" multiple tabindex="-1" aria-label="Choose photos to add">
 <script>
 const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
 const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
@@ -112,9 +133,9 @@ function paint(){
 }
 async function load(){
   if(!/^[0-9a-f]{64}$/.test(R)){ finished({detail:'Please open the link exactly as it came.'}); return; }
-  let res; try{ res=await call({action:'request'}); }catch(e){ $('stage').innerHTML='<h1>One moment</h1><p class="err">We couldn’t reach us just now. Please try again in a minute.</p>'; return; }
+  let res; try{ res=await call({action:'request'}); }catch(e){ $('stage').innerHTML='<h1>One moment</h1><p class="err" role="alert">We couldn’t reach us just now. Please try again in a minute.</p>'; return; }
   if(res.status===410||res.status===401){ finished(res.j); return; }
-  if(!res.j||!Array.isArray(res.j.items)||!res.j.items.length){ $('stage').innerHTML='<h1>One moment</h1><p class="err">Something went wrong on our side. Please try again in a minute.</p>'; return; }
+  if(!res.j||!Array.isArray(res.j.items)||!res.j.items.length){ $('stage').innerHTML='<h1>One moment</h1><p class="err" role="alert">Something went wrong on our side. Please try again in a minute.</p>'; return; }
   REQ=res.j; paint();
 }
 async function sha256(f){ try{ const b=await crypto.subtle.digest('SHA-256',await f.arrayBuffer()); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join(''); }catch(e){ return null; } }

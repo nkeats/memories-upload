@@ -75,6 +75,27 @@ label.tick,.cbox,.genre,.bg{border:2px solid var(--goldline)!important;border-ra
 /* 11 Oct PREVIEW: served from .../preview/, every link the page builds stays inside .../preview/ */
 function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?String(b).replace(/\/?$/,'/')+'preview/':b; }catch(e){ return b; } }
 </script>
+<script id="a11y-focus">
+/* 20 Oct (WCAG 2.2 AA - focus order 2.4.3, status messages 4.1.3; the US launch): when a screen is redrawn and the control that
+   had the focus has gone, the focus moves to the new screen's heading - not lost to the top of the page - so a screen reader
+   reads the new screen. Only when the heading is new (a screen that redraws itself is not read again), and never while the
+   focus is still on something. */
+(function(){
+  var last='';
+  function root(){ return document.getElementById('stage')||document.querySelector('.wrap'); }
+  function fix(){
+    var a=document.activeElement; if(a&&a!==document.body&&document.contains(a)) return;
+    var st=root(), h=st&&st.querySelector('h1,h2'); if(!h) return;
+    var t=(h.textContent||'').trim(); if(!t||t===last) return; last=t;
+    if(!h.hasAttribute('tabindex')) h.setAttribute('tabindex','-1');
+    try{ h.focus({preventScroll:true}); }catch(e){}
+  }
+  function start(){ var st=root(); if(!st||!window.MutationObserver) return; var tm=null;
+    new MutationObserver(function(){ clearTimeout(tm); tm=setTimeout(fix,80); }).observe(st,{childList:true}); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start();
+})();
+</script>
+<style id="a11y-focus-style">h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus{outline:none}</style>
 </head>
 <body>
 <div class="wrap" id="stage"><p>One moment…</p></div>

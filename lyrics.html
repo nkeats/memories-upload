@@ -58,10 +58,10 @@ p.lede{color:var(--fg2);font-size:16.5px;line-height:1.6;margin:0 0 26px;max-wid
   font-family:"Newsreader",serif;font-size:20px;line-height:1.45;padding:12px 14px;min-height:64px;resize:vertical}
 .ed .row{display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap}
 .ed .hint{font-size:14px;color:var(--fg3);flex-basis:100%;margin-top:4px}
-.ed .hint.warn{color:var(--brass)}
+.ed .hint.warn{color:var(--goldtext,var(--brass))}
 .q{background:#241F18;border:1px solid var(--brass);border-radius:8px;padding:10px 13px;margin:2px 0 10px;
   font-size:15.5px;line-height:1.5;color:var(--fg)}
-.q b{color:var(--brass);font-weight:600}
+.q b{color:var(--goldtext,var(--brass));font-weight:600}
 button.b{background:none;border:1px solid var(--line);color:var(--fg);border-radius:7px;padding:12px 18px;
   font:inherit;font-size:16px;cursor:pointer}
 button.b.go{background:var(--brass);border-color:var(--brass);color:#20180A;font-weight:600}
@@ -204,6 +204,27 @@ function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?S
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',show); else show();
 })();
 </script>
+<script id="a11y-focus">
+/* 20 Oct (WCAG 2.2 AA - focus order 2.4.3, status messages 4.1.3; the US launch): when a screen is redrawn and the control that
+   had the focus has gone, the focus moves to the new screen's heading - not lost to the top of the page - so a screen reader
+   reads the new screen. Only when the heading is new (a screen that redraws itself is not read again), and never while the
+   focus is still on something. */
+(function(){
+  var last='';
+  function root(){ return document.getElementById('stage')||document.querySelector('.wrap'); }
+  function fix(){
+    var a=document.activeElement; if(a&&a!==document.body&&document.contains(a)) return;
+    var st=root(), h=st&&st.querySelector('h1,h2'); if(!h) return;
+    var t=(h.textContent||'').trim(); if(!t||t===last) return; last=t;
+    if(!h.hasAttribute('tabindex')) h.setAttribute('tabindex','-1');
+    try{ h.focus({preventScroll:true}); }catch(e){}
+  }
+  function start(){ var st=root(); if(!st||!window.MutationObserver) return; var tm=null;
+    new MutationObserver(function(){ clearTimeout(tm); tm=setTimeout(fix,80); }).observe(st,{childList:true}); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start();
+})();
+</script>
+<style id="a11y-focus-style">h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus{outline:none}</style>
 </head>
 <body>
 <div class="wrap">
@@ -266,7 +287,7 @@ function paint(){
           <div class="row"><button class="b go" data-save="${l.id}">Save this line</button>
           <button class="b" data-cancel="1">Cancel</button>
           <div class="hint" id="hint">Keep it about ${was} words so it still fits the tune.</div>
-          <div class="err hide" id="err"></div></div></div>`;
+          <div class="err hide" id="err" role="alert"></div></div></div>`;
     }else{
       h+=`<button class="ln${l.edited?' edited':''}${done?' readonly':''}" ${done?'tabindex="-1"':`data-line="${l.id}"`}>${esc(l.text)}</button>`;
     }
@@ -305,7 +326,7 @@ function cardsHTML(done){
       h+=`<textarea id="cta" maxlength="${m.max}" aria-label="${esc(m.lab)}">${esc(c.text)}</textarea>
           <p class="count" id="ccount"></p>
           <div class="row"><button class="b go" data-csave="${k}">Save</button><button class="b" data-ccancel="1">Cancel</button></div>
-          <div class="err hide" id="cerr"></div>`;
+          <div class="err hide" id="cerr" role="alert"></div>`;
     }else if(c.text){
       h+=`<p class="words">${esc(c.text)}</p>${c.suggested&&!done?`<p class="tag">Our suggestion, from what you told us.</p>`:''}`;
       h+=photoHTML(k,done);
@@ -333,7 +354,7 @@ function styleHTML(done){
     <div class="stys">${list.map(st=>`<button data-style="${esc(st)}" class="${st===cur?'on':''}" ${locked?'disabled':''} aria-pressed="${st===cur}">
       ${styleTile(st,k,text,pic)}<div class="nm"><span><b>${esc(STYLE_NAME[st]||st)}</b><span class="says">${esc(STYLE_SAYS[st]||'')}</span></span>${st===cur?'<span class="ch">Chosen</span>':''}</div></button>`).join('')}</div>
     <p class="sty-note">A preview with your words and photograph. In your film the words are placed away from faces, and beside the photograph when it doesn’t fill the screen.</p>
-    <div class="err hide" id="serr"></div></div>`;
+    <div class="err hide" id="serr" role="alert"></div></div>`;
 }
 function styleTile(st,k,text,pic){
   let words='';
@@ -369,7 +390,7 @@ function pickerHTML(){
   return `<div class="pick" id="pick"><div class="in"><h2>Choose the ${k==='start'?'opening':'closing'} photograph</h2>
     <p class="lede" style="margin:0">These are your photographs that show ${esc(CP.people||'the people the film is about')}. Tap one.</p>
     <div class="grid">${ids.map(id=>`<button data-cphoto="${id}" class="${id===now?'now':''}"><img src="${esc(PICS[id])}" alt="">${id===now?'<span class="tag">Now</span>':''}</button>`).join('')}</div>
-    <div class="err hide" id="perr"></div>
+    <div class="err hide" id="perr" role="alert"></div>
     <button class="b" data-pclose="1">Cancel</button></div></div>`;
 }
 async function setPhoto(k,id){

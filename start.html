@@ -136,6 +136,27 @@ function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?S
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',show); else show();
 })();
 </script>
+<script id="a11y-focus">
+/* 20 Oct (WCAG 2.2 AA - focus order 2.4.3, status messages 4.1.3; the US launch): when a screen is redrawn and the control that
+   had the focus has gone, the focus moves to the new screen's heading - not lost to the top of the page - so a screen reader
+   reads the new screen. Only when the heading is new (a screen that redraws itself is not read again), and never while the
+   focus is still on something. */
+(function(){
+  var last='';
+  function root(){ return document.getElementById('stage')||document.querySelector('.wrap'); }
+  function fix(){
+    var a=document.activeElement; if(a&&a!==document.body&&document.contains(a)) return;
+    var st=root(), h=st&&st.querySelector('h1,h2'); if(!h) return;
+    var t=(h.textContent||'').trim(); if(!t||t===last) return; last=t;
+    if(!h.hasAttribute('tabindex')) h.setAttribute('tabindex','-1');
+    try{ h.focus({preventScroll:true}); }catch(e){}
+  }
+  function start(){ var st=root(); if(!st||!window.MutationObserver) return; var tm=null;
+    new MutationObserver(function(){ clearTimeout(tm); tm=setTimeout(fix,80); }).observe(st,{childList:true}); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start();
+})();
+</script>
+<style id="a11y-focus-style">h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus{outline:none}</style>
 </head>
 <body>
 <div class="wrap"><div id="stage"><p class="lede">One moment…</p></div></div>
@@ -200,7 +221,7 @@ function form(){
     <div class="box"><h2>What is it for?</h2>
       <div class="occ" role="group" aria-label="The occasion">${C.occasions.map(o=>`<button type="button" data-occ="${esc(o.slug)}" aria-pressed="${OCC===o.slug}">${esc(o.label)}</button>`).join('')}</div>
       <p class="small" id="occnote" style="margin:10px 0 0">${esc(occNote())}</p>
-      <p class="small" id="occtiming" style="margin:6px 0 0;color:var(--brass,#d4a24c)">${esc(occTiming())}</p></div>
+      <p class="small" id="occtiming" style="margin:6px 0 0;color:var(--goldtext,var(--brass,#d4a24c))">${esc(occTiming())}</p></div>
     <div class="box"><h2>About you</h2>
       <label for="fname">Your first name</label>
       <input class="t" id="fname" maxlength="40" autocomplete="given-name" autocapitalize="words">
@@ -223,6 +244,8 @@ function form(){
     <p class="err hide" id="err" role="alert"></p>
     <p class="small" style="margin-top:12px">By starting, you agree we may use what you give us to make your film, as above.</p>`;
   ['fname','email'].forEach(id=>$(id).addEventListener('input',ready));
+  // 20 Oct (WCAG 2.2 AA, keyboard): Enter in either box starts the film, as a form would - once everything is filled in
+  ['fname','email'].forEach(id=>$(id).addEventListener('keydown',ev=>{ if(ev.key==='Enter'&&!ev.isComposing){ ev.preventDefault(); start(); } }));
   ready();
 }
 function ready(){
