@@ -306,6 +306,13 @@ function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?S
 .metermark span{position:absolute;top:26px;left:50%;transform:translateX(-50%);font-size:18px;white-space:nowrap;color:var(--fg2,#3F3628)}
 .metertier{font-size:18px!important;margin:0 0 6px;color:var(--fg)}
 .meterline{font-size:20px!important;font-weight:600;margin:0 0 6px;color:var(--fg)}
+/* 7 Oct 2026 (queue item 24): "bring it under the next price" - only look-alike photos the system itself paired; never applied */
+#meterhelp{margin:4px 0 18px;padding:14px 16px;border:2px solid var(--goldline,#A87A22);border-radius:10px;background:var(--goldsoft,#F6E7C4)}
+#meterhelp h3{font-size:20px!important;margin:0 0 6px;color:var(--fg)}
+#meterhelp p{font-size:18px!important;margin:0 0 10px;color:var(--fg)}
+.lapair{display:flex;gap:10px;align-items:center;margin:0 0 12px}
+.lapair img{width:96px;height:96px;object-fit:cover;border-radius:8px}
+.lapair button{font-size:18px!important;min-height:48px;padding:10px 14px}
 </style>
 <style id="nav-fit">
 /* 17 Oct: the bottom bar's button keeps its full width - a long count line wraps instead of squeezing the button (on a phone
@@ -1234,6 +1241,47 @@ async function filmMeter(container){
     ${aside.length?`<p class="lede" id="meteraside">${esc(aside.join(' \u00b7 '))}</p>`:''}`;
   container.classList.remove('hide');
   return m;
+}
+/* 7 Oct 2026 (queue item 24, Nigel): BRING IT UNDER THE NEXT PRICE. When the film is just past a price step (1-3 photos) and the
+   lower price is set and cheaper, the sort page offers ONLY look-alike photos the system itself has paired - the upload's twin link
+   (same_look_as) or the page's own "same photo twice?" rule (findDups: a near-identical picture taken within 10 minutes) - never
+   "the worst photos", never a guess, never a pair she said is different. One tap leaves one out (the less sharp of the two); nothing
+   is ever removed by itself; it never takes the film under the shortest film. Every number is the server's (film_meter). */
+function lookalikePairs(){
+  const inn=A.filter(p=>!p.excluded), byId={}; inn.forEach(p=>{ byId[p.id]=p; });
+  const out=[], used=new Set();
+  const differ=(a,b)=>(dups||[]).some(d=>d.keep===-1&&((d[0].id===a.id&&d[1].id===b.id)||(d[0].id===b.id&&d[1].id===a.id)));
+  const add=(a,b)=>{ if(!a||!b||a.id===b.id||used.has(a.id)||used.has(b.id)||differ(a,b)) return;
+    const drop=(+a.sharpness||0)<(+b.sharpness||0)?a:b, keep=drop===a?b:a;
+    out.push({drop,keep}); used.add(a.id); used.add(b.id); };
+  inn.forEach(p=>{ if(p.same_look_as&&byId[p.same_look_as]) add(p,byId[p.same_look_as]); });
+  findDups().forEach(d=>add(byId[d[0].id],byId[d[1].id]));
+  return out;
+}
+function underNextPrice(m){
+  if(!m||m.needs_quote) return null;
+  const ts=(m.tiers||[]).filter(t=>t.max_seconds!=null).sort((a,b)=>(+a.min_seconds)-(+b.min_seconds));
+  const i=ts.findIndex(t=>t.slug===m.tier); if(i<1) return null;
+  const cur=ts[i], low=ts[i-1];
+  if(cur.price_cents==null||low.price_cents==null||+low.price_cents>=+cur.price_cents) return null;
+  const over=(+m.usable)-(+cur.photos_from)+1;
+  if(over<1||over>3) return null;
+  if((+m.usable)-over<(+m.min_photos||0)) return null;
+  const pairs=lookalikePairs(); if(pairs.length<over) return null;
+  return {over,low,cur,pairs:pairs.slice(0,over+2)};
+}
+function meterHelp(m){
+  const el=$('meterhelp'); if(!el) return;
+  const h=underNextPrice(m);
+  if(!h){ el.innerHTML=''; el.classList.add('hide'); return; }
+  const price=money(+h.low.price_cents,m.currency), lbl=String(h.low.label||'').replace(/^./,c=>c.toLowerCase());
+  el.innerHTML=`<h3>Just over a price line</h3>
+    <p>${h.over===1?'One photo':plural(h.over,'photo')} fewer would make this the ${esc(lbl)} film, at ${esc(price)}.</p>
+    <p>These look almost the same as another photo in your film. You can leave ${h.over===1?'one':h.over} out - or keep them all. It's up to you.</p>
+    ${h.pairs.map(x=>`<div class="lapair"><img src="${x.drop.thumb_url||x.drop.url}" alt="${photoAlt(x.drop)}" decoding="async">
+      <img src="${x.keep.thumb_url||x.keep.url}" alt="Its look-alike, which stays: ${photoAlt(x.keep)}" decoding="async">
+      <button type="button" data-leaveout="${esc(x.drop.id)}">Leave this one out</button></div>`).join('')}`;
+  el.classList.remove('hide');
 }
 async function songGuide(n){
   const el=$('songline'); if(!el) return null;
@@ -2337,7 +2385,7 @@ function paintOrg(){
     h+=unsortedStrip();
     $('stage').innerHTML=h; orgNav(); sheet(); return; }
   h+=limitsLine();
-  h+=`<div id="filmmeter2"></div>`;                                        // 18 Oct: the film-length meter on the sort page too
+  h+=`<div id="filmmeter2"></div><div id="meterhelp" class="hide" aria-live="polite"></div>`;   // 18 Oct meter; 7 Oct its price helper
   h+=`<h2>What do you call this group?</h2>
     <input type="text" id="nm" class="beside" value="${esc(m.title)}" placeholder="Anything you like" autocomplete="off">
     <p class="do" style="font-size:16.5px;margin:9px 0 22px;color:var(--fg2)">
@@ -2355,7 +2403,7 @@ function paintOrg(){
   if(gone.length){ h+=`<div class="leftout"><h4>Left out</h4><p>Tap one to put it back.</p><div class="lostrip">`;
     gone.forEach(p=>{h+=`<div class="lo" data-back="${p.id}"><img src="${p.thumb_url||p.url}" alt="${photoAlt(p)}" loading="lazy" decoding="async"><div class="put">put back</div></div>`;});
     h+='</div></div>'; }
-  setTimeout(()=>{ const fm=$('filmmeter2'); if(fm&&typeof filmMeter==='function') filmMeter(fm); },0);
+  setTimeout(()=>{ const fm=$('filmmeter2'); if(fm&&typeof filmMeter==='function') filmMeter(fm).then(meterHelp); },0);
   $('stage').innerHTML=h;
   orgNav();
   sheet();
@@ -3544,6 +3592,8 @@ document.addEventListener('click',async e=>{
     screen=dups.length?'dups':'organise'; cur=0;
     if(screen==='organise') startGrouping();
     prog({screen,name_given:!!name}); paint(); scrollTo(0,0); return; }
+  if(t.dataset.leaveout!==undefined){ const p=A.find(x=>x.id===t.dataset.leaveout);   // 7 Oct (item 24): only her tap removes one
+    if(p){ p.excluded=true; queueSave(); clearTimeout(saveTimer); saveGroups().then(()=>paint()); } return; }
   if(t.dataset.voicewant!==undefined){ decideVoice(t.dataset.voicewant==='1'); return; }
   if(t.dataset.keep!==undefined){ dups[cur].keep=+t.dataset.keep; paint(); return; }
   if(t.id==='bothd'){ dups[cur].keep=-1; if(cur<dups.length-1){cur++;}else{screen='organise';cur=0;startGrouping();}
