@@ -1940,14 +1940,18 @@ async function saveGroups(){
   /* 2 Oct: NO 'story' in a regroup. load's story is her words + the answers; sending it back made the server (which
      writes a story only when the key is sent) compare it with her own words and, where she had typed some, copy the
      answers into them. These screens never edit a story, so they never send one. */
-  const payload={ groups:snap.map(m=>({...(m.id?{id:m.id}:{}),title:m.title,register:m.register,
+  /* 7 Oct (Tester 2: 16 answered memories, every join refused 409): a JOINED memory is sent as merge_from on the memory it joined,
+     so the server moves its answers there (server-wanted-p24-merge-groups.sql) instead of reading it as removed. */
+  const sent=snap.map(m=>(m.merge_from||[]).slice());
+  const payload={ groups:snap.map((m,i)=>({...(m.id?{id:m.id}:{}),title:m.title,register:m.register,
       assets:m.photos.filter(p=>!p.excluded).map(p=>p.id),
-      hero:(m.photos.find(p=>p.is_hero)||{}).id||null})),
+      hero:(m.photos.find(p=>p.is_hero)||{}).id||null,
+      ...(sent[i].length?{merge_from:sent[i]}:{})})),
     excluded:A.filter(p=>p.excluded).map(p=>p.id) };
   try{
     const r=await api('save_groups',payload);
     if(!r.ids||r.ids.length!==snap.length) throw new Error('no ids back');
-    snap.forEach((m,i)=>{ m.id=r.ids[i]; });   // ⚠ answers save against these
+    snap.forEach((m,i)=>{ m.id=r.ids[i]; if(m.merge_from) m.merge_from=m.merge_from.filter(x=>!sent[i].includes(x)); });   // ⚠ answers save against these
     failed=false; flash(true);
     if(editN===n) dirty=false;
     else { clearTimeout(saveTimer); saveTimer=setTimeout(saveGroups,300); }   // newer edits — go again
@@ -2058,6 +2062,7 @@ async function showSort(){
       report('sort with no assets',new Error('no assets')); return; }
     A.sort((a,b)=>new Date(a.taken_at)-new Date(b.taken_at));
     photoCounts(true).then(()=>{ if(page==='sort'&&(screen==='organise'||screen==='board')) paint(); });   // 18 Oct: the limits
+    try{ const am=await rpc('answered_memories',{p_token:TOKEN}); ANSWERED=Array.isArray(am)?new Set(am):null; }catch(_){ ANSWERED=null; }   // 7 Oct
     name=d.collection.owner_name||'';
     skew=detectSkew();
     UN=[]; BSEL=null; UNASK=false;
@@ -2149,8 +2154,19 @@ function takeOut(id){                                   // a photo out of wherev
 function putIn(id,j){ const p=takeOut(id); if(!p) return; if(j==='un'){ UN.push(p); UN.sort(byTime); } else { M[j].photos.push(p); M[j].photos.sort(byTime); } }
 /* REMOVE A GROUP (every occasion): its photos go back to "not in a group yet"; nothing is lost. A group that holds
    answers is refused by the server (409) - refusedNote says so and the page reloads the server's groups. */
+let ANSWERED=null;                                       // 7 Oct: ids of memories holding answers (answered_memories); null = not known
+function holdsAnswers(m){ return !!(m&&m.id)&&(ANSWERED===null||ANSWERED.has(m.id)); }
 function removeGroup(j){
   const m=M[j]; if(!m) return false;
+  if(hasPhotos(m)&&holdsAnswers(m)&&M.filter(hasPhotos).length>1){
+    /* 7 Oct (Nigel): a memory with answers is never removed - its photos and answers JOIN a neighbour, nearest in time first */
+    const ks=[j-1,j+1].filter(x=>x>=0&&x<M.length&&hasPhotos(M[x])).sort((a,b)=>(gapTo(j,a)-gapTo(j,b))||((b===j+1)-(a===j+1)));
+    const sh=$('sheet');
+    sh.innerHTML=`<div class="in" id="keepanswers"><h3>${esc(m.title||'This memory')} already has answers</h3>
+      <p class="lede" style="margin:6px 0 14px">Removing it would lose them, so instead it can join the memory next to it - its photos and answers go there, and nothing is lost.</p>
+      <div class="acts">${ks.map(k=>`<button class="b" data-join="${j}" data-with="${k}" data-into="1" type="button">Join with \u201c${esc(M[k].title||('Group '+(k+1)))}\u201d - its answers go there</button>`).join('')}
+      <button id="keepcancel" type="button">Keep it as it is</button></div></div>`;
+    sh.classList.remove('hide'); return false; }
   if(screen==='organise'&&hasPhotos(m)&&M.filter(hasPhotos).length<=1){ const sh=$('sheet');   // the film needs one group
     sh.innerHTML=`<div class="in"><h3>This is your only group</h3><p class="lede" style="margin:6px 0 14px">A film needs at least one group. Rename it instead, or move photos into a new group first.</p><button class="done" id="cancel">OK</button></div>`;
     sh.classList.remove('hide'); return false; }
@@ -2275,22 +2291,32 @@ function limitsLine(){
    a small memory is offered the neighbour that brings it UP TO THE MINIMUM - the next one, else the one before - and only if
    neither does, the bigger neighbour. The same rule as the server's memory_limits_for (server-wanted-2026-10-19-joins.sql). */
 function memN(x){ return M[x]?M[x].photos.filter(p=>!p.excluded).length:0; }
+/* 7 Oct (Nigel, Tester 2 over the limit): a small memory is offered its NEAREST NEIGHBOUR IN TIME - of the neighbours that bring it
+   up to the minimum (the 19 Oct rule: never a chain of two small ones), the nearer; if neither does, the nearer. */
+function gapTo(j,k){
+  const ts=x=>M[x]?M[x].photos.filter(p=>!p.excluded&&p.taken_at).map(p=>+new Date(p.taken_at)).filter(v=>!isNaN(v)):[];
+  const a=ts(j), b=ts(k); if(!a.length||!b.length) return 1e15;
+  return k>j?Math.max(0,Math.min(...b)-Math.max(...a)):Math.max(0,Math.min(...a)-Math.max(...b));
+}
 function joinTarget(j){
   const min=limitsNow().min, n=memN(j);
-  const c=[j+1,j-1].filter(x=>x>=0&&x<M.length);
-  return c.find(x=>n+memN(x)>=min) ?? c.slice().sort((a,b)=>memN(b)-memN(a)||(b===j+1)-(a===j+1))[0];
+  const near=(a,b)=>(gapTo(j,a)-gapTo(j,b))||((b===j+1)-(a===j+1));
+  const c=[j+1,j-1].filter(x=>x>=0&&x<M.length&&memN(x)>0);
+  return c.filter(x=>n+memN(x)>=min).sort(near)[0] ?? c.slice().sort(near)[0];
 }
 function joinWords(j,k){
   const other=M[k]?(M[k].title||('Group '+(k+1))):'', t=memN(j)+memN(k);
   return `Join with \u201c${esc(other)}\u201d - together they make ${t}`;
 }
-function joinNext(j,k){
-  /* the small memory and its neighbour become one - the bigger one's name kept */
+function joinNext(j,k,intoK){
+  /* the small memory and its neighbour become one - the bigger one's name kept (intoK: memory j joins memory k, k's name kept).
+     7 Oct: the joined memory's ANSWERS go too - it is sent as merge_from on the one it joined, never as removed. */
   if(k===undefined) k=joinTarget(j); if(k===undefined||k<0||!M[k]) return;
   const [a,b]=j<k?[j,k]:[k,j];
   const keepB=M[b].photos.length>M[a].photos.length;
-  const into=keepB?M[b]:M[a], from=keepB?M[a]:M[b];
+  const into=intoK?M[k]:(keepB?M[b]:M[a]), from=intoK?M[j]:(keepB?M[a]:M[b]);
   into.photos=into.photos.concat(from.photos).sort(byTime);
+  into.merge_from=(into.merge_from||[]).concat(from.id?[from.id]:[],from.merge_from||[]);
   M.splice(M.indexOf(from),1);
   cur=Math.max(0,Math.min(M.indexOf(into),M.length-1)); sel=null;
   queueSave(); paint(); scrollTo(0,0);
@@ -2302,6 +2328,7 @@ function limitsSheet(){
   const many=l.tooMany&&!l.small.length?M.map((m,j)=>j<M.length-1?`<li><b>${esc(m.title||('Group '+(j+1)))}</b> <button class="b" data-join="${j}" data-with="${j+1}" type="button">Join with the next one</button></li>`:'').join(''):'';
   s.innerHTML=`<div class="in" id="limitsheet"><h3>Fewer, fuller memories</h3>
     <p>${l.tooMany?`A film this length works best with up to <b>${l.max}</b> memories - you have <b>${l.n}</b>. `:''}${l.small.length?`Each memory works best with at least <b>${l.min}</b> photos - it gets a fuller verse in the song.`:''}</p>
+    <p>Joining keeps every answer - they move with the photos.</p>
     <ul class="shortmems">${rows||many}</ul>
     <div class="acts"><button id="keepas" type="button">I'd like to keep these as they are</button></div>
     <p class="small" id="keepmsg" role="status"></p></div>`;
@@ -3574,7 +3601,7 @@ document.addEventListener('click',async e=>{
     scrollTo(0,0); return; }
   if(t.id==='tofirst'){ if(dropEmptyAt(cur)) cur=Math.min(cur,M.length-1); const i=M.findIndex(x=>hasPhotos(x)&&!(x.title||'').trim());
     if(i>=0){ cur=i; sel=null; picking=false; paint(); scrollTo(0,0); } return; }
-  if(t.dataset&&t.dataset.join!==undefined){ $('sheet').classList.add('hide'); joinNext(+t.dataset.join,t.dataset.with!==undefined?+t.dataset.with:undefined); return; }
+  if(t.dataset&&t.dataset.join!==undefined){ $('sheet').classList.add('hide'); joinNext(+t.dataset.join,t.dataset.with!==undefined?+t.dataset.with:undefined,t.dataset.into==='1'); return; }
   if(t.id==='keepas'){ keepAsTheyAre(); return; }
   if(t.id==='sortDone'){ finishSort(); return; }
   /* 2 Oct: the board, remove a group, photos in no group */
@@ -3585,7 +3612,8 @@ document.addEventListener('click',async e=>{
   if(t.id==='addg'){ const f=$('newg'), v=(f&&f.value||'').trim(); if(!v){ if(f) f.focus(); return; }
     M.push({title:v.slice(0,60),hint:'',register:'warm',story:'',photos:[]});
     if(BSEL){ putIn(BSEL,M.length-1); BSEL=null; queueSave(); } paint(); return; }
-  if(t.dataset.rmg!==undefined){ removeGroup(+t.dataset.rmg); paint(); return; }
+  if(t.dataset.rmg!==undefined){ if(removeGroup(+t.dataset.rmg)) paint(); return; }
+  if(t.id==='keepcancel'){ $('sheet').classList.add('hide'); return; }
   if(t.id==='rmgroup'){ if(removeGroup(cur)){ paint(); scrollTo(0,0); } return; }
   if(t.id==='unown'){ $('sheet').classList.add('hide');
     M.push({title:'',register:'warm',story:'',photos:UN.splice(0).sort(byTime)}); UNASK=false; queueSave();
