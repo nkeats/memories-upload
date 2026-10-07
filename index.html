@@ -269,6 +269,33 @@ summary,.tips summary{background:var(--goldsoft)!important;border:2px solid var(
 label.tick,.cbox,.genre,.bg{border:2px solid var(--goldline)!important;border-radius:10px;padding:8px 12px}
 .goldnote{background:var(--goldsoft);border:2px solid var(--goldline);border-radius:10px;padding:10px 14px;margin:0 0 16px;
   font-size:18px;color:var(--fg)}
+/* 8 Oct (the phone pass, Tester 2: "it wasn't always obvious what had been selected"): a TICK on every selected photo, a thick
+   gold ring, and the bar at the bottom says how many; every target at least 48 px (Google 48 dp; Apple 44 pt) */
+button,.b,.chip,.quiet,input[type=button],input[type=submit]{min-height:48px!important;min-width:48px!important}
+.c,.lo{position:relative;min-height:48px;min-width:48px}
+.c.sel{box-shadow:0 0 0 4px var(--brass)!important;border-color:var(--goldline)!important}
+.c .tick{position:absolute;bottom:6px;right:6px;width:36px;height:36px;border-radius:50%;background:var(--brass);color:#1F1A12;
+  border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:22px!important;font-weight:800;line-height:1}
+.selbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.selbar .cnt{font-size:20px;font-weight:700;margin-right:auto}
+.lo .put{font-size:18px!important;padding:4px 0}
+a.quiet,a.b{display:inline-flex!important;align-items:center;min-height:48px!important}
+.why{font-size:18px;color:var(--fg2);margin:4px 0 10px}
+/* one group open at a time on a phone (the board): a closed group shows its name, its count and its "Put it in" button */
+.bg.closed .bmini,.bg.closed .bhint{display:none}
+.bg .bopen{margin-left:6px}
+/* "Your film": every group, what's in, what's out and why */
+#yourfilm{position:fixed;inset:0;z-index:60;background:var(--ink);color:var(--fg);overflow:auto;padding:16px 16px 90px}
+#yourfilm .yfin{max-width:980px;margin:0 auto}
+#yourfilm h2{margin:6px 0 4px}
+#yourfilm .yfg{border:2px solid var(--goldline);border-radius:10px;padding:10px 12px;margin:12px 0;background:var(--panel)}
+#yourfilm .yfstrip{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px;margin:6px 0}
+#yourfilm .yfstrip img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;border-radius:5px}
+#yourfilm .yfout{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0}
+#yourfilm .yfout img{width:96px;aspect-ratio:4/3;object-fit:cover;border-radius:5px;opacity:.7}
+#yourfilm .yfout .yfwhy{flex:1;min-width:160px;font-size:18px}
+#yourfilm .yfclose{position:sticky;top:0;float:right}
+#yourfilm .bn,.bg .bn{font-size:18px}
 </style>
 
 <script id="preview-base">
@@ -336,7 +363,7 @@ function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?S
 <style id="a11y-focus-style">h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus{outline:none}</style>
 </head>
 <body>
-<div class="wrap"><p class="helpline hide" id="helpline"><button class="quiet" id="helpOpen" type="button">Something not right?</button> <a class="quiet hide" id="dataLink" href="#">Your data</a></p><div id="stage" class="load">Opening your film…</div></div>
+<div class="wrap"><p class="helpline hide" id="helpline"><button class="quiet" id="helpOpen" type="button">Something not right?</button> <button class="quiet hide" id="yourFilm" type="button">Your film</button> <a class="quiet hide" id="dataLink" href="#">Your data</a></p><div id="stage" class="load">Opening your film…</div></div>
 <div class="sheet hide" id="sheet"></div>
 <div class="nav hide" id="nav"></div>
 
@@ -464,6 +491,7 @@ async function route(){
   }
   J=j;
   $('helpline').classList.remove('hide');
+  if(!ASK){ const yf=$('yourFilm'); if(yf) yf.classList.toggle('hide',!['sort','answer','submitted'].includes(j.stage)); }   // 8 Oct
   /* 3 Oct: YOUR DATA - download or delete everything, on the delivery page (film.html#data); the builder's link only */
   if(!ASK){ const dl=$('dataLink'); dl.href=`film.html?t=${encodeURIComponent(TOKEN)}#data`; dl.classList.remove('hide'); }
   /* 3 Oct: REFERRAL - a friend's code on the link (?ref=), recorded once against this new film; the checkout applies any
@@ -1893,6 +1921,8 @@ async function toSort(){
 const REG={ lively:3.5, wry:3.5, warm:4.0, awe:4.5, tender:5.0, grief:6.5 };
 const LAB={ lively:'Busy, fun', wry:'Funny', warm:'Warm', awe:'Big scenery',
             tender:'Quiet, tender', grief:'Sad' };
+let SELS=new Set(), BOPEN=0;                     // 8 Oct (phone pass): the photos selected; the board's one open group on a phone
+let A_ALL=[];                                     // 8 Oct: EVERY photo the server has (set aside ones too) - for "Your film"
 let A=[], M=[], dups=[], screen='welcome', cur=0, sel=null, picking=false,
     zoom=null, skew=null, skewDone=false, name='';
 /* 2 Oct (Nigel & Leisa's wedding test):
@@ -2061,22 +2091,30 @@ async function showSort(){
       plain(`<h1>No photos yet</h1><p class="do">We couldn't find any photos in your film. Please get in touch with whoever sent you this link.</p>`);
       report('sort with no assets',new Error('no assets')); return; }
     A.sort((a,b)=>new Date(a.taken_at)-new Date(b.taken_at));
+    A_ALL=d.assets.slice();                                // 8 Oct: every photo, for "Your film" (set aside ones too)
     photoCounts(true).then(()=>{ if(page==='sort'&&(screen==='organise'||screen==='board')) paint(); });   // 18 Oct: the limits
-    try{ const am=await rpc('answered_memories',{p_token:TOKEN}); ANSWERED=Array.isArray(am)?new Set(am):null; }catch(_){ ANSWERED=null; }   // 7 Oct
     name=d.collection.owner_name||'';
     skew=detectSkew();
-    UN=[]; BSEL=null; UNASK=false;
-    try{ const sg=await rpc('suggested_groups',{p_token:TOKEN});
+    UN=[]; BSEL=null; UNASK=false; SELS=new Set(); BOPEN=0;
+    /* 8 Oct (phone pass, Tester 2: "quite a bit of lag when the photos were loading"): these four calls went one after another -
+       a phone round trip each (about 0.6 s on a slow connection) before anything showed. Now they go at once. */
+    const [am, sg, cs, ca]=await Promise.all([
+      rpc('answered_memories',{p_token:TOKEN}).catch(()=>null),
+      rpc('suggested_groups',{p_token:TOKEN}).catch(e=>({__err:e})),
+      rpc('clip_state',{p_token:TOKEN}).catch(e=>({__err:e})),
+      rpc('clips_to_ask',{p_token:TOKEN}).catch(e=>({__err:e}))]);
+    ANSWERED=Array.isArray(am)?new Set(am):null;                                                         // 7 Oct
+    try{ if(sg&&sg.__err) throw sg.__err;
       SUG=(sg&&sg.ok&&Array.isArray(sg.groups))?sg.groups.filter(g=>g&&(g.title||'').trim()):[];
       if(sg&&sg.error) throw new Error(sg.error); }
     catch(e){ report('suggested_groups',e); SUG=[]; }     // a fault here keeps the date grouping
     /* Everything about this film's clips in one call: length, seconds in the
        film, whether a still exists, whether anybody is talking, what they say. */
-    try{ const cs=await rpc('clip_state',{p_token:TOKEN}); CLIPS={}; (cs&&cs.clips||[]).forEach(c=>{ CLIPS[c.id]=c; }); }
+    try{ if(cs&&cs.__err) throw cs.__err; CLIPS={}; (cs&&cs.clips||[]).forEach(c=>{ CLIPS[c.id]=c; }); }
     catch(e){ report('clip_state',e); }
     /* Clips with a voice that nobody has decided about, before anything else
        on this page. One tap each; only where it matters. */
-    try{ const c=await rpc('clips_to_ask',{p_token:TOKEN}); V.clips=Array.isArray(c)?c.map(x=>({...x,asset:A.find(a=>a.id===(x.asset_id||x.id||x.asset))})).filter(x=>x.asset):[]; }
+    try{ if(ca&&ca.__err) throw ca.__err; V.clips=Array.isArray(ca)?ca.map(x=>({...x,asset:A.find(a=>a.id===(x.asset_id||x.id||x.asset))})).filter(x=>x.asset):[]; }
     catch(e){ report('clips_to_ask',e); V.clips=[]; }
     if(V.clips.length){ V.cur=0; screen='voices'; paint(); return; }
     if(d.chapters.length){                       // resuming
@@ -2184,7 +2222,7 @@ function unsortedChoice(){ const s=$('sheet'); UNASK=true;
     <div class="acts"><button class="yes" id="unown">Put ${UN.length===1?'it':'them'} in a group of ${UN.length===1?'its':'their'} own</button>
       <button id="unleave">Leave ${UN.length===1?'it':'them'} out of the film</button>
       <button id="unkeep">Keep sorting</button></div>
-    <p class="lede" style="margin-top:10px;font-size:14px">Left out, ${UN.length===1?'it stays':'they stay'} here under “Not in a group yet” — you can put ${UN.length===1?'it':'them'} in a group any time before you’re done.</p></div>`;
+    <p class="lede" style="margin-top:10px;font-size:18px">Left out, ${UN.length===1?'it stays':'they stay'} here under “Not in a group yet” — you can put ${UN.length===1?'it':'them'} in a group any time before you’re done.</p></div>`;
   s.classList.remove('hide'); }
 function unsortedStrip(){
   if(!UN.length) return '';
@@ -2204,19 +2242,22 @@ function paintBoard(){
     <h1>Which part of the day is each one?</h1>
     <p class="do">Tap a photo, then tap the group it goes in${matchMedia('(hover:hover)').matches?' — or drag it there':''}. Use as many or as few groups as you like.</p>
     <div class="boardg">`;
-  M.forEach((m,j)=>{ const inn=m.photos.filter(p=>!p.excluded);
-    h+=`<div class="bg${BSEL?' target':''}" data-bg="${j}">
+  const phone=matchMedia('(max-width:700px)').matches;              // 8 Oct: one group open at a time on a phone
+  if(BOPEN>=M.length) BOPEN=0;
+  M.forEach((m,j)=>{ const inn=m.photos.filter(p=>!p.excluded), closed=phone&&j!==BOPEN;
+    h+=`<div class="bg${BSEL?' target':''}${closed?' closed':''}" data-bg="${j}">
       <div class="bh"><b>${esc(m.title)}</b> <span class="bn">${inn.length?plural(inn.length,'photo'):'empty'}</span>
+        ${closed?`<button class="chip bopen" type="button" data-bopen="${j}" aria-expanded="false">Open</button>`:''}
         ${BSEL?`<button class="chip" type="button" data-bg="${j}">Put it in ${esc(m.title)}</button>`:''}
         <button class="quiet bx" type="button" data-rmg="${j}" aria-label="Remove ${esc(m.title)}">Remove</button></div>
       ${m.hint?`<div class="bhint">${esc(m.hint)}</div>`:''}
-      <div class="bmini">${inn.map(p=>`<div class="c${BSEL===p.id?' sel':''}" data-bp="${p.id}" draggable="true">${tile(p)}</div>`).join('')||'<span class="bdrop">'+(BSEL?'Tap here to put it in':'Nothing yet')+'</span>'}</div></div>`; });
+      <div class="bmini">${inn.map(p=>`<div class="c${BSEL===p.id?' sel':''}" data-bp="${p.id}" draggable="true">${tile(p)}${BSEL===p.id?'<div class="tick" aria-hidden="true">✓</div>':''}</div>`).join('')||'<span class="bdrop">'+(BSEL?'Tap here to put it in':'Nothing yet')+'</span>'}</div></div>`; });
   h+=`</div>
     <div class="addg"><input type="text" id="newg" placeholder="Add your own group — e.g. The night before" autocomplete="off" maxlength="60">
       <button class="chip" id="addg" type="button">Add</button></div>
     <div class="bun" data-bun="1"><h3 style="margin:22px 0 8px">Not in a group yet (${UN.length})</h3>
     ${BSEL&&!UN.some(p=>p.id===BSEL)?'<p class="lede" style="margin:0 0 8px">Tap here to take it back out of its group. <button class="chip" type="button" data-bun="1">Take it out</button></p>':''}
-    ${UN.length?`<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(92px,1fr))">${UN.map(p=>`<div class="c${BSEL===p.id?' sel':''}" data-bp="${p.id}" draggable="true">${tile(p)}</div>`).join('')}</div>`
+    ${UN.length?`<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(92px,1fr))">${UN.map(p=>`<div class="c${BSEL===p.id?' sel':''}" data-bp="${p.id}" draggable="true">${tile(p)}${BSEL===p.id?'<div class="tick" aria-hidden="true">✓</div>':''}</div>`).join('')}</div>`
       :'<p class="lede">Every photo is in a group.</p>'}</div>`;
   $('stage').innerHTML=h; $('stage').className='';
   nav('<button class="go" id="bnext">Next →</button>',`<b>${placed}</b> of ${A.filter(p=>!p.excluded).length} sorted<br>${plural(M.filter(hasPhotos).length,'group')}`,false,
@@ -2370,18 +2411,19 @@ function paintOrg(){
   h+=`<h2>What do you call this group?</h2>
     <input type="text" id="nm" class="beside" value="${esc(m.title)}" placeholder="Anything you like" autocomplete="off">
     <p class="do" style="font-size:16.5px;margin:9px 0 22px;color:var(--fg2)">
-      ${plural(inn.length,'photo')} · about ${mmss(secs(m))} of film · tap a photo to move it, or leave it out</p>
+      ${plural(inn.length,'photo')} · about ${mmss(secs(m))} of film · tap photos to select them, then move them or leave them out</p>
     ${(()=>{ const l=limitsNow(); const me=l.small.find(x=>x.j===cur); return me&&M.length>1?`<p class="goldnote">Only ${plural(me.n,'photo')} here - a memory works best with at least ${l.min}. ${(k=>k===undefined?'':`<button class="b" data-join="${cur}" data-with="${k}" type="button">${joinWords(cur,k)}</button>`)(joinTarget(cur))}</p>`:''; })()}
     <div class="chips"><span class="lab">How did this time feel?</span>
       ${Object.keys(REG).map(r=>`<button class="chip" data-reg="${r}" aria-pressed="${m.register===r}">${LAB[r]}</button>`).join('')}</div>
     <div class="grid">`;
-  inn.forEach((p,i)=>{ h+=`<div class="c ${sel===p.id?'sel':''} ${p.is_hero?'best':''}" data-p="${p.id}">
+  inn.forEach((p,i)=>{ const on=SELS.has(p.id); h+=`<div class="c ${on?'sel':''} ${p.is_hero?'best':''}" data-p="${p.id}" role="checkbox" aria-checked="${on}" tabindex="0">
     ${tile(p)}<div class="n">${i+1}</div>
-    ${p.is_hero?'<div class="tag">BEST</div>':''}</div>`; });
+    ${p.is_hero?'<div class="tag">BEST</div>':''}${on?'<div class="tick" aria-hidden="true">✓</div>':''}</div>`; });
   h+='</div>';
-  h+=`<p class="lede" style="margin-top:14px">${SUG.length?'<button class="chip" id="toboard" type="button">See all photos and groups</button> ':''}<button class="quiet" id="rmgroup" type="button">Remove this group</button></p>`;
+  h+=`<p class="lede" style="margin-top:14px">${SUG.length?'<button class="chip" id="toboard" type="button">See all photos and groups</button> ':''}${M.filter(hasPhotos).length>1?'<button class="chip" id="joingrp" type="button">Join with another memory</button> ':''}<button class="quiet" id="rmgroup" type="button">Remove this group</button></p>`;
   h+=unsortedStrip();
-  if(gone.length){ h+=`<div class="leftout"><h4>Left out</h4><p>Tap one to put it back.</p><div class="lostrip">`;
+  h+=asideLine();
+  if(gone.length){ h+=`<div class="leftout"><h4>Left out</h4><p class="why">You left these out of the film. Tap one to put it back.</p><div class="lostrip">`;
     gone.forEach(p=>{h+=`<div class="lo" data-back="${p.id}"><img src="${p.thumb_url||p.url}" alt="${photoAlt(p)}" loading="lazy" decoding="async"><div class="put">put back</div></div>`;});
     h+='</div></div>'; }
   setTimeout(()=>{ const fm=$('filmmeter2'); if(fm&&typeof filmMeter==='function') filmMeter(fm); },0);
@@ -2419,27 +2461,52 @@ function nav(right,tally,back,before){
     <div class="tally">${tally||''}</div><span class="saved" id="saved">saved</span>
     <span class="sp"></span>${right}</div>`;
 }
+function selected(){                                   // 8 Oct: the selected photos still in this group, in its order
+  const m=M[cur]; if(!m) return [];
+  return m.photos.filter(p=>!p.excluded&&SELS.has(p.id));
+}
 function sheet(){
   const s=$('sheet');
-  if(!sel||screen!=='organise'){ s.classList.add('hide'); return; }
-  const m=M[cur], inn=m.photos.filter(p=>!p.excluded);
-  const p=inn.find(x=>x.id===sel); if(!p){ s.classList.add('hide'); return; }
-  const i=inn.indexOf(p);
+  if(screen!=='organise'){ s.classList.add('hide'); return; }
+  const m=M[cur]; if(!m){ s.classList.add('hide'); return; }
+  const inn=m.photos.filter(p=>!p.excluded), chosen=selected();
+  SELS=new Set(chosen.map(p=>p.id)); sel=chosen.length===1?chosen[0].id:null;
+  if(!chosen.length){ s.classList.add('hide'); return; }
+  const n=chosen.length, p=chosen[0], i=inn.indexOf(p);
   s.innerHTML=picking
-   ?`<div class="in"><h3>Move it to which group?</h3><div class="picker">
+   ?`<div class="in"><h3>Move ${n===1?'it':'these '+n} to which group?</h3><div class="picker">
       ${M.map((x,j)=>j===cur?'':`<button data-to="${j}">${esc(x.title||('Group '+(j+1)))}</button>`).join('')}
-      <button data-to="new">A new group of its own</button>
+      <button data-to="new">A new group of ${n===1?'its':'their'} own</button>
       <button data-to="un">Not in a group</button></div>
       <button class="close" id="cancel">Cancel</button></div>`
-   :`<div class="in"><h3>Photo ${i+1}</h3><div class="acts">
+   :`<div class="in"><div class="selbar"><span class="cnt" id="selcount">${n} selected</span>
+      <button data-a="move" class="yes">Move to…</button>
+      <button data-a="out" class="warn">Leave ${n===1?'it':'them'} out</button>
+      ${n<inn.length?'<button data-a="all">Select all</button>':''}
+      <button class="done" id="cancel">Done</button></div>
+      ${n===1?`<h3 style="margin:12px 0 6px">Photo ${i+1}</h3><div class="acts">
       <button data-a="up" ${i<=0?'disabled':''}>← Earlier</button>
       <button data-a="down" ${i>=inn.length-1?'disabled':''}>Later →</button>
       <button data-a="best">${p.is_hero?'Not the best':'This is the best one'}</button>
-      <button data-a="move">Different group</button>
-      <button data-a="out" class="warn">Leave it out</button>
-      <button data-a="see">See it bigger</button>
-      </div><button class="done" id="cancel">Done</button></div>`;
+      <button data-a="see">See it bigger</button></div>`:''}</div>`;
   s.classList.remove('hide');
+}
+/* 8 Oct (phone pass): JOIN this memory with another in two taps - "Join with another memory", then the one (nearest in time
+   first). Its photos AND its answers go there (merge_from, server-wanted-p24-merge-groups.sql). Before: three taps a photo. */
+function joinSheet(){
+  const ks=M.map((x,j)=>j).filter(j=>j!==cur&&hasPhotos(M[j])).sort((a,b)=>(gapTo(cur,a)-gapTo(cur,b))||(a-b));
+  const s=$('sheet');
+  s.innerHTML=`<div class="in" id="joinpick"><h3>Join “${esc(M[cur].title||'this memory')}” with which memory?</h3>
+    <p class="why">Its photos and any answers go there - nothing is lost. Nearest in time first.</p>
+    <div class="picker">${ks.map(k=>`<button data-join="${cur}" data-with="${k}" data-into="1" type="button">${esc(M[k].title||('Group '+(k+1)))}</button>`).join('')}</div>
+    <button class="close" id="joincancel" type="button">Cancel</button></div>`;
+  s.classList.remove('hide');
+}
+/* 8 Oct (Tester 2: "it seemed to cut out quite a few of the photos" with no reason): photos SET ASIDE (nearly the same as
+   another one she kept, or not checked yet) are said on the page, with one tap to see them and put any back ("Your film"). */
+function asideLine(){
+  const aside=A_ALL.filter(a=>a.in_film===false&&a.intake!=='removed');
+  return aside.length?`<p class="goldnote" id="asideline">${plural(aside.length,'photo')} set aside as nearly the same as another one you kept. <button class="b" id="seeaside" type="button">See ${aside.length===1?'it':'them'} - and put any back</button></p>`:'';
 }
 function drawZoom(){
   let lb=$('lb');
@@ -3486,8 +3553,82 @@ async function afterGroupsChanged(){
 }
 
 /* ═══ 5 · THANK YOU ══════════════════════════════════════════════ */
+/* ═══ YOUR FILM (8 Oct, the phone pass; Tester 2: "quite difficult to view the collection again and see what was actually being
+   used", and after "working on the film" she could not go back to earlier stages) ═════════════════════════════════════════════
+   Every group with the photos IN the film, then every photo that is OUT and WHY: left out by her (one tap: put it back), set aside
+   as nearly the same as one she kept (one tap: put it back - rpc put_back_photo, server-wanted-p25-put-back.sql), not checked yet,
+   or removed by the safety check (never shown). Read from the server each time it opens. After Finished it is READ-ONLY. */
+let YF=null;
+function yfReason(a){
+  if(a.intake==='removed') return {why:'Removed by our safety check - it isn\u2019t shown or used.',kind:null};
+  if(a.intake==='could_not_check') return {why:'We couldn\u2019t check this one, so it isn\u2019t used. Tap \u201cI\u2019m stuck\u201d if it matters.',kind:null};
+  if(a.intake==='checking') return {why:'Still being checked - it goes in as soon as that\u2019s done.',kind:null};
+  if(a.in_film===false) return {why:'Set aside: nearly the same as another photo you kept.',kind:'aside'};
+  if(a.excluded) return {why:'You left this out.',kind:'out'};
+  if(a.dup_of) return {why:'The same file was sent twice - one copy is in the film.',kind:null};
+  return {why:'Not in a group yet.',kind:null};
+}
+async function showYourFilm(focus){
+  let v=$('yourfilm'); if(!v){ v=document.createElement('div'); v.id='yourfilm'; v.setAttribute('role','dialog'); v.setAttribute('aria-label','Your film'); document.body.appendChild(v); }
+  v.innerHTML='<div class="yfin"><p class="lede">One moment\u2026</p></div>';
+  try{ const d=await api('load',{}); YF=d; }
+  catch(e){ report('your film: load',e); v.innerHTML=`<div class="yfin"><button class="yfclose" id="yfclose" type="button">Close</button><h2>Your film</h2><p class="do">We couldn\u2019t open it just now. Please try again in a moment.</p></div>`; return; }
+  paintYourFilm(focus);
+}
+function paintYourFilm(focus){
+  const v=$('yourfilm'), d=YF; if(!v||!d) return;
+  const ro=J.stage==='submitted'||page==='thanks';
+  const inFilm=a=>a.chapter_id&&!a.excluded&&a.in_film!==false&&a.intake!=='removed'&&a.intake!=='could_not_check';
+  const chs=(d.chapters||[]).slice().sort((x,y)=>(x.seq||0)-(y.seq||0));
+  const img=a=>a.thumb_url||a.url;
+  let h=`<div class="yfin"><button class="yfclose" id="yfclose" type="button">Close</button><h2>Your film</h2>
+    <p class="do">${ro?'Your film has been sent - this is what\u2019s in it. To change anything, tap \u201cSomething not right?\u201d and tell us.':'Everything in your film, and anything left out and why.'}</p>`;
+  const nIn=d.assets.filter(inFilm).length;
+  h+=`<p class="lede"><b>${plural(nIn,'photo')}</b> in your film, in ${chs.length} ${chs.length===1?'memory':'memories'}.</p>`;
+  chs.forEach((c,i)=>{ const inn=d.assets.filter(a=>a.chapter_id===c.id&&inFilm(a)).sort((x,y)=>(x.sort_index??0)-(y.sort_index??0));
+    const out=d.assets.filter(a=>a.chapter_id===c.id&&!inFilm(a));
+    h+=`<div class="yfg" data-yfg="${i}"><h3>${esc(c.title||('Memory '+(i+1)))} <span class="bn">${plural(inn.length,'photo')} in${out.length?` \u00b7 ${out.length} out`:''}</span></h3>
+      <div class="yfstrip">${inn.map(a=>img(a)?`<img src="${esc(img(a))}" alt="${photoAlt(a)}" loading="lazy" decoding="async">`:'').join('')}</div>
+      ${out.map(a=>yfOutRow(a,ro)).join('')}</div>`; });
+  const loose=d.assets.filter(a=>!a.chapter_id);
+  if(loose.length){ h+=`<div class="yfg" id="yfaside"><h3>Not in a memory <span class="bn">${plural(loose.length,'photo')}</span></h3>
+    ${loose.map(a=>yfOutRow(a,ro)).join('')}</div>`; }
+  h+='</div>';
+  v.innerHTML=h;
+  if(focus==='aside'){ const x=$('yfaside'); if(x) x.scrollIntoView(); }
+}
+function yfOutRow(a,ro){
+  const r=yfReason(a), src=a.intake==='removed'?null:(a.thumb_url||a.url);
+  return `<div class="yfout" data-yfout="${esc(a.id)}">${src?`<img src="${esc(src)}" alt="${photoAlt(a)}" loading="lazy" decoding="async">`:''}
+    <span class="yfwhy">${esc(r.why)}</span>${!ro&&r.kind?`<button class="b" type="button" data-yfback="${esc(a.id)}" data-yfkind="${r.kind}">Put it back</button>`:''}</div>`;
+}
+async function yfPutBack(id,kind,b){
+  if(b){ b.disabled=true; b.textContent='One moment\u2026'; }
+  try{
+    if(kind==='aside'){
+      const r=await rpc('put_back_photo',{p_token:TOKEN,p_asset:id});
+      if(!r||r.error) throw Object.assign(new Error((r&&r.error)||'put_back_photo'),{why:r&&r.message});
+    }else{                                                       // left out by her: the same save as the sort screen
+      if(page==='sort'){ const p=A.find(x=>x.id===id); if(p){ p.excluded=false; queueSave(); await saveGroups(); } }
+      else { const g=await groupsNow(); const p=g.assets.find(x=>x.id===id); if(p) p.excluded=false;
+        g.chapters.forEach(c=>{ const x=g.assets.find(a=>a.id===id&&a.chapter_id===c.id); if(x&&!c.photos.includes(x)) c.photos.push(x); });
+        await saveGroupsNow(g); }
+    }
+  }catch(e){
+    report('your film: put back',e,{kind});
+    const missing=/HTTP 404/.test(String(e&&e.message));
+    if(b){ b.disabled=false; b.textContent=missing?'Not switched on yet':'Try again'; }
+    const row=document.querySelector(`[data-yfout="${CSS.escape(id)}"] .yfwhy`);
+    if(row) row.textContent=missing?'Putting a set-aside photo back isn\u2019t switched on yet - tap \u201cSomething not right?\u201d and we\u2019ll do it for you.':(e.why||'That didn\u2019t go through. Please try again.');
+    return; }
+  if(page==='sort'){ try{ const d=await api('load',{}); A_ALL=d.assets.slice(); const back=d.assets.find(a=>a.id===id);
+      if(back&&!A.some(x=>x.id===id)&&back.url){ A.push(back); A.sort(byTime); if(!back.chapter_id) UN.push(back); UN.sort(byTime); } }catch(_){} paint(); }
+  await showYourFilm();
+}
+function closeYourFilm(){ const v=$('yourfilm'); if(v) v.remove(); YF=null; }
 function showThanks(){
   page='thanks';
+  if(!ASK){ const yf=$('yourFilm'); if(yf) yf.classList.remove('hide'); }      // 8 Oct: what's in it, read-only, any time
   const photos=J.photos||onCount(), groups=J.chapters||M.length, who=name||J.owner_name||'';
   plain(`<h1>Thank you${who?', '+esc(who):''}</h1>
     <p class="do">We’ll write the song and make your film.</p>
@@ -3688,7 +3829,8 @@ document.addEventListener('click',async e=>{
   const bp=t.closest('[data-bp]');
   if(bp&&screen==='board'){ BSEL=BSEL===bp.dataset.bp?null:bp.dataset.bp; paintBoard(); return; }
   const bgc=t.closest('[data-bg]');
-  if(bgc&&screen==='board'){ if(BSEL){ putIn(BSEL,+bgc.dataset.bg); BSEL=null; queueSave(); paintBoard(); } return; }
+  if(bgc&&screen==='board'){ if(BSEL){ putIn(BSEL,+bgc.dataset.bg); BSEL=null; queueSave(); paintBoard(); }
+    else if(matchMedia('(max-width:700px)').matches&&+bgc.dataset.bg!==BOPEN){ BOPEN=+bgc.dataset.bg; paintBoard(); } return; }
   const bun=t.closest('[data-bun]');
   if(bun&&screen==='board'){ if(BSEL&&!UN.some(p=>p.id===BSEL)){ putIn(BSEL,'un'); BSEL=null; queueSave(); paintBoard(); } return; }
   /* 2 Oct: invite the other person to answer; a story's photograph */
@@ -3702,24 +3844,33 @@ document.addEventListener('click',async e=>{
   const sp=t.closest('[data-stpick]');
   if(sp){ linkStory(sp.dataset.stturn,sp.dataset.stpick); return; }
   if(t.id==='stdone'){ STP.done=true; paintAllDone(); scrollTo(0,0); return; }
-  if(t.id==='cancel'){ sel=null; picking=false; sheet(); paint(); return; }
+  if(t.id==='cancel'){ sel=null; SELS=new Set(); picking=false; sheet(); paint(); return; }
+  if(t.id==='joingrp'){ joinSheet(); return; }
+  if(t.id==='joincancel'){ $('sheet').classList.add('hide'); return; }
+  if(t.id==='yourFilm'||t.id==='seeaside'){ showYourFilm(t.id==='seeaside'?'aside':null); return; }
+  if(t.id==='yfclose'){ closeYourFilm(); return; }
+  if(t.dataset.yfback!==undefined){ yfPutBack(t.dataset.yfback,t.dataset.yfkind,t); return; }
+  if(t.dataset.bopen!==undefined&&screen==='board'){ BOPEN=+t.dataset.bopen; paintBoard(); return; }
   if(t.dataset.to!==undefined){
-    const m=M[cur], p=m.photos.find(x=>x.id===sel);
-    m.photos.splice(m.photos.indexOf(p),1);
-    if(t.dataset.to==='new') M.splice(cur+1,0,{title:'',register:'warm',story:'',photos:[p]});
-    else if(t.dataset.to==='un'){ UN.push(p); UN.sort(byTime); }
-    else M[+t.dataset.to].photos.push(p);
+    const m=M[cur], ps=selected();                               // 8 Oct: every selected photo moves together
+    ps.forEach(p=>m.photos.splice(m.photos.indexOf(p),1));
+    if(t.dataset.to==='new') M.splice(cur+1,0,{title:'',register:'warm',story:'',photos:ps.slice()});
+    else if(t.dataset.to==='un'){ ps.forEach(p=>UN.push(p)); UN.sort(byTime); }
+    else { M[+t.dataset.to].photos.push(...ps); M[+t.dataset.to].photos.sort(byTime); }
     if(!m.photos.length){ M.splice(M.indexOf(m),1); cur=Math.min(cur,M.length-1); }
-    sel=null; picking=false; queueSave(); paint(); return; }
+    sel=null; SELS=new Set(); picking=false; queueSave(); paint(); return; }
   if(t.dataset.a){
     const m=M[cur], inn=m.photos.filter(x=>!x.excluded), p=inn.find(x=>x.id===sel);
     const a=t.dataset.a, i=m.photos.indexOf(p);
     if(a==='move'){ picking=true; sheet(); return; }
-    if(a==='see'){ zoom=inn.indexOf(p); sel=null; drawZoom(); paint(); return; }
+    if(a==='all'){ SELS=new Set(inn.map(x=>x.id)); paint(); return; }
+    if(a==='out'&&SELS.size>1){ selected().forEach(x=>{ x.excluded=true; }); SELS=new Set(); sel=null; queueSave(); paint(); return; }
+    if(!p) return;
+    if(a==='see'){ zoom=inn.indexOf(p); sel=null; SELS=new Set(); drawZoom(); paint(); return; }
     if(a==='up'&&i>0){ m.photos.splice(i,1); m.photos.splice(i-1,0,p); }
     if(a==='down'&&i<m.photos.length-1){ m.photos.splice(i,1); m.photos.splice(i+1,0,p); }
-    if(a==='best'){ m.photos.forEach(x=>x.is_hero=false); p.is_hero=!p.is_hero; sel=null; }
-    if(a==='out'){ p.excluded=true; sel=null; }
+    if(a==='best'){ m.photos.forEach(x=>x.is_hero=false); p.is_hero=!p.is_hero; sel=null; SELS=new Set(); }
+    if(a==='out'){ p.excluded=true; sel=null; SELS=new Set(); }
     queueSave(); paint(); return; }
   const back=t.closest('[data-back]');
   if(back){ const p=A.find(x=>x.id===back.dataset.back); p.excluded=false; queueSave(); paint(); return; }
@@ -3741,7 +3892,8 @@ document.addEventListener('click',async e=>{
     drawZoom(); return; }
   if(t.id==='lb'||t.tagName==='IMG'&&t.closest('#lb')){ zoom=null; drawZoom(); return; }
   const c=t.closest('[data-p]');
-  if(c&&screen==='organise'){ sel=sel===c.dataset.p?null:c.dataset.p; picking=false; paint(); return; }
+  if(c&&screen==='organise'){ const id=c.dataset.p;                 // 8 Oct: a tap ADDS to the selection (or takes it off)
+    if(SELS.has(id)) SELS.delete(id); else SELS.add(id); picking=false; paint(); return; }
 
   /* answer */
   if(t.id==='anext'){
@@ -3784,6 +3936,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&e.target.classList&&e.target.classList.contains('anchor')){ e.preventDefault(); translateGenre(); }
   if(e.key==='Enter'&&e.target.id==='what'){ e.preventDefault(); flagWrong(); }
   if((e.key==='Enter'||e.key===' ')&&e.target.dataset&&e.target.dataset.pick!==undefined){ e.preventDefault(); e.target.click(); }
+  if((e.key==='Enter'||e.key===' ')&&e.target.dataset&&e.target.dataset.p!==undefined&&screen==='organise'){ e.preventDefault(); e.target.click(); }   // 8 Oct
   if(e.key==='Enter'&&e.target.dataset&&e.target.dataset.sung!==undefined){ e.preventDefault(); tryTake(+e.target.dataset.sung); }
 });
 document.addEventListener('input',e=>{
