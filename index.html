@@ -2293,17 +2293,19 @@ function limitsLine(){
 function memN(x){ return M[x]?M[x].photos.filter(p=>!p.excluded).length:0; }
 /* 7 Oct (Nigel, Tester 2 over the limit): a small memory is offered its NEAREST NEIGHBOUR IN TIME - of the neighbours that bring it
    up to the minimum (the 19 Oct rule: never a chain of two small ones), the nearer; if neither does, the nearer. */
-function gapTo(j,k){
-  const ts=x=>M[x]?M[x].photos.filter(p=>!p.excluded&&p.taken_at).map(p=>+new Date(p.taken_at)).filter(v=>!isNaN(v)):[];
+function gapIn(L,j,k){
+  const ts=x=>L[x]?L[x].photos.filter(p=>!p.excluded&&p.taken_at).map(p=>+new Date(p.taken_at)).filter(v=>!isNaN(v)):[];
   const a=ts(j), b=ts(k); if(!a.length||!b.length) return 1e15;
   return k>j?Math.max(0,Math.min(...b)-Math.max(...a)):Math.max(0,Math.min(...a)-Math.max(...b));
 }
-function joinTarget(j){
-  const min=limitsNow().min, n=memN(j);
-  const near=(a,b)=>(gapTo(j,a)-gapTo(j,b))||((b===j+1)-(a===j+1));
-  const c=[j+1,j-1].filter(x=>x>=0&&x<M.length&&memN(x)>0);
-  return c.filter(x=>n+memN(x)>=min).sort(near)[0] ?? c.slice().sort(near)[0];
+function nIn(L,x){ return L[x]?L[x].photos.filter(p=>!p.excluded).length:0; }
+function joinTargetIn(L,j,min){
+  const n=nIn(L,j), near=(a,b)=>(gapIn(L,j,a)-gapIn(L,j,b))||((b===j+1)-(a===j+1));
+  const c=[j+1,j-1].filter(x=>x>=0&&x<L.length&&nIn(L,x)>0);
+  return c.filter(x=>n+nIn(L,x)>=min).sort(near)[0] ?? c.slice().sort(near)[0];
 }
+function gapTo(j,k){ return gapIn(M,j,k); }
+function joinTarget(j){ return joinTargetIn(M,j,limitsNow().min); }
 function joinWords(j,k){
   const other=M[k]?(M[k].title||('Group '+(k+1))):'', t=memN(j)+memN(k);
   return `Join with \u201c${esc(other)}\u201d - together they make ${t}`;
@@ -2330,7 +2332,7 @@ function limitsSheet(){
     <p>${l.tooMany?`A film this length works best with up to <b>${l.max}</b> memories - you have <b>${l.n}</b>. `:''}${l.small.length?`Each memory works best with at least <b>${l.min}</b> photos - it gets a fuller verse in the song.`:''}</p>
     <p>Joining keeps every answer - they move with the photos.</p>
     <ul class="shortmems">${rows||many}</ul>
-    <div class="acts"><button id="keepas" type="button">I'd like to keep these as they are</button></div>
+    ${l.tooMany?'':`<div class="acts"><button id="keepas" type="button">I'd like to keep these as they are</button></div>`}
     <p class="small" id="keepmsg" role="status"></p></div>`;
   s.classList.remove('hide');
 }
@@ -2344,7 +2346,7 @@ async function keepAsTheyAre(){
 function limitsHold(){
   /* Done / Next on the sort step: held while the limits aren't met (and not kept), with the sheet that fixes it */
   const l=limitsNow();
-  if(l.known&&!l.kept&&(l.tooMany||l.small.length)){ limitsSheet(); return true; }
+  if(l.known&&(l.tooMany||(!l.kept&&l.small.length))){ limitsSheet(); return true; }   // 7 Oct: too many is never kept past
   return false;
 }
 function paintOrg(){
@@ -2401,9 +2403,18 @@ function orgNav(){
   const before=(last&&!unnamed)?`<b>Once you press Done, this is the order your film will use.</b>`:'';
   nav(rightBtn,`<b>${mmss(total())}</b><br>${plural(onCount(),'photo')} · ${plural(M.length,'group')}`,cur>0,before);
 }
+function stuckHere(){ return (page==='sort'&&(screen==='organise'||screen==='board'))||(page==='answer'&&screen==='answer'); }
+async function askForHelp(b){
+  /* 7 Oct (Nigel): one tap tells Nigel (pc_notice: the film's short number and this screen - no name); nothing else changes */
+  if(b){ b.disabled=true; b.textContent='One moment\u2026'; }
+  try{ await api('report_error',{page:'stuck',what:`${page}/${screen}`,at:`${page}/${screen}`,message:'asked for help',detail:{screen,page,build:BUILD},
+                                 url:location.pathname,user_agent:''}); }
+  catch(e){ report('ask for help',e); if(b){ b.disabled=false; b.textContent='That didn\u2019t go through - tap to try again'; } return; }
+  if(b) b.textContent='Thanks - we\u2019ve been told and will be in touch soon.';
+}
 function nav(right,tally,back,before){
   const n=$('nav'); n.classList.remove('hide');
-  n.innerHTML=`${before?`<p class="before" aria-live="polite">${before}</p>`:''}<div class="nin">
+  n.innerHTML=`${before?`<p class="before" aria-live="polite">${before}</p>`:''}${stuckHere()?'<p class="stuck"><button class="quiet" id="stuck" type="button">I\u2019m stuck - can you help?</button></p>':''}<div class="nin">
     ${back?'<button id="back">←</button>':''}
     <div class="tally">${tally||''}</div><span class="saved" id="saved">saved</span>
     <span class="sp"></span>${right}</div>`;
@@ -3114,7 +3125,12 @@ async function saveSungFix(i){
 }
 
 async function finishFilm(b,sent){
-  const c=sent?null:await photoCounts(true);                 // 16 Oct: the minimums before the film is sent
+  /* 7 Oct 9:55pm (Nigel; Tester 2 pressed Finished with 16 memories, limit ~11, after "keep as they are" - the check below
+     skips a film once it was sent short): FINISHED NEVER SENDS A FILM OVER THE MEMORY LIMIT - how many need joining, and the
+     one-tap joins (small ones into their nearest neighbour in time), right here. */
+  const lim=await photoCounts(true);
+  if(lim&&lim.limits&&lim.limits.too_many){ if(b){ b.disabled=false; b.textContent='Finished'; } await showOverLimit(); return; }
+  const c=sent?null:lim;                                      // 16 Oct: the minimums before the film is sent
   if(needsMore(c)){ if(b){ b.disabled=false; b.textContent='Finished'; } showShort(c,'finish'); return; }
   if(!NS.done){ NS.sent=!!sent; await showSung(b); return; }  // 21 Oct: the names, heard sung, right before Finished (the minimums answered stay answered)
   try{ await setStage('submitted'); }
@@ -3342,6 +3358,44 @@ async function groupsNow(){
     photos:d.assets.filter(a=>a.chapter_id===c.id&&!a.excluded).sort((x,y)=>(x.sort_index??0)-(y.sort_index??0))}));
   return {d,chapters,assets:d.assets};
 }
+let OL=null;                                              // 7 Oct: the groups as the server has them, for the Finished joins
+function overLimitSheet(){
+  const L=OL.chapters.filter(c=>c.photos.length), lim=(PC&&PC.limits)||{}, max=+lim.max_memories||L.length;
+  const min=+(((PC&&PC.memories||[])[0]||{}).min)||4, n=L.length, need=Math.max(0,n-max);
+  if(!need) return `<div class="in" id="overlimit"><h3>That's it - ${n} memories</h3>
+    <p>That works for a film this length. Every answer is still there. Press Finished when you're ready.</p>
+    <div class="acts"><button class="yes" id="olclose" type="button">OK</button></div></div>`;
+  let order=L.map((m,j)=>j).filter(j=>nIn(L,j)<min);         // small ones first, then the smallest
+  if(order.length<need) order=order.concat(L.map((m,j)=>j).filter(j=>!order.includes(j)).sort((a,b)=>nIn(L,a)-nIn(L,b)));
+  const rows=order.slice(0,Math.max(need,order.filter(j=>nIn(L,j)<min).length)).map(j=>{ const k=joinTargetIn(L,j,min); if(k===undefined) return '';
+    return `<li><b>${esc(L[j].title||('Memory '+(j+1)))}</b>: ${plural(nIn(L,j),'photo')} <button class="b" data-fjoin="${j}" data-fwith="${k}" type="button">Join with \u201c${esc(L[k].title||('Memory '+(k+1)))}\u201d</button></li>`; }).join('');
+  return `<div class="in" id="overlimit"><h3>Fewer, fuller memories first</h3>
+    <p>Your film has <b>${n}</b> memories - a film this length works best with up to <b>${max}</b>, so <b>${need}</b> ${need===1?'needs':'need'} joining with another before it's sent.</p>
+    <p>Joining keeps every answer - they move with the photos. One tap each:</p>
+    <ul class="shortmems">${rows}</ul>
+    <div class="acts"><button id="olsort" type="button">Go back to my memories</button></div>
+    <p class="small" id="olmsg" role="status"></p></div>`;
+}
+async function showOverLimit(){
+  const s=$('sheet');
+  try{ OL=await groupsNow(); }catch(e){ report('over limit: load groups',e); OL=null; }
+  if(!OL){ s.innerHTML=`<div class="in"><h3>Fewer, fuller memories first</h3><p>A film this length works best with fewer memories. Please go back and join some.</p>
+    <div class="acts"><button class="yes" id="olsort" type="button">Go back to my memories</button></div></div>`; s.classList.remove('hide'); return; }
+  s.innerHTML=overLimitSheet(); s.classList.remove('hide');
+}
+async function finishJoin(j,k){
+  const L=OL.chapters.filter(c=>c.photos.length), from=L[j], into=L[k], m=$('olmsg'); if(!from||!into) return;
+  if(m) m.textContent='One moment\u2026';
+  into.photos=into.photos.concat(from.photos).sort(byTime);
+  into.merge_from=(into.merge_from||[]).concat(from.id?[from.id]:[]);
+  OL.chapters=OL.chapters.filter(c=>c!==from);
+  try{ await saveGroupsNow(OL); }
+  catch(e){ report('over limit: join',e,{status:e&&e.status}); try{ OL=await groupsNow(); }catch(_){}
+    $('sheet').innerHTML=overLimitSheet(); const mm=$('olmsg'); if(mm) mm.textContent="That join didn\u2019t go through - nothing was changed. Please try again, or tap \u201cI'm stuck\u201d."; return; }
+  await photoCounts(true);
+  try{ OL=await groupsNow(); }catch(_){}
+  $('sheet').innerHTML=overLimitSheet();
+}
 async function saveGroupsNow(g){
   /* 2 Oct: the same save_groups as the grouping screens - EVERY group sent WITH its id, so a rename or move updates the
      group in place (without ids the server matches by title, and a renamed group with answers would read as removed ->
@@ -3349,7 +3403,8 @@ async function saveGroupsNow(g){
      (flow refuses her token): she is told so, nothing is sent. */
   if(ASK) throw Object.assign(new Error('answerer cannot regroup'),{answerer:true});
   const payload={groups:g.chapters.map(m=>({id:m.id,title:m.title,register:m.register,      // no story: see saveGroups
-      assets:m.photos.filter(p=>!p.excluded).map(p=>p.id), hero:(m.photos.find(p=>p.is_hero)||{}).id||null})),
+      assets:m.photos.filter(p=>!p.excluded).map(p=>p.id), hero:(m.photos.find(p=>p.is_hero)||{}).id||null,
+      ...(m.merge_from&&m.merge_from.length?{merge_from:m.merge_from}:{})})),          // 7 Oct: a joined memory's answers go with it
     excluded:g.assets.filter(p=>p.excluded).map(p=>p.id)};
   const r=await api('save_groups',payload);
   if(!r.ids||r.ids.length!==g.chapters.length) throw new Error('save_groups: no ids back');
@@ -3614,6 +3669,10 @@ document.addEventListener('click',async e=>{
     if(BSEL){ putIn(BSEL,M.length-1); BSEL=null; queueSave(); } paint(); return; }
   if(t.dataset.rmg!==undefined){ if(removeGroup(+t.dataset.rmg)) paint(); return; }
   if(t.id==='keepcancel'){ $('sheet').classList.add('hide'); return; }
+  if(t.id==='stuck'){ askForHelp(t); return; }
+  if(t.dataset&&t.dataset.fjoin!==undefined){ finishJoin(+t.dataset.fjoin,+t.dataset.fwith); return; }
+  if(t.id==='olclose'){ $('sheet').classList.add('hide'); return; }
+  if(t.id==='olsort'){ $('sheet').classList.add('hide'); showSort(); return; }
   if(t.id==='rmgroup'){ if(removeGroup(cur)){ paint(); scrollTo(0,0); } return; }
   if(t.id==='unown'){ $('sheet').classList.add('hide');
     M.push({title:'',register:'warm',story:'',photos:UN.splice(0).sort(byTime)}); UNASK=false; queueSave();
