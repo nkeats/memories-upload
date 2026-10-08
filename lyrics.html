@@ -59,6 +59,8 @@ p.lede{color:var(--fg2);font-size:16.5px;line-height:1.6;margin:0 0 26px;max-wid
 .ed .row{display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap}
 .ed .hint{font-size:14px;color:var(--fg3);flex-basis:100%;margin-top:4px}
 .ed .hint.warn{color:var(--goldtext,var(--brass))}
+.q .qbtns{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}.q .qbtns .b{min-height:48px;font-size:18px}
+.q textarea{width:100%;min-height:96px;font-size:18px;margin-top:10px;box-sizing:border-box}.q .qdone{font-size:18px;margin-top:6px}
 .q{background:#241F18;border:1px solid var(--brass);border-radius:8px;padding:10px 13px;margin:2px 0 10px;
   font-size:15.5px;line-height:1.5;color:var(--fg)}
 .q b{color:var(--goldtext,var(--brass));font-weight:600}
@@ -294,7 +296,17 @@ function paint(){
     }else{
       h+=`<button class="ln${l.edited?' edited':''}${done?' readonly':''}" ${done?'tabindex="-1"':`data-line="${l.id}"`}>${esc(l.text)}</button>`;
     }
-    if(l.question && !l.edited && !done) h+=`<div class="q"><b>Is this right?</b> ${esc(l.question)} If not, tap the line above and change it.</div>`;
+    if(ANS[l.id] && !done) h+=`<div class="q" id="q-${l.id}" role="status"><div class="qdone">${ANS[l.id].yes?'Thank you - we’ll keep it.':'Thank you - we’ll put this line right from what you told us.'}</div></div>`;
+    else if(l.question && !l.edited && !done && CANANSWER){         // 9 Oct (B4): "Is this true?" answered in one tap
+      h+=`<div class="q" id="q-${l.id}"><b>Is this right?</b> ${esc(l.question)}
+          <div class="qbtns"><button class="b go" data-qyes="${l.id}">Yes, that's right</button>
+          <button class="b" data-qno="${l.id}" aria-expanded="${QNO===l.id}">No - </button></div>`;
+      if(QNO===l.id) h+=`<label for="qwhat" style="display:block;margin-top:10px;font-size:18px">What really happened?</label>
+          <textarea id="qwhat" aria-label="What really happened"></textarea>
+          <div class="qbtns"><button class="b go" data-qsend="${l.id}">Send</button><button class="b" data-qcancel="1">Cancel</button></div>`;
+      h+=`<div class="err hide" id="qerr-${l.id}" role="alert"></div></div>`;
+    }
+    else if(l.question && !l.edited && !done) h+=`<div class="q"><b>Is this right?</b> ${esc(l.question)} If not, tap the line above and change it.</div>`;
   }
   if(sec!==null) h+='</div>';
   h+=pickerHTML();
@@ -454,8 +466,25 @@ async function approve(){
     $('nin').insertAdjacentHTML('afterbegin','<div class="err" style="flex-basis:100%">That didn’t go through. Please try again.</div>'); }
 }
 
+// 9 Oct 2026 (Nigel, prompt 28 ADDITION B4): a line we weren't sure of is answered here - "Yes, that's right" or "No - what really
+// happened" (answer_line_question, server-wanted-p28-is-this-true.sql). The answer is kept as one of her answers, so every later check
+// reads it. On a server without the function: the question as before, no buttons, never an error.
+let CANANSWER=false, QNO=null; const ANS={};
+async function answerLine(id,yes,what){
+  const er=$('qerr-'+id);
+  try{ const r=await rpc('answer_line_question',{p_token:TOKEN,p_line:id,p_yes:yes,p_what:what||null});
+    if(!r||r.error){ if(er){ er.textContent=(r&&r.message)||'That didn’t save. Please try again.'; er.classList.remove('hide'); } return; }
+    ANS[id]={yes,what}; QNO=null; paint(); }
+  catch(e){ report('answer line question',e); if(er){ er.textContent='That didn’t save. Please try again.'; er.classList.remove('hide'); } }
+}
 document.addEventListener('click',ev=>{
   const t=ev.target.closest('button'); if(!t) return;
+  if(t.dataset.qyes){ answerLine(t.dataset.qyes,true,null); return; }
+  if(t.dataset.qno){ QNO=t.dataset.qno; paint(); const w=$('qwhat'); if(w) w.focus(); return; }
+  if(t.dataset.qcancel){ QNO=null; paint(); return; }
+  if(t.dataset.qsend){ const w=($('qwhat')||{}).value||''; if(!w.trim()){ const er=$('qerr-'+t.dataset.qsend);
+      if(er){ er.textContent='Please tell us what really happened, in a few words.'; er.classList.remove('hide'); } return; }
+    answerLine(t.dataset.qsend,false,w.trim()); return; }
   if(t.dataset.style){
     const st=t.dataset.style; if(!STY||STY.locked||st===STY.style) return;
     t.disabled=true;
@@ -504,6 +533,9 @@ async function load(){
   if(r&&r.error) throw Object.assign(new Error(r.error),{refusal:r.error});
   L=r;
   try{ const st=await rpc('get_settings',{p_token:TOKEN}); NOTES=(st&&st.ok&&st.notes)||{}; }catch(_){ NOTES={}; }   // 8 Oct (A12)
+  if(L.lines.some(l=>l.question)){                       // 9 Oct (B4): does the server take answers? (a line of no film: changes nothing)
+    try{ const r=await rpc('answer_line_question',{p_token:TOKEN,p_line:'00000000-0000-0000-0000-000000000000',p_yes:true,p_what:null});
+      CANANSWER=!!(r&&r.error); }catch(_){ CANANSWER=false; } }
   await loadPhotos();
   await loadStyle();
 }
