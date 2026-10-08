@@ -434,6 +434,30 @@ function waitScreen(line){
   plain(`<p class="load" data-wait="1" role="status">${esc(line)}</p><p class="lede hide" id="waitslow">Still working on it - on a slow connection this can take up to a minute.</p>`);
   clearTimeout(WAIT_T); WAIT_T=setTimeout(()=>{ const w=$('waitslow'); if(w) w.classList.remove('hide'); },8000);
 }
+/* 8 Oct 2026 (item 25, Nigel approved the wording - Private\preview-wording-and-sample-2026-10-08.txt): A 30-SECOND SILENT FIRST LOOK
+   at their own photos, made by the film worker and kept privately beside the film. Shown ONLY when the server hands this film's own
+   link a signed preview (delivery 'preview_url', v6) - not ready, switched off, or an older server: nothing at all (never a spinner,
+   never "coming soon"). Silent on purpose: the song is the product. */
+let PV=null, PV_ASKED=false;
+async function loadPreview(){
+  if(PV_ASKED) return PV; PV_ASKED=true;
+  try{ const {ok,j}=await post('delivery',{action:'preview_url'}); PV=ok&&j&&j.url?j.url:null; }catch(_){ PV=null; }
+  if(!PV) setTimeout(()=>{ PV_ASKED=false; },60000);   // not ready yet: ask again in a minute, at most
+  return PV;
+}
+function previewHTML(url){
+  return `<div class="pvbox" id="pvbox"><h3>A first look at your photos</h3>
+    <p>Here are a few of your photos, the way they'll move in your film. The song comes next - we write it from your memories.</p>
+    <video src="${esc(url)}" controls muted playsinline preload="none" style="width:100%;border-radius:10px;background:#000"></video>
+    <p class="small">No music yet - your song is made just for you, once we've heard your stories.</p></div>`;
+}
+function placePreview(){
+  loadPreview().then(url=>{
+    const st=$('stage'); if(!url||!st||$('pvbox')) return;
+    if(!(page==='describing'||screen==='describing'||$('nm'))) return;
+    st.insertAdjacentHTML('afterbegin',previewHTML(url));
+  });
+}
 /* Edge functions (flow, upload, gallery, describe, questions). */
 async function post(fn,body){
   const go=fn==='upload'?fetch:fetchRetry;
@@ -1141,7 +1165,7 @@ function paintConsent(){
       <label class="cbox"><input type="checkbox" id="c_email"> <span>${CONSENT.marketing_email}</span></label>
       <p class="note bad" id="cwarn" style="display:none;margin:14px 0 0;font-size:14px"></p>
     </div>
-    <p class="lede" id="ckeep" style="margin-top:14px;font-size:15px">We delete your photos and answers 90 days after we deliver your film, and the film itself 12 months after. You can download or delete everything sooner, at any time.</p>`;
+    <p class="lede" id="ckeep" style="margin-top:14px;font-size:15px">Your film page stays for 90 days after we deliver your film - then we delete everything: your film, its words, your photos and your answers. Download your film to keep it. You can download or delete everything sooner, at any time.</p>`;
   nav(`<button class="go" id="cdone" disabled>Agree and add photos \u2192</button>`,'',false,'');
   const upd=()=>{ const b=$('cdone'); if(b) b.disabled=!consentReady(); };
   st.querySelectorAll('input').forEach(i=>i.addEventListener('input',upd)); upd();
@@ -2476,6 +2500,7 @@ function paintOrg(){
     h+='</div></div>'; }
   setTimeout(()=>{ const fm=$('filmmeter2'); if(fm&&typeof filmMeter==='function') filmMeter(fm).then(meterHelp); },0);
   $('stage').innerHTML=h;
+  if(cur===0) placePreview();                          // 8 Oct (item 25): again at the top of the sort step
   orgNav();
   sheet();
 }
@@ -3340,6 +3365,7 @@ function paintMusic(){
   if(G.vwhy) h+=`<div class="clock">${esc(G.vwhy)}</div>`;
   if(G.voices.length){ h+='<div class="genres">'; G.voices.forEach(v=>{ h+=card('voice',v,G.voice===v.slug,v.slug===G.vsuggested); }); h+='</div>'; }
   st.innerHTML=h;
+  if(!G.finishMode) placePreview();                    // 8 Oct (item 25): the first look at their photos, while we look at them
   if(G.finishMode){
     const ready=!!(c&&c.confirmed);
     nav(`<button class="go" id="gdone" ${ready?'':'disabled'}>Finished</button>`,'',true,

@@ -236,7 +236,8 @@ function form(){
         <li><b>What you give us:</b> your name and email, your photographs and video clips, and your answers to our questions.</li>
         <li><b>What we do with it:</b> make your film and its song — nothing else. We never sell it, and never use it in advertising (the only exception is a reaction video, if you later choose to share one under its own agreement).</li>
         <li><b>Who helps us make it:</b> Supabase (stores it securely), Anthropic (our AI reads your photos and answers to write the words) and ElevenLabs (sings the song). They work for us under contract and may process it outside Australia.</li>
-        <li><b>How long we keep it:</b> your photos, answers and our working files for ${esc(r.working_days||90)} days after we deliver your film; the finished film and its words for ${esc(r.film_months||12)} months, so you can come back for them. Then we delete them.</li>
+        <li><b>How long we keep it:</b> your film page - the film, its words, your photos and your answers - for ${esc(r.film_days||r.working_days||90)} days after we deliver your film, so you can download it. Then we delete everything. We email you a reminder before it goes.</li>
+        <li><b>Sharing your film:</b> download it and send it from your own device - we don't host films for sharing.</li>
         <li><b>Your choice, always:</b> you can download everything, or delete everything, at any time from your film's page.</li>
       </ul>
       <p style="margin:0">Questions? <a href="mailto:hello@singmeamemory.com" style="color:var(--brass)">hello@singmeamemory.com</a></p></div>
