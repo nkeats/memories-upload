@@ -274,6 +274,7 @@ function paint(){
   const changed=L.lines.filter(l=>l.edited).length;
   const asks=L.lines.filter(l=>l.question&&!l.edited).length;
   let h=`<h1>The words to your song</h1>`;
+  if(NOTES.must_be_in&&!done) h+=`<p class="note" id="mustbein" role="note" style="margin:0 0 16px">${esc(NOTES.must_be_in)}</p>`;
   h+= done
     ? `<p class="do">Thank you — these are the words we are singing.</p>
        <p class="lede">We're making your song now. You don't need to do anything else.</p>`
@@ -495,10 +496,14 @@ document.addEventListener('click',ev=>{
   else if(t.dataset.approve){ t.disabled=true; approve(); }
 });
 
+/* 8 Oct 2026 (A12): notes for the customer before the words are approved - "anyone who must be in this film?" (a NOTE, never a
+   block). From get_settings (server-wanted-p27-tribute.sql); before that exists, nothing is shown. */
+let NOTES={};
 async function load(){
   const r=await rpc('get_lyric',{p_token:TOKEN});
   if(r&&r.error) throw Object.assign(new Error(r.error),{refusal:r.error});
   L=r;
+  try{ const st=await rpc('get_settings',{p_token:TOKEN}); NOTES=(st&&st.ok&&st.notes)||{}; }catch(_){ NOTES={}; }   // 8 Oct (A12)
   await loadPhotos();
   await loadStyle();
 }

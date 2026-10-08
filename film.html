@@ -219,6 +219,11 @@ try{ rpc('get_start_config').then(c=>{ if(c&&__pv(c.site_base_url)) SITE_BASE=St
 const pageUrl=(page,q)=>(SITE_BASE||new URL('.',location.href).href)+page+'?'+q;
 const fmtDate=d=>new Date(d).toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'});
 
+/* 8 Oct 2026 (A12): a TRIBUTE film page is the film, its downloads and the family's data - never "Would you tell others about it?",
+   "Make one for someone you love" (a referral code) or "Share your reaction and get 20% off" (an advertising offer). The occasion
+   comes from the film's own journey; unknown (an error) = as before. */
+let OCC='';
+function tribute(){ return /tribute|memorial|funeral/.test(String(OCC||'').toLowerCase()); }
 function paint(){
   let h='';
   if(D.erasure&&D.erasure.status&&D.erasure.status!=='none'){
@@ -229,7 +234,7 @@ function paint(){
     h+=`<h1>Your film</h1>${FILM?`<video id="film" controls playsinline preload="metadata" src="${esc(FILM.url)}"></video>
         ${downloadsHTML()}`:`<p class="lede">Getting your film ready to play…</p>`}`;
     // REVIEW - the same words, the same link, for everyone; hidden while there is no link
-    if(D.review_url) h+=`<div class="box" id="review"><h2>Would you tell others about it?</h2>
+    if(D.review_url&&!tribute()) h+=`<div class="box" id="review"><h2>Would you tell others about it?</h2>
         <p class="lede">If you have a moment, a review helps other families find us.</p>
         <a class="b" id="reviewlink" href="${esc(D.review_url)}" target="_blank" rel="noopener">Leave a review</a></div>`;
     h+=`<div class="box" id="feedback"><h2>Anything you’d like to tell us?</h2>
@@ -237,12 +242,12 @@ function paint(){
         <textarea id="fbtext" maxlength="2000" aria-label="Anything you’d like to tell us" placeholder="Something you loved, or something we could do better"></textarea>
         <p><button class="b" id="fbsend">Send</button> <span id="fbmsg" role="status"></span></p></div>`;
     // REFERRAL - theirs to share; we never contact anyone
-    if(D.referral&&D.referral.code) h+=`<div class="box" id="referral"><h2>Make one for someone you love</h2>
+    if(D.referral&&D.referral.code&&!tribute()) h+=`<div class="box" id="referral"><h2>Make one for someone you love</h2>
         <p class="lede">Share your own link with family or friends — by text, WhatsApp or your own email. We never contact them.</p>
         <p>Your code: <span class="code" id="refcode">${esc(D.referral.code)}</span></p>
         ${D.referral.link?`<p class="small" id="reflink">${esc(D.referral.link)}</p>
         <button class="b" id="refcopy">Copy the message</button><button class="b" id="refshare">Share</button> <span id="refmsg" role="status"></span>`:''}</div>`;
-    h+=reactionHTML();
+    if(!tribute()) h+=reactionHTML();
   }else{
     h+=`<h1>Your film</h1><p class="lede">Your film isn’t ready yet. We’ll let you know when it is.</p>`;
   }
@@ -274,7 +279,7 @@ function keepHTML(){
   // 8 Oct (prompt 26 A10): ONE clock - the film page, then everything goes (was: photos 90 days, the film 12 months)
   return `<p class="lede" id="keep">Your film page - your film, its words, your photos and your answers - stays for ${n} days after we deliver your film${u?` (until ${esc(fmtDate(u))})`:''}.
     Then we delete all of it. We email you a reminder before it goes, so you can download your film to keep it.
-    You can delete everything sooner, at any time, below.</p>${r.reaction_licence_months?`
+    You can delete everything sooner, at any time, below.</p>${r.reaction_licence_months&&!tribute()?`
     <p class="lede" id="keepreaction">If you share a reaction video: if we don’t approve it, we delete it with your photos, ${r.working_days} days after delivery.
     If we approve it, we keep it for the ${r.reaction_licence_months} months of your licence and then delete it. If you withdraw it, we delete it ${r.reaction_takedown_days||30} days later -
     the time we need to take it out of any running ads.${r.reaction_consent_days?` If someone in it doesn’t say yes within ${r.reaction_consent_days} days, we delete it then.`:''} Deleting everything below deletes it straight away.</p>`:''}`;
@@ -433,6 +438,7 @@ document.addEventListener('click',async ev=>{
     D=await rpc('get_delivery',{p_token:TOKEN});
     if(!D||D.error){ $('stage').innerHTML='<p class="lede">We couldn’t find your film from this link. Please open the link we sent you again.</p>'; if(D&&D.error!=='unknown token') report('get_delivery',new Error(D&&D.error)); return; }
     if(D.film_ready){ try{ FILM=await fn('film_url'); }catch(e){ report('film_url',e); } }
+    try{ const j=await rpc('journey',{p_token:TOKEN}); OCC=(j&&!j.error&&j.occasion)||''; }catch(_){ OCC=''; }   // 8 Oct (A12)
     paint();
     if(location.hash==='#data'&&$('data')) $('data').scrollIntoView();
   }catch(e){ report('load',e); $('stage').innerHTML='<p class="lede">Something went wrong opening your film. Please try again in a minute.</p>'; }

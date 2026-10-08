@@ -769,6 +769,7 @@ const WHO={
   anniversary:{h:'The two of you',add:'Anyone else the film should notice? Add them too.'},
   wedding:{h:'The couple',add:'Add anyone else the film should notice.'},
   life:{h:'Who is this film for?',add:'Add the people who should be in it.'},
+  tribute:{h:'Who is this film about?',add:'Add the people who should be in it - family, friends, anyone they loved.'},   // 8 Oct (A12)
   baby:{h:'The new arrival',add:'Add the family around them.'},
   birthday:{h:'Who is this film about?',add:'Add the people who matter in it.'},
   other:{h:'Who is this film about?',add:'Add the people who should be in it.'}
@@ -777,7 +778,8 @@ function whoWords(){
   const o=(J.occasion||'').toLowerCase();
   if(/anniv/.test(o)) return WHO.anniversary;
   if(/wed/.test(o)) return WHO.wedding;
-  if(/life|tribute|memorial|funeral|celebrat/.test(o)) return WHO.life;
+  if(/tribute|memorial|funeral/.test(o)) return WHO.tribute;                    // 8 Oct (A12): never "Who is this film for?"
+  if(/life|celebrat/.test(o)) return WHO.life;
   if(/baby|birth$|newborn/.test(o)) return WHO.baby;
   if(/birthday|milestone/.test(o)) return WHO.birthday;
   return WHO.other;
@@ -883,7 +885,7 @@ function paintRel(){
   const anySub=rest.some(x=>x.is_subject);           // nobody marked yet → a film with one or two others is about them
   rest.forEach(x=>{ const i=P.people.indexOf(x); const sub=anySub?!!x.is_subject:rest.length<=2;
     h+=`<div class="person" style="padding-bottom:14px"><label for="prel${i}" style="font-size:18px;color:var(--fg)">And <b>${esc(x.name)}</b> is\u2026</label>
-      <input type="text" id="prel${i}" data-rel="${i}" value="${esc(x.relation||'')}" placeholder="your wife, your brother, your best friend\u2026" autocomplete="off" style="margin-top:8px">
+      <input type="text" id="prel${i}" data-rel="${i}" value="${esc(x.relation||'')}" placeholder="${isTribute()?'your mum, your grandad, your friend\u2026':'your wife, your brother, your best friend\u2026'}" autocomplete="off" style="margin-top:8px">
       <label class="tick" style="margin-top:10px"><input type="checkbox" data-sub="${i}" ${sub?'checked':''}> This film is about ${esc(x.name)}</label></div>`; });
   h+=`</div><p class="lede"><button class="chip" id="pmore" type="button">Add someone else</button></p>`;
   st.innerHTML=h;
@@ -1073,7 +1075,17 @@ async function finishSay(){
    voices." The database already switched on this (set_gift -> song_voice);
    no page ever asked it, so every film was treated as not a gift. */
 function afterPeople(){
+  if((J.is_gift===null||J.is_gift===undefined)&&isTribute()){ quietTributeGift(); return; }   // 8 Oct (A12)
   if(J.is_gift===null||J.is_gift===undefined){ paintGift(); return; }
+  showUploadPage();
+}
+/* 8 Oct 2026 (A12): a TRIBUTE is never asked "Is this film a gift? Yes - it's a gift for Dad". It is always sung about them (voice
+   i-about-them), so it is saved as one quietly. If that save fails she goes on - the next visit saves it. */
+function isTribute(){ return /tribute|memorial|funeral/.test((J&&J.occasion||'').toLowerCase()); }
+async function quietTributeGift(){
+  try{ const r=await rpc('set_gift',{p_token:TOKEN,p_is_gift:true,p_for:giftFor()||null});
+    if(!r||r.error) throw new Error((r&&r.error)||'set_gift failed'); J.is_gift=true; J.song_voice=r.song_voice||null; }
+  catch(e){ report('set_gift (tribute, quiet)',e); }
   showUploadPage();
 }
 function giftFor(){
@@ -2773,7 +2785,7 @@ const inviteUrl=tok=>(SITE_BASE?SITE_BASE+'index.html':location.origin+location.
 function inviteCard(){
   const gift=INV.kind==='gift';
   if(ASK||INV.hidden||(!INV.people.length&&!gift)) return '';
-  const surprise=gift&&INV.for?`<p class="lede" id="invsurprise" style="margin:0 0 10px"><b>This is a surprise for ${esc(INV.for)} - please don\u2019t add them.</b></p>`:'';
+  const surprise=gift&&INV.for&&!isTribute()?`<p class="lede" id="invsurprise" style="margin:0 0 10px"><b>This is a surprise for ${esc(INV.for)} - please don\u2019t add them.</b></p>`:'';
   const ask=INV.confirm?`<div class="box" id="invconfirm" style="margin:8px 0"><p class="lede" style="margin:0 0 8px">Is ${esc(INV.confirm.name)} the same person as ${esc(INV.confirm.close)}? This film is a surprise for ${esc(INV.confirm.close)}.</p>
       <div class="acts"><button type="button" class="yes" id="invdiff">No \u2014 someone else, invite them</button><button type="button" id="invsame">Yes \u2014 don\u2019t invite</button></div></div>`:'';
   const msg=INV.msg?`<p class="err" id="invmsg" role="alert" style="margin:6px 0">${esc(INV.msg)}</p>`:'';
@@ -2801,7 +2813,8 @@ async function inviteTo(nm,confirm){
       if(INV.kind==='gift'&&INV.recipients.includes(nameKey(nm))) r={error:'surprise',for:INV.for||nm};
       else r=await rpc('invite_to_answer',{p_token:TOKEN,p_name:nm});
     }
-    if(r&&r.error==='surprise'){ INV.msg=`This film is a surprise for ${r.for||INV.for||nm}, so they can\u2019t be invited to answer.`; }
+    if(r&&r.error==='surprise'){ INV.msg=isTribute()?`${r.for||INV.for||nm} can\u2019t be invited to answer.`
+                                                    :`This film is a surprise for ${r.for||INV.for||nm}, so they can\u2019t be invited to answer.`; }
     else if(r&&r.confirm){ INV.confirm={name:nm,close:r.close_to}; }
     else{
       if(!r||r.error||!r.answer_token) throw new Error((r&&r.error)||'invite_to_answer: no token');
@@ -2893,8 +2906,10 @@ async function showAnswer(){
       fq=Array.isArray(r.questions)?r.questions:[]; }
     catch(e){ report('film_questions',e); }
     if(page!=='answer') return;
+    fq=await withSettings(fq);                           // 8 Oct (A12): "Before we start", and each question's "only if"
+    if(page!=='answer') return;
     FQ.list=fq; FQ.busy=false; FQ.err='';
-    const open=fq.findIndex(q=>!q.done);
+    const open=fq.findIndex(q=>!q.done&&ruleOk(q));
     if(open>=0){ goFilmQ(open); scrollTo(0,0); return; }
     await toGroups();
   }catch(e){ report('load for answers',e);
@@ -2924,6 +2939,42 @@ async function toGroups(){
    One per screen, its part as the heading. Next and Skip both save; a save
    that fails says so and stays put — never on to the next as if it had gone. */
 let FQ={list:[],i:0,draft:'',busy:false,err:'',pr:{}};
+/* 8 Oct 2026 (A12): THE SETTINGS QUESTIONS ("Before we start" - what to call them, the day it is shown, where) - get_settings /
+   answer_setting (server-wanted-p27-tribute.sql). They SET the film and never reach the song as facts. A question may carry
+   "only if" another answer is one of a list ("come round tomorrow" only for a memorial later on). Before the server has them
+   (get_settings missing) nothing changes: no settings, every film question asked as before. */
+let SET=null;
+async function withSettings(fq){
+  try{ const r=await rpc('get_settings',{p_token:TOKEN}); if(!r||r.error||!r.ok) throw new Error((r&&r.error)||'get_settings'); SET=r; }
+  catch(_){ SET=null; return fq; }
+  const sets=(SET.questions||[]).map(q=>({...q,setting:true}));
+  return sets.concat(fq);
+}
+/* asked only when its "only if" holds - decided at each step, so an answer given on this visit counts */
+function ruleOk(q){
+  const r=SET&&SET.only_if&&q&&SET.only_if[q.key]; if(!r) return true;
+  const ans=k=>{ const s=(SET.questions||[]).find(x=>x.key===k); return s?(s.answer||''):''; };
+  return Object.entries(r).every(([k,vals])=>(vals||[]).includes(ans(k)));
+}
+function nextAsked(from){ for(let j=from;j<FQ.list.length;j++) if(ruleOk(FQ.list[j])) return j; return -1; }
+function tooCloseWords(){
+  const h=+(SET&&SET.min_hours)||72, d=Math.round(h/24);
+  return `We can\u2019t promise your film will be ready in time. A film takes up to ${d} days from when you press Finished. `+
+         `We won\u2019t take any payment for a film we can\u2019t promise in time.`;
+}
+function settingInput(q){
+  if(q.type==='date'){
+    const v=/^\d{4}-\d{2}-\d{2}$/.test(FQ.draft||'')?FQ.draft:'';
+    return `<input type="date" id="fqdate" value="${esc(v)}" ${FQ.busy?'disabled':''} style="font-size:18px;padding:10px">
+      <p class="lede" style="margin-top:10px"><button class="chip" id="fqnotyet" type="button" ${FQ.busy?'disabled':''}
+        aria-pressed="${/not decided/i.test(FQ.draft||'')}">Not decided yet</button></p>
+      ${q._tooClose?`<p class="note bad" id="fqclose" role="alert" style="margin-top:12px">${tooCloseWords()}</p>`:''}`;
+  }
+  if(Array.isArray(q.choices)&&q.choices.length)
+    return `<div class="chips" id="fqchoices">${q.choices.map(c=>`<button class="chip" type="button" data-fqchoice="${esc(c)}"
+      aria-pressed="${FQ.draft===c}" ${FQ.busy?'disabled':''}>${esc(c)}</button>`).join('')}</div>`;
+  return `<textarea id="fqans" placeholder="In your own words." ${FQ.busy?'disabled':''}>${esc(FQ.draft)}</textarea>`;
+}
 function goFilmQ(i){
   FQ.i=i; FQ.err='';
   const q=FQ.list[i]; FQ.draft=q?(q._draft??(q.answer||'')):'';
@@ -2935,7 +2986,7 @@ function paintFilmQ(){
   $('stage').innerHTML=`<div class="step">${esc(q.part||'')} · <b>${FQ.i+1}</b> of ${FQ.list.length}</div>
     <h2 style="margin-top:14px">${esc(q.question||'')}</h2>
     ${q.hint?`<p class="fqhint" style="color:var(--fg2);font-size:15px;line-height:1.5;margin:-4px 0 12px;max-width:56ch">${esc(q.hint)}</p>`:''}
-    <textarea id="fqans" placeholder="Tell us what happened — a few sentences is plenty." ${FQ.busy?'disabled':''}>${esc(FQ.draft)}</textarea>
+    ${q.setting?settingInput(q):`<textarea id="fqans" placeholder="Tell us what happened — a few sentences is plenty." ${FQ.busy?'disabled':''}>${esc(FQ.draft)}</textarea>`}
     <p class="lede" style="margin-top:10px"><button class="chip" id="fqskip" type="button" ${FQ.busy?'disabled':''}>Skip</button></p>
     <div style="margin-top:22px">${inviteCard()}</div>`;
   $('stage').className='';
@@ -2947,14 +2998,21 @@ async function saveFilmQ(skip){
   const q=FQ.list[FQ.i]; if(!q||FQ.busy) return;
   const text=skip?'':(FQ.draft||'').trim();
   FQ.busy=true; FQ.err=''; paintFilmQ();
-  try{ const r=await rpc('answer_film_question',{p_token:TOKEN,p_key:q.key,p_answer:text});
-    if(!r||r.error||r.ok!==true) throw new Error((r&&r.error)||'answer_film_question: bad reply'); }
+  try{ const r=q.setting?await rpc('answer_setting',{p_token:TOKEN,p_key:q.key,p_answer:text})
+                        :await rpc('answer_film_question',{p_token:TOKEN,p_key:q.key,p_answer:text});
+    if(r&&r.error==='not a date'){ FQ.busy=false; FQ.err=r.message||'Please choose a date, or tap \u201cNot decided yet\u201d.'; paintFilmQ(); return; }
+    if(!r||r.error||r.ok!==true) throw new Error((r&&r.error)||'answer_film_question: bad reply');
+    if(q.setting&&SET){ const sq=(SET.questions||[]).find(x=>x.key===q.key); if(sq) sq.answer=text;
+      if(q.key==='show_date'){ SET.too_close=!!r.too_close;
+        if(r.too_close&&!q._tooClose){ q._tooClose=true; q._draft=text; FQ.busy=false; paintFilmQ(); return; } }   // said plainly, once
+    } }
   catch(e){ report('answer_film_question',e,{key:q.key});
     FQ.busy=false; FQ.err=`That didn’t save. Please press ${skip?'Skip':'Next'} again.`; paintFilmQ(); return; }
   if(page!=='answer'||screen!=='film') return;
   Object.assign(q,{answer:text,skipped:!text,done:true}); delete q._draft;
   FQ.busy=false;
-  if(FQ.i<FQ.list.length-1){ goFilmQ(FQ.i+1); scrollTo(0,0); return; }
+  const nx=nextAsked(FQ.i+1);                            // 8 Oct (A12): the next question whose "only if" holds
+  if(nx>=0){ goFilmQ(nx); scrollTo(0,0); return; }
   await toGroups();
 }
 /* Which photographs a question shows, and how. Two different things:
@@ -3077,7 +3135,8 @@ async function paintAllDone(){
     <p class="do">${ASK?'You\u2019ve told us about every group. Press Finished and your memories go into the song.'
       :'You\u2019ve told us about every group. Press Finished and we\u2019ll make your film from your photos and your words.'}</p>
     <p class="lede" id="photosin">${+J.photos?`Your film has ${plural(+J.photos,'photo')} in it.`:''}</p>
-    <p class="lede">Want to change something? Use \u2190 to go back through the groups.</p>${inviteCard()}`;
+    <p class="lede">Want to change something? Use \u2190 to go back through the groups.</p>
+    ${SET&&SET.too_close?`<p class="note bad" id="donetooclose" role="alert">${tooCloseWords()}</p>`:''}${inviteCard()}`;
   photoCounts(true).then(c=>{ const e=$('photosin'); if(e&&c&&c.film) e.textContent=`Your film has ${plural(c.film.usable,'photo')} in it.`; });
   $('stage').className='';
   nav('<button class="go" id="tomusic">Finished</button>',`${M.length} of ${M.length} groups done`,true,
@@ -4008,6 +4067,8 @@ document.addEventListener('click',async e=>{
   if(t.id==='askip'){ answerTurn(true); return; }
   if(t.id==='fqnext'){ saveFilmQ(false); return; }
   if(t.id==='fqskip'){ saveFilmQ(true); return; }
+  if(t.id==='fqnotyet'){ FQ.draft='Not decided yet'; const q=FQ.list[FQ.i]; if(q) q._draft=FQ.draft; saveFilmQ(false); return; }
+  if(t.dataset&&t.dataset.fqchoice!==undefined){ FQ.draft=t.dataset.fqchoice; const q=FQ.list[FQ.i]; if(q) q._draft=FQ.draft; saveFilmQ(false); return; }
   if(t.id==='aelse'){ answerTurn(true,true); return; }
   if(t.id==='aenough'){ closeMemory(); return; }
   if(t.id==='agroupnext'){ cur=+t.dataset.next; draft=''; arrive(); return; }
@@ -4058,7 +4119,7 @@ document.addEventListener('input',e=>{
   if(e.target.id==='nm'){ M[cur].title=e.target.value; queueSave(); if(screen==='organise') orgNav(); }
   if(e.target.id==='ans'){ draft=e.target.value; countUp();
     if(isPick(TURN)&&!turnBusy){ const b=$('anext'); if(b) b.disabled=!draft.trim(); } }
-  if(e.target.id==='fqans'){ FQ.draft=e.target.value; const q=FQ.list[FQ.i]; if(q) q._draft=FQ.draft; }
+  if(e.target.id==='fqans'||e.target.id==='fqdate'){ FQ.draft=e.target.value; const q=FQ.list[FQ.i]; if(q) q._draft=FQ.draft; }
   if(e.target.id==='what'){ whatDraft=e.target.value; const b=$('awrongsend'); if(b) b.disabled=!whatDraft.trim(); }
   if(e.target.id==='helpAsk'){ HELP.asked=e.target.value; }
 });
