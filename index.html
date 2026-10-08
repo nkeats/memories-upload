@@ -3245,6 +3245,11 @@ async function finishFilm(b,sent){
      one-tap joins (small ones into their nearest neighbour in time), right here. */
   const lim=await photoCounts(true);
   if(lim&&lim.limits&&lim.limits.too_many){ if(b){ b.disabled=false; b.textContent='Finished'; } await showOverLimit(); return; }
+  /* 8 Oct (prompt 26; Tester 2 pressed Finished with a memory of 3 photos, minimum 4, after "I don't have enough photos" earlier -
+     the check below skipped the film, and the lyric stage then refused it): A MEMORY UNDER ITS PHOTO MINIMUM IS NEVER SENT - not
+     after "keep them as they are", not after "I don't have enough". The fix is one tap: add a photo, or join it with its neighbour.
+     Only Nigel's pass (photo_counts.passed) lets it through. */
+  if(shortMems(lim).length){ if(b){ b.disabled=false; b.textContent='Finished'; } await showShortMems(); return; }
   const c=sent?null:lim;                                      // 16 Oct: the minimums before the film is sent
   if(needsMore(c)){ if(b){ b.disabled=false; b.textContent='Finished'; } showShort(c,'finish'); return; }
   if(!NS.done){ NS.sent=!!sent; await showSung(b); return; }  // 21 Oct: the names, heard sung, right before Finished (the minimums answered stay answered)
@@ -3474,6 +3479,32 @@ async function groupsNow(){
   return {d,chapters,assets:d.assets};
 }
 let OL=null;                                              // 7 Oct: the groups as the server has them, for the Finished joins
+let OL_SHEET=()=>overLimitSheet();                        // 8 Oct: which Finished sheet a join repaints (over the limit / under a minimum)
+/* 8 Oct (prompt 26): the memories the server counts under their photo minimum - none once Nigel has passed the film */
+function shortMems(c){ return c&&c.memories&&!c.passed?c.memories.filter(m=>m.usable<m.min):[]; }
+function shortMemSheet(){
+  const L=OL.chapters.filter(c=>c.photos.length), short=shortMems(PC);
+  if(!short.length) return `<div class="in" id="shortmemsheet"><h3>That's sorted</h3>
+    <p>Every memory has enough photos now. Every answer is still there. Press Finished when you're ready.</p>
+    <div class="acts"><button class="yes" id="olclose" type="button">OK</button></div></div>`;
+  const rows=short.map(m=>{ const j=L.findIndex(c=>c.id===m.chapter_id), k=j<0?undefined:joinTargetIn(L,j,m.min);
+    const need=Math.max(1,m.min-m.usable);
+    return `<li><b>${esc(m.title||'A memory')}</b> needs ${need} more photo${need===1?'':'s'} - add ${need===1?'one':'them'}${k===undefined?'':', or join it with “'+esc(L[k].title||('Memory '+(k+1)))+'”'}.
+      <span class="row"><button class="b" data-smadd="1" type="button">Add ${need===1?'a photo':'photos'}</button>${k===undefined?'':
+      ` <button class="b" data-fjoin="${j}" data-fwith="${k}" type="button">Join with “${esc(L[k].title||('Memory '+(k+1)))}”</button>`}</span></li>`; }).join('');
+  return `<div class="in" id="shortmemsheet"><h3>${short.length===1?'One memory needs':'Some memories need'} another photo</h3>
+    <p>Each memory needs at least <b>${short[0].min}</b> photos to get its own verse in the song. One tap fixes it - joining keeps every answer.</p>
+    <ul class="shortmems">${rows}</ul>
+    <p class="small" id="olmsg" role="status"></p><p class="small" id="shortmsg" role="status"></p></div>`;
+}
+async function showShortMems(){
+  const s=$('sheet'); OL_SHEET=shortMemSheet; SHORT_FOR='finish';
+  try{ OL=await groupsNow(); }catch(e){ report('short memories: load groups',e); OL=null; }
+  if(!OL){ s.innerHTML=`<div class="in"><h3>A memory needs another photo</h3><p>${esc((shortMems(PC)[0]||{}).title||'One memory')} needs at least ${(shortMems(PC)[0]||{}).min||4} photos. Please add one, or go back and join it with another.</p>
+    <div class="acts"><button class="yes" data-smadd="1" type="button">Add a photo</button><button id="olsort" type="button">Go back to my memories</button></div>
+    <p class="small" id="shortmsg" role="status"></p></div>`; s.classList.remove('hide'); return; }
+  s.innerHTML=shortMemSheet(); s.classList.remove('hide');
+}
 function overLimitSheet(){
   const L=OL.chapters.filter(c=>c.photos.length), lim=(PC&&PC.limits)||{}, max=+lim.max_memories||L.length;
   const min=+(((PC&&PC.memories||[])[0]||{}).min)||4, n=L.length, need=Math.max(0,n-max);
@@ -3492,7 +3523,7 @@ function overLimitSheet(){
     <p class="small" id="olmsg" role="status"></p></div>`;
 }
 async function showOverLimit(){
-  const s=$('sheet');
+  const s=$('sheet'); OL_SHEET=()=>overLimitSheet();
   try{ OL=await groupsNow(); }catch(e){ report('over limit: load groups',e); OL=null; }
   if(!OL){ s.innerHTML=`<div class="in"><h3>Fewer, fuller memories first</h3><p>A film this length works best with fewer memories. Please go back and join some.</p>
     <div class="acts"><button class="yes" id="olsort" type="button">Go back to my memories</button></div></div>`; s.classList.remove('hide'); return; }
@@ -3506,10 +3537,10 @@ async function finishJoin(j,k){
   OL.chapters=OL.chapters.filter(c=>c!==from);
   try{ await saveGroupsNow(OL); }
   catch(e){ report('over limit: join',e,{status:e&&e.status}); try{ OL=await groupsNow(); }catch(_){}
-    $('sheet').innerHTML=overLimitSheet(); const mm=$('olmsg'); if(mm) mm.textContent="That join didn\u2019t go through - nothing was changed. Please try again, or tap \u201cI'm stuck\u201d."; return; }
+    $('sheet').innerHTML=OL_SHEET(); const mm=$('olmsg'); if(mm) mm.textContent="That join didn\u2019t go through - nothing was changed. Please try again, or tap \u201cI'm stuck\u201d."; return; }
   await photoCounts(true);
   try{ OL=await groupsNow(); }catch(_){}
-  $('sheet').innerHTML=overLimitSheet();
+  $('sheet').innerHTML=OL_SHEET();
 }
 async function saveGroupsNow(g){
   /* 2 Oct: the same save_groups as the grouping screens - EVERY group sent WITH its id, so a rename or move updates the
@@ -3797,7 +3828,7 @@ document.addEventListener('click',async e=>{
   if(t.id==='allin'){ askAllIn(); return; }
   if(t.id==='failedRetry'){ $('sheet').classList.add('hide'); send(); return; }
   if(t.id==='failedSkip'){ SKIP_FAILED=true; $('sheet').classList.add('hide'); askAllIn(); return; }
-  if(t.id==='shortAdd'){ shortAdd(); return; }
+  if(t.id==='shortAdd'||t.dataset.smadd){ shortAdd(); return; }
   if(t.id==='shortJoin'){ $('sheet').classList.add('hide'); showSort(); return; }
   if(t.id==='keepas2'){ (async()=>{ try{ const r=await rpc('keep_memories_as_they_are',{p_token:TOKEN}); if(!r||r.error) throw new Error((r&&r.error)||'keep'); KEPT=true; $('sheet').classList.add('hide'); finishFilm($('tomusic'),true); }catch(e){ report('keep',e); } })(); return; }
   if(t.id==='shortSend'){ shortSend(); return; }
