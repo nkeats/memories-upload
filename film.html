@@ -23,7 +23,7 @@
   REACTION VIDEO: optional; used in advertising ONLY if they agreed at upload (consent ads_reaction_video) - the page says which.
   YOUR DATA: download all of it (request_export -> a zip link for 7 days), or delete all of it (request_erasure, two steps, in
   plain words that it cannot be undone). Linked from the customer's own page too (index.html "Your data").
-  4 Oct (Nigel): HOW LONG WE KEEP IT, said plainly in "Your data": photos, answers and working files 90 days after delivery; the
+  4 Oct (Nigel, SUPERSEDED 8 Oct by ONE clock - see below): HOW LONG WE KEEP IT, said plainly in "Your data": photos, answers and working files 90 days after delivery; the
   film and its words 12 months after delivery (get_delivery.retention {working_days, film_months} - the numbers are the server's,
   the same as pipeline/retention.json; a test holds them equal); with the dates when the film has been delivered.
   4 Oct (Nigel): CHILDREN IN REACTION VIDEOS are never used in advertising. Before the file is chosen: "Does anyone under 18
@@ -45,9 +45,14 @@
   person's status and their private link (agree.html?p=...) to copy or share - nothing reaches review until everyone has said yes.
   The older words (05) still render as before until the server changes.
   6 Oct (Nigel): CREDITS EXPIRE 24 months after they are earned - the date is shown with the discount.
-  6 Oct (Nigel): SHARE WITH FAMILY - a WATCH-ONLY link (watch.html?s=...): rpc create_share_link (the same link until stopped),
-  copy or the phone's share sheet; "Stop sharing" (rpc stop_sharing) ends it at once; sharing again makes a new link. Shown only
-  when the server has it (get_delivery.share). The owner's own link is never the one shared.
+  8 Oct (Nigel, prompt 26 A10 - SUPERSEDES 6 Oct's "Share with family"): "Once it's theirs, distributing it is their problem." NO
+  SHARE HOSTING - no share box, no share link (server-wanted-p26-delivery.sql refuses them). THREE DOWNLOADS from the delivery
+  function (delivery v5: film_url -> url/download + best_mb, send {url, mb}, clip {url, mb}): "Download best quality", "Easy to send"
+  (the smaller copy, its bitrate chosen by measurement - pipeline.share_copy), "Short clip to post" (optional, 30-60 s ending "Made
+  with Sing Me a Memory"), each with its size in MB. The words: "Download your film to keep it. To share it, send it from your own
+  device." ONE CLOCK: the film page stays 90 days after delivery (get_delivery.retention: film_days, else working_days - the server's
+  numbers), then everything is deleted - the date is shown. PAGE AFTER SERVER: with the deployed delivery v4 (no send / clip / sizes)
+  the page shows the one download as before. Test: Song/pipeline/page_tests_p26_delivery.
 -->
 <style>
 :root{--ink:#0C0D10;--panel:#15171C;--p2:#1D1F26;--line:#2A2E37;--l2:#3C414C;
@@ -209,7 +214,7 @@ function report(what,e){
 window.addEventListener('error',ev=>report('uncaught',ev.error||ev.message));
 window.addEventListener('unhandledrejection',ev=>report('unhandled promise',ev.reason));
 
-let D=null, FILM=null, ERASE_STEP=0, SHARE_STEP=0, SITE_BASE=null;
+let D=null, FILM=null, ERASE_STEP=0, SITE_BASE=null;
 try{ rpc('get_start_config').then(c=>{ if(c&&__pv(c.site_base_url)) SITE_BASE=String(__pv(c.site_base_url)).replace(/\/?$/,'/'); }).catch(()=>{}); }catch(_){}
 const pageUrl=(page,q)=>(SITE_BASE||new URL('.',location.href).href)+page+'?'+q;
 const fmtDate=d=>new Date(d).toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'});
@@ -222,12 +227,11 @@ function paint(){
   }
   if(D.film_ready){
     h+=`<h1>Your film</h1>${FILM?`<video id="film" controls playsinline preload="metadata" src="${esc(FILM.url)}"></video>
-        <a class="b go" href="${esc(FILM.download||FILM.url)}" download>Download your film</a>`:`<p class="lede">Getting your film ready to play…</p>`}`;
+        ${downloadsHTML()}`:`<p class="lede">Getting your film ready to play…</p>`}`;
     // REVIEW - the same words, the same link, for everyone; hidden while there is no link
     if(D.review_url) h+=`<div class="box" id="review"><h2>Would you tell others about it?</h2>
         <p class="lede">If you have a moment, a review helps other families find us.</p>
         <a class="b" id="reviewlink" href="${esc(D.review_url)}" target="_blank" rel="noopener">Leave a review</a></div>`;
-    h+=shareHTML();
     h+=`<div class="box" id="feedback"><h2>Anything you’d like to tell us?</h2>
         <p class="lede">This goes only to us.</p>
         <textarea id="fbtext" maxlength="2000" aria-label="Anything you’d like to tell us" placeholder="Something you loved, or something we could do better"></textarea>
@@ -265,16 +269,11 @@ document.addEventListener('click',e=>{
   if(a.getAttribute('href')==='#top'){ e.preventDefault(); history.replaceState(null,'',location.pathname+location.search); window.scrollTo(0,0); }
 });
 function keepHTML(){
-  const r=D.retention; if(!r||!r.working_days||!r.film_months) return '';
-  const fmt=d=>d.toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'});
-  let w='', f='';
-  if(D.delivered_at){
-    const d=new Date(D.delivered_at), wd=new Date(d.getTime()+r.working_days*86400000), fd=new Date(d);
-    fd.setMonth(fd.getMonth()+r.film_months);
-    w=` (on ${fmt(wd)})`; f=` (on ${fmt(fd)})`;
-  }
-  return `<p class="lede" id="keep">We delete your photos, your answers and our working files ${r.working_days} days after we deliver your film${w}.
-    We keep your finished film and its words for ${r.film_months} months after delivery, so you can come back for them${f}, and then we delete those too.
+  const r=D.retention; const n=filmDays(); if(!r||!n) return '';
+  const u=untilDate();
+  // 8 Oct (prompt 26 A10): ONE clock - the film page, then everything goes (was: photos 90 days, the film 12 months)
+  return `<p class="lede" id="keep">Your film page - your film, its words, your photos and your answers - stays for ${n} days after we deliver your film${u?` (until ${esc(fmtDate(u))})`:''}.
+    Then we delete all of it. We email you a reminder before it goes, so you can download your film to keep it.
     You can delete everything sooner, at any time, below.</p>${r.reaction_licence_months?`
     <p class="lede" id="keepreaction">If you share a reaction video: if we don’t approve it, we delete it with your photos, ${r.working_days} days after delivery.
     If we approve it, we keep it for the ${r.reaction_licence_months} months of your licence and then delete it. If you withdraw it, we delete it ${r.reaction_takedown_days||30} days later -
@@ -349,16 +348,22 @@ function peopleHTML(R){
     return `<li data-person="${esc(p.first_name)}"><b>${esc(p.first_name)}</b> — <span class="pst">${st}</span>${!p.agreed&&!p.withdrawn?`
       <div class="plink">${esc(link)}</div><button class="b" type="button" data-plink="${esc(link)}" data-pname="${esc(p.first_name)}">${navigator.share?'Share':'Copy'} ${esc(p.first_name)}’s link</button>`:''}</li>`; }).join('')}</ul>`;
 }
-function shareHTML(){
-  if(!D.share||!D.film_ready) return '';                          // the server has no share links yet: no box
-  const link=D.share.active&&D.share.token?pageUrl('watch.html','s='+encodeURIComponent(D.share.token)):null;
-  if(!link) return `<div class="box" id="share"><h2>Share with family</h2><p class="lede">A link that only plays your film — it can’t change anything, see your photos or delete anything. Send it to anyone you like.</p>
-    <p><button class="b go" id="sh1" type="button">Share with family</button> <span id="shmsg" role="status"></span></p></div>`;
-  return `<div class="box" id="share"><h2>Share with family</h2><p class="lede">Anyone with this link can watch your film — nothing else.</p>
-    <div class="plink" id="shlink">${esc(link)}</div>
-    <p><button class="b go" id="shcopy" type="button">${navigator.share?'Share the link':'Copy the link'}</button>
-    ${SHARE_STEP===0?`<button class="b" id="shstop" type="button">Stop sharing</button>`:`<button class="b warn" id="shstop2" type="button">Yes, stop sharing now</button><button class="b" id="shkeep" type="button">Keep sharing</button>`}
-    <span id="shmsg" role="status"></span></p>${SHARE_STEP?'<p class="small">The link stops working straight away. If you share again you get a new link.</p>':''}</div>`;
+/* 8 Oct (prompt 26 A10): the downloads - best quality, easy to send, a short clip - and the plain words; no share hosting */
+const mb=x=>x?` (${Math.round(Number(x))} MB)`:'';
+function filmDays(){ const r=D.retention||{}; return Number(r.film_days||r.working_days||0)||null; }
+function untilDate(){
+  const n=filmDays(); if(!n||!D.delivered_at) return null;
+  return new Date(new Date(D.delivered_at).getTime()+n*86400000);
+}
+function downloadsHTML(){
+  const many=!!(FILM.send||FILM.clip);
+  let h=`<div id="downloads"><a class="b go" id="dlbest" href="${esc(FILM.download||FILM.url)}" download>${many?'Download best quality':'Download your film'}${mb(FILM.best_mb)}</a>`;
+  if(FILM.send&&FILM.send.url) h+=` <a class="b" id="dlsend" href="${esc(FILM.send.url)}" download>Easy to send${mb(FILM.send.mb)}</a>`;
+  if(FILM.clip&&FILM.clip.url) h+=` <a class="b" id="dlclip" href="${esc(FILM.clip.url)}" download>Short clip to post${mb(FILM.clip.mb)}</a>`;
+  h+=`</div><p class="lede" id="dlsay">Download your film to keep it. To share it, send it from your own device.</p>`;
+  const u=untilDate();
+  if(u) h+=`<p class="lede" id="until">Your film stays here until ${esc(fmtDate(u))} - ${filmDays()} days after it was delivered.</p>`;
+  return h;
 }
 function withdrawHTML(){
   if(WD_STEP===0) return `<p><button class="b warn" id="wd1" type="button">Withdraw my video</button></p>`;
@@ -395,13 +400,6 @@ document.addEventListener('input',ev=>{ if(ev.target.dataset&&ev.target.dataset.
 document.addEventListener('click',async ev=>{
   const t=ev.target.closest('button'); if(!t) return;
   try{
-    if(t.id==='sh1'){ t.disabled=true; const r=await rpc('create_share_link',{p_token:TOKEN}); if(!r||r.error) throw new Error((r&&r.error)||'create_share_link');
-      D.share={active:true,token:r.token}; paint(); $('share').scrollIntoView({block:'center'}); return; }
-    if(t.id==='shcopy'){ const l=$('shlink').textContent; if(navigator.share){ await navigator.share({text:l}); } else { await navigator.clipboard.writeText(l); $('shmsg').textContent='Copied.'; $('shmsg').className='ok'; } return; }
-    if(t.id==='shstop'){ SHARE_STEP=1; paint(); return; }
-    if(t.id==='shkeep'){ SHARE_STEP=0; paint(); return; }
-    if(t.id==='shstop2'){ t.disabled=true; const r=await rpc('stop_sharing',{p_token:TOKEN}); if(!r||r.error) throw new Error((r&&r.error)||'stop_sharing');
-      D.share={active:false,token:null}; SHARE_STEP=0; paint(); return; }
     if(t.dataset&&t.dataset.plink){ const l=t.dataset.plink, n=t.dataset.pname;
       if(navigator.share) await navigator.share({text:`${n}, this is the video of us watching the film. Please watch it and say yes or no yourself:\n\n${l}\n`});
       else { await navigator.clipboard.writeText(l); t.textContent='Copied'; } return; }

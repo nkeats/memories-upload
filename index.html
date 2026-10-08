@@ -1141,7 +1141,7 @@ function paintConsent(){
       <label class="cbox"><input type="checkbox" id="c_email"> <span>${CONSENT.marketing_email}</span></label>
       <p class="note bad" id="cwarn" style="display:none;margin:14px 0 0;font-size:14px"></p>
     </div>
-    <p class="lede" id="ckeep" style="margin-top:14px;font-size:15px">We delete your photos and answers 90 days after we deliver your film, and the film itself 12 months after. You can download or delete everything sooner, at any time.</p>`;
+    <p class="lede" id="ckeep" style="margin-top:14px;font-size:15px">Your film page stays for 90 days after we deliver your film - then we delete everything: your film, its words, your photos and your answers. Download your film to keep it. You can download or delete everything sooner, at any time.</p>`;
   nav(`<button class="go" id="cdone" disabled>Agree and add photos \u2192</button>`,'',false,'');
   const upd=()=>{ const b=$('cdone'); if(b) b.disabled=!consentReady(); };
   st.querySelectorAll('input').forEach(i=>i.addEventListener('input',upd)); upd();

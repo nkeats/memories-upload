@@ -5,9 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow, noarchive">
 <meta name="referrer" content="no-referrer">
-<meta name="build" content="2026-10-06a">
+<meta name="build" content="2026-10-08a">
 <title>A film for you</title>
 <!--
+  8 Oct 2026 (Nigel, prompt 26 A10): NO SHARE HOSTING - this page now only says sharing links are no longer offered; it plays nothing
+  and calls nothing (Song/pipeline/page_tests_p26_delivery "NO SHARE"). What follows describes the page as it was (6 Oct).
   watch.html?s=<share token> - WATCH ONLY (Nigel 6 Oct 2026: "Share with family"). The owner's own link (film.html / index.html
   ?t=) can change the film, invite people and delete everything, so it is never handed out; this one can only play the film.
   The 'watch' edge function (Song/watch-v1.ts) answers {url} - a signed link to the film for 2 hours - only for an active share
@@ -100,23 +102,10 @@ function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?S
 <body>
 <div class="wrap" id="stage"><p>One moment…</p></div>
 <script>
-const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
-const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
-const S=(new URLSearchParams(location.search).get('s')||'').toLowerCase().replace(/[^0-9a-f]/g,'').slice(0,64);
-const stage=document.getElementById('stage');
-function say(t){ const p=document.createElement('p'); p.textContent=t; stage.replaceChildren(p); }
-(async()=>{
-  if(S.length!==64){ say('This link doesn’t work. Please ask the person who sent it for a new one.'); return; }
-  try{
-    const r=await fetch(`${SB}/functions/v1/watch`,{method:'POST',headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY},body:JSON.stringify({s:S})});
-    const j=await r.json().catch(()=>({}));
-    if(!r.ok||!j.url){ say(j.error==='this film is no longer available'?'This film is no longer available.':'This link doesn’t work. Please ask the person who sent it for a new one.'); return; }
-    const v=document.createElement('video');
-    v.controls=true; v.playsInline=true; v.preload='metadata'; v.src=j.url; v.id='film';
-    v.setAttribute('controlsList','nodownload'); v.disablePictureInPicture=false;
-    stage.replaceChildren(v);
-  }catch(e){ say('Something went wrong opening the film. Please try again in a minute.'); }
-})();
+/* 8 Oct 2026 (Nigel, prompt 26 A10): "Once it's theirs, distributing it is their problem" - NO SHARE HOSTING. This page never plays
+   a film or asks for one any more; every old share link lands here and is told plainly. */
+document.getElementById('stage').innerHTML='<p id="noshare">Sharing links are no longer offered. If someone sent you this link, '
+  +'ask them to send you the film itself - they can download it from their own film page and send it from their phone or computer.</p>';
 </script>
 </body>
 </html>
