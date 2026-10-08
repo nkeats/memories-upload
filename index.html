@@ -3490,8 +3490,7 @@ function shortMemSheet(){
   const rows=short.map(m=>{ const j=L.findIndex(c=>c.id===m.chapter_id), k=j<0?undefined:joinTargetIn(L,j,m.min);
     const need=Math.max(1,m.min-m.usable);
     return `<li><b>${esc(m.title||'A memory')}</b> needs ${need} more photo${need===1?'':'s'} - add ${need===1?'one':'them'}${k===undefined?'':', or join it with “'+esc(L[k].title||('Memory '+(k+1)))+'”'}.
-      <span class="row"><button class="b" data-smadd="1" type="button">Add ${need===1?'a photo':'photos'}</button>${k===undefined?'':
-      ` <button class="b" data-fjoin="${j}" data-fwith="${k}" type="button">Join with “${esc(L[k].title||('Memory '+(k+1)))}”</button>`}</span></li>`; }).join('');
+      <span class="row">${k===undefined?'':`<button class="b" data-fjoin="${j}" data-fwith="${k}" type="button">Join with “${esc(L[k].title||('Memory '+(k+1)))}”</button> `}<button class="b" data-smadd="1" type="button">Add ${need===1?'a photo':'photos'}</button></span></li>`; }).join('');      /* 18 Oct rule kept: join first, add second */
   return `<div class="in" id="shortmemsheet"><h3>${short.length===1?'One memory needs':'Some memories need'} another photo</h3>
     <p>Each memory needs at least <b>${short[0].min}</b> photos to get its own verse in the song. One tap fixes it - joining keeps every answer.</p>
     <ul class="shortmems">${rows}</ul>
