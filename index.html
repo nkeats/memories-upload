@@ -3326,6 +3326,13 @@ async function saveSungFix(i){
   x.busy=false; paintSungRow(i); paintSung();
 }
 
+async function voiceChosen(){                            // 9 Oct: true once a voice is chosen - or when the voices can't be fetched
+  const sv=await rpc('suggest_voice',{p_token:TOKEN}).catch(e=>({error:e.message}));
+  if(!sv||sv.error){ report('suggest_voice (before Finished)',new Error((sv&&sv.error)||'failed')); return true; }
+  G.voices=sv.voices||[]; G.vsuggested=sv.suggested||null; G.vwhy=sv.why||null; G.voice=sv.chosen||null;
+  return !!G.voice||!G.voices.length;
+}
+const needVoice=()=>!G.voice&&G.voices.length>0;
 async function finishFilm(b,sent){
   /* 7 Oct 9:55pm (Nigel; Tester 2 pressed Finished with 16 memories, limit ~11, after "keep as they are" - the check below
      skips a film once it was sent short): FINISHED NEVER SENDS A FILM OVER THE MEMORY LIMIT - how many need joining, and the
@@ -3339,6 +3346,10 @@ async function finishFilm(b,sent){
   if(shortMems(lim).length){ if(b){ b.disabled=false; b.textContent='Finished'; } await showShortMems(); return; }
   const c=sent?null:lim;                                      // 16 Oct: the minimums before the film is sent
   if(needsMore(c)){ if(b){ b.disabled=false; b.textContent='Finished'; } showShort(c,'finish'); return; }
+  /* 9 Oct (go-live gate, holiday run 6): a film was SENT with no voice - Finished asked only for a sound, "Whose voice?" sat below
+     it untapped, and the song stage refused the film (a film waiting on Nigel). Whose voice is the customer's own choice: a film is
+     never sent without one. If the voices can't be fetched, nothing is held back (never a dead end). */
+  if(!(await voiceChosen())){ if(b){ b.disabled=false; b.textContent='Finished'; } await showGenre(); return; }
   if(!NS.done){ NS.sent=!!sent; await showSung(b); return; }  // 21 Oct: the names, heard sung, right before Finished (the minimums answered stay answered)
   try{ await setStage('submitted'); }
   catch(e){ report('set_stage submitted',e); if(b){ b.disabled=false; b.textContent='Finished'; }
@@ -3429,9 +3440,10 @@ function paintMusic(){
   st.innerHTML=h;
   if(!G.finishMode) placePreview();                    // 8 Oct (item 25): the first look at their photos, while we look at them
   if(G.finishMode){
-    const ready=!!(c&&c.confirmed);
+    const sound=!!(c&&c.confirmed), ready=sound&&!needVoice();      // 9 Oct: a voice too - never sent without one
     nav(`<button class="go" id="gdone" ${ready?'':'disabled'}>Finished</button>`,'',true,
-        ready?'When you press Finished, that\u2019s everything — your film is made from your photos, your words and this music.':'Choose a sound first — tap one above, or tell us what you love.');
+        ready?'When you press Finished, that\u2019s everything — your film is made from your photos, your words and this music.'
+          :sound?'Choose whose voice sings it first — tap one above.':'Choose a sound first — tap one above, or tell us what you love.');
   }else{
     nav(`<button class="go" id="tosort" ${scan.done?'':'disabled'}>${scan.done?'Next: put them in order →':'Looking…'}</button>`, scanLine(), false, '');
   }
@@ -3495,6 +3507,7 @@ function playSample(url,btn){
 async function finishGenre(){
   const b=$('gdone'); if(!b) return;
   if(!(G.chosen&&G.chosen.confirmed)){ const before=$('nav').querySelector('.before'); if(before) before.textContent='Choose a sound first.'; return; }
+  if(needVoice()){ const before=$('nav').querySelector('.before'); if(before) before.textContent='Choose whose voice sings it first.'; return; }
   b.disabled=true; b.textContent='One moment…';
   await finishFilm(b);
 }
