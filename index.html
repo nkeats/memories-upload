@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <meta name="build" content="2026-10-06a">
+<!-- 9 Oct 2026 (prompt 28 B6): the bare address (nothing after it - no ?t=, no ?a=) opens the start page. A link that has a code,
+     even a broken one, still gets "This link is missing its code" / "isn't right". Test: Song/pipeline/page_tests_p28_root_start.py -->
+<script>if(!location.search&&!location.hash&&/\/(index\.html)?$/.test(location.pathname))location.replace('start.html');</script>
 <title>Your film</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
