@@ -266,6 +266,12 @@ let picking=null;    // 'start' | 'finish' while the picker is open
 let STY=null;        // 4 Oct: {style, locked, styles:[...]} - null = no style section
 let open=null;       // id of the line being edited
 let confirming=false;
+// 11 Oct 2026 (ADDITIONS B32): WHOSE VOICE, asked here when the film was sent before the start page asked it (Tester 2's film
+// stopped at the song with no voice). The start page's own server functions: suggest_voice(p_token) -> {voices, suggested, why, chosen},
+// set_voice(p_token, p_slug). null = not asked (a voice is chosen, or the server can't say - never a dead end). The song waits for the
+// answer until customer_wait_hours after approval, then the written default (Song/pipeline/singer.py). Test: page_tests_p32_voice.
+let VO=null, AU=null;
+const sampleUrl=p=>/^https?:\/\//.test(p)?p:`${SB}/storage/v1/object/public/${String(p).replace(/^\/+/,'')}`;
 
 // "[Verse 1]" / "verse_1" / "Chorus" -> "Verse 1"
 const secName=s=>{ s=String(s||'').replace(/[\[\]_]/g,' ').replace(/\s+/g,' ').trim();
@@ -279,10 +285,11 @@ function paint(){
   if(NOTES.must_be_in&&!done) h+=`<p class="note" id="mustbein" role="note" style="margin:0 0 16px">${esc(NOTES.must_be_in)}</p>`;
   h+= done
     ? `<p class="do">Thank you — these are the words we are singing.</p>
-       <p class="lede">We're making your song now. You don't need to do anything else.</p>`
+       <p class="lede">${VO&&!VO.chosen?'One thing left: choose whose voice sings it, below. We start your song the moment you do.':'We’re making your song now. You don’t need to do anything else.'}</p>`
     : `<p class="do">Read the words to your song. Tap any line that isn't right and change it.</p>
        <p class="lede">Nothing is sung until you say the words are right. It's your story — if we've got a detail wrong, you're the one who knows.${asks?` Where we weren't sure of something, we've asked you under the line.`:''}</p>`;
   h+=cardsHTML(done);
+  h+=voiceHTML();
   let sec=null;
   for(const l of L.lines){
     if(l.section!==sec){ if(sec!==null) h+='</div>'; sec=l.section; h+=`<div class="sec"><h3>${esc(secName(sec))}</h3>`; }
@@ -324,6 +331,25 @@ function paint(){
   if(ta){ ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length); ta.addEventListener('input',hint); hint(); }
   const cta=$('cta');
   if(cta){ cta.focus(); cta.setSelectionRange(cta.value.length,cta.value.length); cta.addEventListener('input',ccount); ccount(); }
+}
+
+function voiceHTML(){
+  if(!VO) return '';
+  let h=`<div class="cards" id="voices"><h2>Whose voice sings it?</h2>
+    <p class="sub">${VO.chosen?'Thank you. You can change it until we start singing.':'Choose the voice for your song.'+(VO.why?' '+esc(VO.why):'')}</p>`;
+  for(const v of VO.voices){
+    const on=VO.chosen===v.slug, sug=!VO.chosen&&v.slug===VO.suggested;
+    h+=`<div class="card"><button class="b${on?' go':''}" data-voice="${esc(v.slug)}" aria-pressed="${on}">${esc(v.label)}${sug?' (our suggestion)':''}</button>
+      <p class="sub" style="margin:6px 0 0">${esc(v.plain||'')}</p>
+      ${v.sample?`<button class="b" type="button" data-play="${esc(sampleUrl(v.sample))}" aria-label="Hear ${esc(v.label)}">&#9654; Hear it</button>`:''}</div>`;
+  }
+  return h+`<div class="err hide" id="verr" role="alert"></div></div>`;
+}
+async function setVoice(slug,btn){
+  try{ const r=await rpc('set_voice',{p_token:TOKEN,p_slug:slug}); if(!r||r.error) throw new Error((r&&r.error)||'set_voice failed');
+    VO.chosen=r.voice||slug; paint(); }
+  catch(e){ report('set_voice',e); if(btn) btn.disabled=false; const er=$('verr');
+    if(er){ er.textContent='That didn’t save. Please try again.'; er.classList.remove('hide'); } }
 }
 
 /* THE CARDS (1 Oct). One card at a time is open for editing (cardOpen 'start' | 'finish'). */
@@ -479,6 +505,9 @@ async function answerLine(id,yes,what){
 }
 document.addEventListener('click',ev=>{
   const t=ev.target.closest('button'); if(!t) return;
+  if(t.dataset.voice){ if(VO&&VO.chosen===t.dataset.voice) return; t.disabled=true; setVoice(t.dataset.voice,t); return; }
+  if(t.dataset.play){ try{ if(AU) AU.pause(); AU=new Audio(t.dataset.play); AU.play().catch(e=>report('play voice sample',e)); }
+    catch(e){ report('play voice sample',e); } return; }
   if(t.dataset.qyes){ answerLine(t.dataset.qyes,true,null); return; }
   if(t.dataset.qno){ QNO=t.dataset.qno; paint(); const w=$('qwhat'); if(w) w.focus(); return; }
   if(t.dataset.qcancel){ QNO=null; paint(); return; }
@@ -520,7 +549,11 @@ document.addEventListener('click',ev=>{
   if(t.dataset.line){ open=t.dataset.line; cardOpen=null; confirming=false; paint(); }
   else if(t.dataset.cancel){ open=null; paint(); }
   else if(t.dataset.save){ t.disabled=true; save(t.dataset.save); }
-  else if(t.dataset.ready){ confirming=true; paint(); }
+  else if(t.dataset.ready){
+    if(VO&&!VO.chosen){ const er=$('verr'), box=$('voices');      // 11 Oct (B32): the voice is chosen before the words are sent
+      if(er){ er.textContent='Please choose whose voice sings it first.'; er.classList.remove('hide'); }
+      if(box) box.scrollIntoView({behavior:'smooth',block:'center'}); return; }
+    confirming=true; paint(); }
   else if(t.dataset.back){ confirming=false; paint(); }
   else if(t.dataset.approve){ t.disabled=true; approve(); }
 });
@@ -536,6 +569,9 @@ async function load(){
   if(L.lines.some(l=>l.question)){                       // 9 Oct (B4): does the server take answers? (a line of no film: changes nothing)
     try{ const r=await rpc('answer_line_question',{p_token:TOKEN,p_line:'00000000-0000-0000-0000-000000000000',p_yes:true,p_what:null});
       CANANSWER=!!(r&&r.error); }catch(_){ CANANSWER=false; } }
+  try{ const sv=await rpc('suggest_voice',{p_token:TOKEN});        // 11 Oct (B32): asked only when no voice is chosen
+    VO=(sv&&!sv.error&&!sv.chosen&&(sv.voices||[]).length)?{voices:sv.voices,suggested:sv.suggested||null,why:sv.why||null,chosen:null}:null; }
+  catch(_){ VO=null; }
   await loadPhotos();
   await loadStyle();
 }
