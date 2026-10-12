@@ -420,9 +420,26 @@ function photoHTML(k,done){
   if(!CP||!CP[k]) return '';
   const id=CP[k].chosen||CP[k].auto; if(!id||!PICS[id]) return '';
   const mine=!!CP[k].chosen, locked=done||CP.locked;
+  /* 12 Oct night (ADDITIONS B42b - Film Standard CRD-06): who is in a photo is a FACT only they know. Our choice is never shown
+     as "of you": it is ASKED - "Is this a photo of Nigel & Leisa?" - and "These words are right" waits for the answer (wedding 2's
+     opening card said Nigel & Leisa over Alex and Hayden in the car). Yes = their own choice (set_card_photo with that photo). */
+  const who=CP.people?`a photo of ${esc(CP.people)}`:'the right photo for this card';
+  if(!mine&&!locked) return `<div class="cph"><img src="${esc(PICS[id])}" alt="The ${k==='start'?'opening':'closing'} photograph" data-cph="${k}">
+    <div class="who" id="cpask-${k}"><b>Is this ${who}?</b></div></div>
+    <div class="row"><button class="b go" data-cyes="${k}">Yes, that’s right</button><button class="b" data-cpick="${k}">No - choose another</button></div>
+    <div class="err hide" id="cperr-${k}" role="alert"></div>`;
   return `<div class="cph"><img src="${esc(PICS[id])}" alt="The ${k==='start'?'opening':'closing'} photograph" data-cph="${k}">
-    <div class="who">${mine?'You chose this photograph.':'We chose this photograph of you.'}</div></div>
+    <div class="who">${mine?'You chose this photograph.':'We chose this photograph.'}</div></div>
     ${locked?'':`<div class="row"><button class="b" data-cpick="${k}">Choose a different photo</button>${mine?`<button class="b" data-creset="${k}">Use our choice</button>`:''}</div>`}`;
+}
+/* B42b: a card photo still waiting for their yes (a card with words, our photo, not yet theirs, not locked) */
+function photoUnconfirmed(){
+  if(!CP||CP.locked) return null;
+  for(const k of ['start','finish']){
+    const c=CP[k]; if(!c||c.chosen||!c.auto||!PICS[c.auto]||!cardOf(k).text) continue;
+    return k;
+  }
+  return null;
 }
 function pickerHTML(){
   if(!picking) return '';
@@ -522,6 +539,10 @@ document.addEventListener('click',ev=>{
       .catch(e=>{ report('set card style',e); t.disabled=false; const er=$('serr'); if(er){ er.textContent='That didn’t save. Please try again.'; er.classList.remove('hide'); } });
     return;
   }
+  if(t.dataset.cyes){ const k=t.dataset.cyes; t.disabled=true;                  // B42b: "Yes, that's right" - theirs now
+    setPhoto(k,CP[k].auto).then(()=>paint()).catch(e=>{ report('confirm card photo',e); t.disabled=false; const er=$('cperr-'+k);
+      if(er){ er.textContent='That didn’t save. Please try again.'; er.classList.remove('hide'); } });
+    return; }
   if(t.dataset.cpick){ picking=t.dataset.cpick; paint(); return; }
   if(t.dataset.pclose){ picking=null; paint(); return; }
   if(t.dataset.cphoto||t.dataset.creset){
@@ -553,6 +574,10 @@ document.addEventListener('click',ev=>{
     if(VO&&!VO.chosen){ const er=$('verr'), box=$('voices');      // 11 Oct (B32): the voice is chosen before the words are sent
       if(er){ er.textContent='Please choose whose voice sings it first.'; er.classList.remove('hide'); }
       if(box) box.scrollIntoView({behavior:'smooth',block:'center'}); return; }
+    const pk=photoUnconfirmed();                                    // 12 Oct night (B42b, CRD-06): the card photo is theirs first
+    if(pk){ const er=$('cperr-'+pk), q=$('cpask-'+pk);
+      if(er){ er.textContent='Please tell us if this photo is right first.'; er.classList.remove('hide'); }
+      if(q) q.scrollIntoView({behavior:'smooth',block:'center'}); return; }
     confirming=true; paint(); }
   else if(t.dataset.back){ confirming=false; paint(); }
   else if(t.dataset.approve){ t.disabled=true; approve(); }
