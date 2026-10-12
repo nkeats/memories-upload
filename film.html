@@ -163,6 +163,11 @@ a.b.back{display:inline-flex!important;align-items:center;justify-content:center
   font-weight:700;text-decoration:none!important}
 .backrow{margin:0 0 16px}
 #data .backrow:last-child{margin:20px 0 0}
+/* B41 (12 Oct night): the questionnaire's number buttons - the questions page's own chips */
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:10px 16px;font:inherit;color:var(--fg2);cursor:pointer}
+.chip[aria-pressed=true]{background:var(--brass);border-color:var(--brass);color:#20180A;font-weight:600}
+.svq{margin:0 0 18px}
 @media (max-width:560px){ a.b.back{display:flex!important;width:100%;box-sizing:border-box} }
 </style>
 <script id="a11y-focus">
@@ -215,6 +220,11 @@ window.addEventListener('error',ev=>report('uncaught',ev.error||ev.message));
 window.addEventListener('unhandledrejection',ev=>report('unhandled promise',ev.reason));
 
 let D=null, FILM=null, ERASE_STEP=0, SITE_BASE=null;
+/* 12 Oct 2026 night (ADDITIONS B41 - Film Standard PRM-25, PRM-26, CHG-14): THE QUESTIONNAIRE. feedback_questions / answer_feedback /
+   finish_feedback (server-wanted-p32-feedback.sql). Seven questions, only the first needed; 10% off the next film on sending it,
+   whatever the answers say. Private - never published, and nothing to do with the public review box (PRM-26: that one is never
+   rewarded and never mentions this). Before the server has it (QN null) the old "Anything you'd like to tell us?" box stays. */
+let QN=null, QA={}, QBUSY=false, QERR='';
 try{ rpc('get_start_config').then(c=>{ if(c&&__pv(c.site_base_url)) SITE_BASE=String(__pv(c.site_base_url)).replace(/\/?$/,'/'); }).catch(()=>{}); }catch(_){}
 const pageUrl=(page,q)=>(SITE_BASE||new URL('.',location.href).href)+page+'?'+q;
 const fmtDate=d=>new Date(d).toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'});
@@ -237,6 +247,7 @@ function paint(){
     if(D.review_url&&!tribute()) h+=`<div class="box" id="review"><h2>Would you tell others about it?</h2>
         <p class="lede">If you have a moment, a review helps other families find us.</p>
         <a class="b" id="reviewlink" href="${esc(D.review_url)}" target="_blank" rel="noopener">Leave a review</a></div>`;
+    if(QN) h+=surveyHTML(); else
     h+=`<div class="box" id="feedback"><h2>Anything you’d like to tell us?</h2>
         <p class="lede">This goes only to us.</p>
         <textarea id="fbtext" maxlength="2000" aria-label="Anything you’d like to tell us" placeholder="Something you loved, or something we could do better"></textarea>
@@ -257,6 +268,43 @@ function paint(){
       ${dataHTML()}${backHTML('databack2')}</div>`;
   $('stage').innerHTML=h;
   const f=$('rfile'); if(f){ f.addEventListener('change',sendReaction); offerReady(); }
+}
+function surveyHTML(){
+  if(QN.done){
+    const c=QN.credit;
+    return `<div class="box" id="survey"><h2>Thank you</h2><p class="ok" id="svdone">We have your answers - they go only to us.${c&&c.percent
+      ?` You have ${esc(c.percent)}% off your next film${c.expires_at?` (until ${esc(fmtDate(c.expires_at))})`:''}.`:''}</p></div>`;
+  }
+  const qs=QN.questions||[];
+  const scale=(q,lo,hi)=>`<div class="chips" role="group" aria-label="${esc(q.q)}">${Array.from({length:hi-lo+1},(_,i)=>i+lo).map(v=>
+    `<button class="chip" type="button" data-fs="${esc(q.key)}" data-v="${v}" aria-pressed="${(QA[q.key]||{}).score===v}">${v}</button>`).join('')}</div>`;
+  const box=q=>`<textarea data-ft="${esc(q.key)}" maxlength="4000" aria-label="${esc(q.q)}" rows="3">${esc((QA[q.key]||{}).answer||'')}</textarea>`;
+  return `<div class="box" id="survey"><h2>How did we do? 10% off your next film</h2>
+    <p class="lede">Seven short questions, about three minutes. Only the first one is needed. Whatever you tell us - good or bad - you get
+      ${esc(QN.credit_percent||10)}% off your next film. Your answers go only to us and are never published.</p>
+    ${qs.map((q,i)=>`<div class="svq" id="svq-${esc(q.key)}"><p><b>${i+1}. ${esc(q.q)}</b>${q.required?'':' <span class="small">(if you like)</span>'}</p>
+      ${q.hint?`<p class="small">${esc(q.hint)}</p>`:''}
+      ${q.type==='scale5'?scale(q,1,5)+box(q):q.type==='scale10'?scale(q,0,10):box(q)}</div>`).join('')}
+    <p><button class="b go" id="svsend" ${QBUSY?'disabled':''}>${QBUSY?'Sending…':'Send my answers'}</button>
+      <span id="svmsg" role="status" class="${QERR?'err':''}">${esc(QERR)}</span></p></div>`;
+}
+async function sendSurvey(){
+  if(QBUSY) return;
+  if(!(QA.feel&&QA.feel.score)){ QERR='Please answer the first question - tap a number from 1 to 5.'; paint();
+    const e=$('svq-feel'); if(e) e.scrollIntoView({block:'center'}); return; }
+  QBUSY=true; QERR=''; paint();
+  try{
+    for(const q of (QN.questions||[])){
+      const a=QA[q.key]||{}; const text=(a.answer||'').trim(), score=a.score==null?null:a.score;
+      if(!text&&score==null) continue;
+      const r=await rpc('answer_feedback',{p_token:TOKEN,p_key:q.key,p_score:score,p_answer:text||null});
+      if(!r||r.ok!==true) throw new Error((r&&r.error)||'answer_feedback');
+    }
+    const f=await rpc('finish_feedback',{p_token:TOKEN});
+    if(!f||f.ok!==true) throw new Error((f&&f.error)||'finish_feedback');
+    QN={...QN,done:true,credit:f.credit||null};
+  }catch(e){ report('survey',e); QERR='That didn’t send. Please press Send again.'; }
+  QBUSY=false; paint(); const s=$('survey'); if(s) s.scrollIntoView({block:'start'});
 }
 /* 4 Oct: how long we keep it - the server's numbers (get_delivery.retention), with dates once the film is delivered */
 /* 15 Oct (Nigel): "Your data" needs a clear way back - top and bottom. Back to where they came from: their own page
@@ -400,10 +448,16 @@ async function sendReaction(ev){
 }
 const refMessage=()=>`I made a film of our memories with this - you might like to make one for someone you love. My code: ${D.referral.code}\n\n${D.referral.link}`;
 document.addEventListener('change',ev=>{ if(['rlic','rkids','rall'].includes(ev.target.id)) offerReady(); });
-document.addEventListener('input',ev=>{ if(ev.target.dataset&&ev.target.dataset.ni!=null){ NAMES[+ev.target.dataset.ni]=ev.target.value; offerReady(); }
+document.addEventListener('input',ev=>{ const fk=ev.target.dataset&&ev.target.dataset.ft;
+  if(fk){ QA[fk]={...(QA[fk]||{}),answer:ev.target.value}; return; }
+  if(ev.target.dataset&&ev.target.dataset.ni!=null){ NAMES[+ev.target.dataset.ni]=ev.target.value; offerReady(); }
   if(ev.target.id==='ertype'){ const b=$('er3'); if(b) b.disabled=ev.target.value.trim().toUpperCase()!=='DELETE'; } });
 document.addEventListener('click',async ev=>{
   const t=ev.target.closest('button'); if(!t) return;
+  if(t.dataset&&t.dataset.fs){ QA[t.dataset.fs]={...(QA[t.dataset.fs]||{}),score:+t.dataset.v};      // B41: a number tapped
+    t.parentNode.querySelectorAll('[data-fs]').forEach(b=>b.setAttribute('aria-pressed',String(b===t)));
+    if(QERR&&t.dataset.fs==='feel'){ QERR=''; const m=$('svmsg'); if(m){ m.textContent=''; m.className=''; } } return; }
+  if(t.id==='svsend'){ sendSurvey(); return; }
   try{
     if(t.dataset&&t.dataset.plink){ const l=t.dataset.plink, n=t.dataset.pname;
       if(navigator.share) await navigator.share({text:`${n}, this is the video of us watching the film. Please watch it and say yes or no yourself:\n\n${l}\n`});
@@ -439,8 +493,12 @@ document.addEventListener('click',async ev=>{
     if(!D||D.error){ $('stage').innerHTML='<p class="lede">We couldn’t find your film from this link. Please open the link we sent you again.</p>'; if(D&&D.error!=='unknown token') report('get_delivery',new Error(D&&D.error)); return; }
     if(D.film_ready){ try{ FILM=await fn('film_url'); }catch(e){ report('film_url',e); } }
     try{ const j=await rpc('journey',{p_token:TOKEN}); OCC=(j&&!j.error&&j.occasion)||''; }catch(_){ OCC=''; }   // 8 Oct (A12)
+    if(D.film_ready){ try{ const q=await rpc('feedback_questions',{p_token:TOKEN});                               // B41
+      if(q&&q.ok===true&&Array.isArray(q.questions)){ QN=q; QA={}; for(const x of q.questions) if(x.answer!=null||x.score!=null) QA[x.key]={answer:x.answer||'',score:x.score}; } }
+      catch(_){ QN=null; } }                                // not on the server yet: the old box, nothing else changes
     paint();
     if(location.hash==='#data'&&$('data')) $('data').scrollIntoView();
+    if(location.hash==='#survey'&&$('survey')) $('survey').scrollIntoView();
   }catch(e){ report('load',e); $('stage').innerHTML='<p class="lede">Something went wrong opening your film. Please try again in a minute.</p>'; }
 })();
 </script>
