@@ -401,6 +401,9 @@ let TOKEN=new URLSearchParams(location.search).get('t')||'';
    THEM (p_person / person_id) and sees only their own turns. ⚠⚠ They must
    never see the other person's answers — shown his, she would simply agree. */
 const ANSWER=new URLSearchParams(location.search).get('a')||'';
+/* 12 Oct night (ADDITIONS B40b/B40d - Film Standard INT-25): ?heart=1 on the builder's link opens ONLY the whole-film heart
+   questions (film_questions marked at:'end') - for a film already made, emailed by the system (notify kind 'heart_questions'). */
+const HEART=new URLSearchParams(location.search).get('heart')==='1';
 let ASK=null;        // {person_id, name, relation, collection_id, finished} while someone is answering
 const HDR={'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY};
 
@@ -538,6 +541,7 @@ async function route(){
         .catch(e=>report('record_referral',e));
     }
   }catch(e){ report('referral',e); }
+  if(HEART) return showHeart();
   switch(j.stage){
     case 'upload':      return showUpload();
     case 'describing':  return showDescribing();
@@ -2909,6 +2913,9 @@ async function showAnswer(){
       fq=Array.isArray(r.questions)?r.questions:[]; }
     catch(e){ report('film_questions',e); }
     if(page!=='answer') return;
+    /* 12 Oct night (INT-25): the heart questions (at:'end') are asked LAST, after every group - what it all meant, once the
+       stories are told. The server marks them; before it does, every question is asked first as before. */
+    FQ.end=fq.filter(q=>q&&q.at==='end'); fq=fq.filter(q=>!(q&&q.at==='end')); FQ.phase='start';
     fq=await withSettings(fq);                           // 8 Oct (A12): "Before we start", and each question's "only if"
     if(page!=='answer') return;
     FQ.list=fq; FQ.busy=false; FQ.err='';
@@ -2986,15 +2993,16 @@ function goFilmQ(i){
 function paintFilmQ(){
   screen='film'; atEnd=false;
   const q=FQ.list[FQ.i]; if(!q) return;
+  const atEndQ=FQ.phase==='end';
   $('stage').innerHTML=`<div class="step">${esc(q.part||'')} · <b>${FQ.i+1}</b> of ${FQ.list.length}</div>
     <h2 style="margin-top:14px">${esc(q.question||'')}</h2>
     ${q.hint?`<p class="fqhint" style="color:var(--fg2);font-size:15px;line-height:1.5;margin:-4px 0 12px;max-width:56ch">${esc(q.hint)}</p>`:''}
-    ${q.setting?settingInput(q):`<textarea id="fqans" placeholder="Tell us what happened — a few sentences is plenty." ${FQ.busy?'disabled':''}>${esc(FQ.draft)}</textarea>`}
+    ${q.setting?settingInput(q):`<textarea id="fqans" placeholder="${atEndQ?'In your own words — a few sentences is plenty.':'Tell us what happened — a few sentences is plenty.'}" ${FQ.busy?'disabled':''}>${esc(FQ.draft)}</textarea>`}
     <p class="lede" style="margin-top:10px"><button class="chip" id="fqskip" type="button" ${FQ.busy?'disabled':''}>Skip</button></p>
     <div style="margin-top:22px">${inviteCard()}</div>`;
   $('stage').className='';
   nav(`<button class="go" id="fqnext" ${FQ.busy?'disabled':''}>${FQ.busy?'Saving…':'Next →'}</button>`,
-      'Before the photos', FQ.i>0&&!FQ.busy, FQ.err?`<span class="fqerr" role="alert">${esc(FQ.err)}</span>`:'');
+      atEndQ?'The heart of it':'Before the photos', FQ.i>0&&!FQ.busy, FQ.err?`<span class="fqerr" role="alert">${esc(FQ.err)}</span>`:'');
   $('sheet').classList.add('hide');
 }
 async function saveFilmQ(skip){
@@ -3016,7 +3024,32 @@ async function saveFilmQ(skip){
   FQ.busy=false;
   const nx=nextAsked(FQ.i+1);                            // 8 Oct (A12): the next question whose "only if" holds
   if(nx>=0){ goFilmQ(nx); scrollTo(0,0); return; }
+  if(FQ.phase==='end'){ if(HEART) return heartThanks(); scrollTo(0,0); return paintAllDone(); }   // INT-25: back to the end
   await toGroups();
+}
+/* ═══ THE HEART QUESTIONS ON THEIR OWN (?heart=1) - 12 Oct night, ADDITIONS B40d / INT-25 ═══
+   A film already made: only the questions marked at:'end', one per screen, Skip on each, then thank you. Nothing else on
+   the film changes. answer_film_question saves them exactly as on the questions page. */
+async function showHeart(){
+  page='answer'; screen='film';
+  let fq=[];
+  try{ const r=await rpc('film_questions',{p_token:TOKEN});
+    if(!r||r.error||!r.ok) throw new Error((r&&r.error)||'film_questions: bad reply');
+    fq=(Array.isArray(r.questions)?r.questions:[]).filter(q=>q&&q.at==='end'); }
+  catch(e){ report('heart questions',e);
+    plain(`<h1>Couldn’t load the questions</h1><p class="do">Please try the link again in a moment.</p>
+      <button class="big" id="retryRoute">Try again</button>`); return; }
+  FQ.list=fq; FQ.end=fq; FQ.phase='end'; FQ.busy=false; FQ.err='';
+  if(!fq.length) return heartThanks();
+  const k=fq.findIndex(q=>!q.done);                     // opened again after answering: from the first, her answers filled in
+  goFilmQ(k<0?0:k); scrollTo(0,0);
+}
+function heartThanks(){
+  page='thanks';
+  const who=name||J.owner_name||'';
+  plain(`<h1>Thank you${who?', '+esc(who):''}</h1>
+    <p class="do">Your answers are with us. We’ll use them in your song’s new words.</p>
+    <p class="lede">Want to change one? Open the same link again.</p>`);
 }
 /* Which photographs a question shows, and how. Two different things:
    HERE IS WHAT WE'RE ASKING ABOUT — a photo turn names its picture
@@ -3133,6 +3166,9 @@ async function paintAllDone(){
   /* first, once: a story told with no photo linked - one light step (2 Oct) */
   if(!STP.done&&STP.list===null){ STP.list=[]; await loadStories(); if(page!=='answer') return; }
   if(!STP.done&&STP.list&&STP.list.some(s=>!s.linked)){ paintStories(); return; }
+  /* 12 Oct night (INT-25): then the heart questions, once each (a skip counts as asked) */
+  { const k=(FQ.end||[]).findIndex(q=>!q.done&&ruleOk(q));
+    if(k>=0){ FQ.phase='end'; FQ.list=FQ.end; FQ.busy=false; FQ.err=''; goFilmQ(k); scrollTo(0,0); return; } }
   $('stage').innerHTML=`<div class="step">Group ${M.length} of ${M.length}</div>
     <h1>That\u2019s all the questions</h1>
     <p class="do">${ASK?'You\u2019ve told us about every group. Press Finished and your memories go into the song.'
