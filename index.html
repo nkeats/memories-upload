@@ -811,7 +811,7 @@ async function showUpload(){
    remembers). On a phone the panel sits above the photographs and folds to
    one line that opens. */
 const TIPS={
-  upload:['Sixty to a hundred is the sweet spot — about six seconds each','Faces over scenery','Send the blurry one if it’s the only one of that moment','Not twenty of the same thing'],
+  upload:['Sixty to a hundred is the sweet spot — a few seconds each','Faces over scenery','Send the blurry one if it’s the only one of that moment','Not twenty of the same thing'],
   sort:['Your order, not ours — you were there and we weren’t','Move anything that’s in the wrong place','The names you give each group go in the film'],
   answer:['Small specific things — they’re what end up in the song','Tell us what happened, not how it felt','Messy is fine. Don’t write it nicely — that’s our job','Skip anything you’d rather not answer'],
   music:['Have a listen — they’re twenty seconds each','Or just tell us what you love and we’ll work it out']};
@@ -1263,8 +1263,10 @@ async function showUploadPage(){
     catch(e){ report('load exifr',e); } }   // without it, dates come from the filename or file date
   startNotices();
 }
-/* 18 Oct (Nigel: "one easy-to-miss sentence"): THE FILM-LENGTH METER - a big running time, a bar marked at the 3-minute
-   minimum and at each tier, one plain line, and what was set aside. Every number is the SERVER's (rpc film_meter: the
+/* 18 Oct (Nigel: "one easy-to-miss sentence"): THE FILM METER - the photo count, big, a bar marked at the occasion's
+   minimum and at each price step, one plain line, and what was set aside. 13 Oct 2026 (ADDITIONS B53 2, LEN-11, LEN-01, WRD-10):
+   no minutes on the page - the song follows their story, so the bar is by photo count and the page says "Songs usually run 3 to 7
+   minutes - yours will follow your story". Every number is the SERVER's (rpc film_meter: the
    usable photos x the occasion's measured pace, the tier by photo count - the same estimate the song is made to), never
    ours; a tier's price only once it is set (nothing while empty), so the tier and its price are seen before paying.
    filmMeter(container) is used on the upload page and the sort page. Without film_meter (not applied yet) it shows nothing
@@ -1277,33 +1279,33 @@ function meterCurrency(){
   if(/-US$/.test(l)&&/^(America\/|Pacific\/Honolulu$|US\/)/.test(tz)) return 'usd';
   return /-NZ$/.test(l)?'nzd':/-GB$|-UK$/.test(l)?'gbp':'aud';
 }
-function mmssLong(sec){ const m=Math.floor(sec/60), s=Math.round(sec%60); return `${m} min ${String(s).padStart(2,'0')} s`; }
 function money(c,cur){ const sym={aud:'A$',nzd:'NZ$',gbp:'\u00a3',usd:'US$'}[cur]||'$'; return sym+(c%100?(c/100).toFixed(2):String(c/100)); }
 async function filmMeter(container){
   if(!container) return null;
   let m=null;
   try{ m=await rpc('film_meter',{p_token:TOKEN,p_currency:meterCurrency()}); if(!m||m.error||m.usable===undefined) throw new Error((m&&m.error)||'no meter'); }
   catch(e){ container.classList.add('hide'); return null; }
-  const tiers=(m.tiers||[]).filter(t=>t.max_seconds!=null);
+  const steps=(m.tiers||[]).filter(t=>t.photos_to!=null).sort((a,b)=>(+a.photos_from)-(+b.photos_from));   // the price steps (48, 76, 140)
   const cur=(m.tiers||[]).find(t=>t.slug===m.tier)||{};
-  const secs=Math.round(cur.max_seconds!=null?Math.min(+m.photo_seconds,+cur.max_seconds):+m.photo_seconds);
-  const top=Math.max(600,...tiers.map(t=>+t.max_seconds));
+  const n=+m.usable||0, minP=+m.min_photos||(n+(+m.to_minimum||0));
+  const top=Math.max(1,n,minP,...steps.map(t=>+t.photos_to))*1.1;
   const pct=x=>Math.max(0,Math.min(100,x/top*100));
-  const marks=[{at:180,label:'3 min'},...tiers.filter(t=>+t.max_seconds<top).map(t=>({at:+t.max_seconds,label:`${Math.round(t.max_seconds/60)} min`}))];
+  const marks=[...(minP?[{at:minP,label:`${minP} photos`}]:[]),...steps.map(t=>({at:+t.photos_to,label:String(t.photos_to)}))];
   let line='';
-  if(+m.to_minimum>0) line=`Add ${plural(+m.to_minimum,'more photo')} to reach 3 minutes.`;
+  if(+m.to_minimum>0) line=`Add ${plural(+m.to_minimum,'more photo')} - a film needs at least ${minP}.`;
   else{
-    const next=(m.tiers||[]).find(t=>+t.photos_from>+m.usable&&t.max_seconds!=null);
-    if(next&&!m.needs_quote) line=`${plural(+next.more_photos,'more photo')} ${+next.more_photos===1?'moves':'move'} you to the ${String(next.label||'').replace(/^./,c=>c.toLowerCase())} film.`;
+    const next=steps.find(t=>+t.photos_from>n);
+    if(next&&!m.needs_quote) line=`${plural(+next.more_photos,'more photo')} ${+next.more_photos===1?'moves':'move'} you to the next size: ${String(next.label||'')}.`;
   }
   const sa=m.set_aside||{}, aside=[];
   if(+sa.bursts) aside.push(`${sa.bursts} near-identical shot${+sa.bursts===1?'':'s'} set aside`);
   if(+sa.duplicates) aside.push(`${sa.duplicates} repeat${+sa.duplicates===1?'':'s'} not counted`);
   if(+sa.blurry) aside.push(`${sa.blurry} blurry photo${+sa.blurry===1?'':'s'} set aside`);
   const price=cur.price_cents!=null&&!m.needs_quote?` \u00b7 ${money(+cur.price_cents,m.currency)}`:'';
-  container.innerHTML=`<p class="meterbig" id="metertime">Your film: ${mmssLong(secs)}</p>
-    <div class="meterbar" role="img" aria-label="Your film is ${mmssLong(secs)} long; the shortest film is 3 minutes">
-      <div class="meterfill${secs<180?' short':''}" style="width:${pct(secs).toFixed(1)}%"></div>
+  container.innerHTML=`<p class="meterbig" id="metertime">Your film: ${plural(n,'photo')}</p>
+    <p class="lede" id="meterstory">Songs usually run 3 to 7 minutes - yours will follow your story.</p>
+    <div class="meterbar" role="img" aria-label="Your film has ${plural(n,'photo')}; a film needs at least ${minP}.">
+      <div class="meterfill${n<minP?' short':''}" style="width:${pct(n).toFixed(1)}%"></div>
       ${marks.map(k=>`<span class="metermark" style="left:${pct(k.at).toFixed(1)}%"><span>${esc(k.label)}</span></span>`).join('')}
     </div>
     <p class="metertier" id="metertier">${m.needs_quote?'':esc(cur.label||'')}${esc(price)}</p>
@@ -1347,7 +1349,7 @@ function meterHelp(m){
   if(!h){ el.innerHTML=''; el.classList.add('hide'); return; }
   const price=money(+h.low.price_cents,m.currency), lbl=String(h.low.label||'').replace(/^./,c=>c.toLowerCase());
   el.innerHTML=`<h3>Just over a price line</h3>
-    <p>${h.over===1?'One photo':plural(h.over,'photo')} fewer would make this the ${esc(lbl)} film, at ${esc(price)}.</p>
+    <p>${h.over===1?'One photo':plural(h.over,'photo')} fewer would bring your film down to the lower price - ${esc(price)} (${esc(lbl)}).</p>
     <p>These look almost the same as another photo in your film. You can leave ${h.over===1?'one':h.over} out - or keep them all. It's up to you.</p>
     ${h.pairs.map(x=>`<div class="lapair"><img src="${x.drop.thumb_url||x.drop.url}" alt="${photoAlt(x.drop)}" decoding="async">
       <img src="${x.keep.thumb_url||x.keep.url}" alt="Its look-alike, which stays: ${photoAlt(x.keep)}" decoding="async">
@@ -1364,17 +1366,15 @@ async function songGuide(n){
   GUIDE_N=n;
   QUOTE=!!e.needs_quote&&TIER!=='custom';
   if(QUOTE){
-    const over=String(e.label||'').split(/\s+[\u2014-]\s+/)[0];          // "Over 10 minutes - priced individually" -> "Over 10 minutes"
+    const over=String(e.label||'').split(/\s+[\u2014-]\s+/)[0];          // "More than 140 photos - priced individually" -> "More than 140 photos"
     el.innerHTML=`<b>${esc(over)}? Contact us for a quote.</b> The ${plural(Math.max(n,inSoFar),'photo')} already in stay in your film.`;   // what she sees in, not the counted figure
   }else if(e.needs_quote){                                   // tier 'custom': a price is agreed, so photos keep coming
-    const mins=Math.max(1,Math.round((+e.estimated_seconds||0)/60));
-    el.textContent=`Your ${plural(n,'photo')} make${n===1?'s':''} a song of about ${mins} minute${mins===1?'':'s'}. `+
-      `Your film is priced individually, so add as many as you like.`+(inSoFar>n?` (Repeats aren't counted.)`:'');
+    el.textContent=`Your film is priced individually, so add as many photos as you like. Songs usually run 3 to 7 minutes - yours will follow your story.`+
+      (inSoFar>n?` (Repeats aren't counted.)`:'');
   }else{
-    const mins=Math.max(1,Math.round((+e.estimated_seconds||0)/60));
-    const lbl=String(e.label||'').replace(/^./,c=>c.toLowerCase());     // "Up to 5 minutes" -> "the up to 5 minutes film"
-    el.textContent=`Your ${n} photo${n===1?'':'s'} make${n===1?'s':''} a song of about ${mins} minute${mins===1?'':'s'}: `+
-      `the ${lbl} film. Photos beyond what the song can hold go into your bonus film; nothing is lost.`+
+    const lbl=String(e.label||'').replace(/^./,c=>c.toLowerCase());     // "49 to 76 photos" -> "the 49 to 76 photos film"
+    el.textContent=`Your ${n} photo${n===1?'':'s'}: the ${lbl} film. Your song will follow your story - songs usually run 3 to 7 minutes. `+
+      `Every photo you send is used.`+
       (inSoFar>n?` (Repeats aren't counted.)`:'');
   }
   lockForQuote();
@@ -1421,7 +1421,7 @@ function shortSheet(c,where){
   const f=c.film, mems=(c.memories||[]).filter(m=>m.usable<m.min);
   const occ=esc((J.occasion_label||J.occasion||'').toLowerCase()||'your');
   let h=`<div class="in" id="shortsheet"><h3>A few more photos, please</h3>`;
-  if(f.short>0) h+=`<p>You have <b>${f.usable}</b> photo${f.usable===1?'':'s'} we can use. ${/^[aeiou]/.test(occ)?'An':'A'} ${occ} film needs at least <b>${f.min}</b> to make a 3-minute song - please add <b>${f.short}</b> more if you have them.</p>`;
+  if(f.short>0) h+=`<p>You have <b>${f.usable}</b> photo${f.usable===1?'':'s'} we can use. ${/^[aeiou]/.test(occ)?'An':'A'} ${occ} film needs at least <b>${f.min}</b> photos for its song - please add <b>${f.short}</b> more if you have them.</p>`;
   if(where==='finish'&&mems.length){
     h+=`<p>${f.short>0?'And these':'These'} moments need a few more photos each:</p><ul class="shortmems">`+
        mems.map(m=>`<li><b>${esc(m.title||'A moment')}</b>: ${m.usable} photo${m.usable===1?'':'s'} - add ${m.short} more</li>`).join('')+`</ul>`;
@@ -1829,7 +1829,7 @@ async function toDescribing(left,fail){
      rpc burst_groups    {p_token}         → each group, our pick first, sharpness on each
      rpc keep_from_burst {p_token, p_keep} → the ids she keeps, sent once at the end
    ⚠⚠⚠ NOTHING IS DELETED. The ones she doesn't pick stay in the collection
-   and go in the bonus film, and the screen says so, or people refuse to
+   (set aside, never deleted), and the screen says so, or people refuse to
    choose. Most customers have no bursts and never see this screen. If
    finding them fails she is not stopped: every photo goes on to be described,
    which costs time, not photographs. */
@@ -2400,7 +2400,7 @@ function paintDups(){
   nav(`<button id="dnext" class="go">${cur<dups.length-1?'Next':'Done'}</button>`,`${dups.length} to look at`);
 }
 /* 18 Oct (Nigel 6 Oct: "fewer, bigger memories - not more photos"; a tester's 87 photos were in 15 memories, 8 under 4): AT THE
-   SORT STEP - a live line "4 memories works best for a film this length - you have 9", a one-tap "Join with the next one" on any
+   SORT STEP - a live line "4 memories works best for a film with this many photos - you have 9", a one-tap "Join with the next one" on any
    memory under the minimum, and Done held until both are met - EXCEPT "I'd like to keep these as they are", which tells Nigel
    (never a dead end). The limits are the server's (photo_counts -> limits: max_memories from the film's seconds; the minimum);
    while sorting the page counts each group's photos itself, and the server checks again at Finished. Nothing changes a film by
@@ -2415,7 +2415,7 @@ function limitsNow(){
 }
 function limitsLine(){
   const l=limitsNow(); if(!l.known) return '';
-  const a=l.tooMany?`${l.max} memories works best for a film this length - you have ${l.n}.`:'';
+  const a=l.tooMany?`${l.max} memories works best for a film with this many photos - you have ${l.n}.`:'';
   const b=l.small.length?`${l.small.length===1?'One memory has':l.small.length+' memories have'} fewer than ${l.min} photos.`:'';
   return (a||b)?`<p class="goldnote" id="memline">${esc([a,b].filter(Boolean).join(' '))} Joining small ones makes each a fuller verse.</p>`:'';
 }
@@ -2461,7 +2461,7 @@ function limitsSheet(){
     return `<li><b>${esc(x.title||('Group '+(x.j+1)))}</b>: ${plural(x.n,'photo')} <button class="b" data-join="${x.j}" data-with="${k}" type="button">${joinWords(x.j,k)}</button></li>`; }).join('');
   const many=l.tooMany&&!l.small.length?M.map((m,j)=>j<M.length-1?`<li><b>${esc(m.title||('Group '+(j+1)))}</b> <button class="b" data-join="${j}" data-with="${j+1}" type="button">Join with the next one</button></li>`:'').join(''):'';
   s.innerHTML=`<div class="in" id="limitsheet"><h3>Fewer, fuller memories</h3>
-    <p>${l.tooMany?`A film this length works best with up to <b>${l.max}</b> memories - you have <b>${l.n}</b>. `:''}${l.small.length?`Each memory works best with at least <b>${l.min}</b> photos - it gets a fuller verse in the song.`:''}</p>
+    <p>${l.tooMany?`A film with this many photos works best with up to <b>${l.max}</b> memories - you have <b>${l.n}</b>. `:''}${l.small.length?`Each memory works best with at least <b>${l.min}</b> photos - it gets a fuller verse in the song.`:''}</p>
     <p>Joining keeps every answer - they move with the photos.</p>
     <ul class="shortmems">${rows||many}</ul>
     ${l.tooMany?'':`<div class="acts"><button id="keepas" type="button">I'd like to keep these as they are</button></div>`}
@@ -2502,7 +2502,7 @@ function paintOrg(){
   h+=`<h2>What do you call this group?</h2>
     <input type="text" id="nm" class="beside" value="${esc(m.title)}" placeholder="Anything you like" autocomplete="off">
     <p class="do" style="font-size:16.5px;margin:9px 0 22px;color:var(--fg2)">
-      ${plural(inn.length,'photo')} · about ${mmss(secs(m))} of film · tap photos to select them, then move them or leave them out</p>
+      ${plural(inn.length,'photo')} · tap photos to select them, then move them or leave them out</p>
     ${(()=>{ const l=limitsNow(); const me=l.small.find(x=>x.j===cur); return me&&M.length>1?`<p class="goldnote">Only ${plural(me.n,'photo')} here - a memory works best with at least ${l.min}. ${(k=>k===undefined?'':`<button class="b" data-join="${cur}" data-with="${k}" type="button">${joinWords(cur,k)}</button>`)(joinTarget(cur))}</p>`:''; })()}
     <div class="chips"><span class="lab">How did this time feel?</span>
       ${Object.keys(REG).map(r=>`<button class="chip" data-reg="${r}" aria-pressed="${m.register===r}">${LAB[r]}</button>`).join('')}</div>
@@ -2535,7 +2535,7 @@ function orgNav(){
              :'<button class="go" id="sortDone">Done</button>');
   /* ⚠ The plain statement goes BEFORE the button, on the page, not after it. */
   const before=(last&&!unnamed)?`<b>Once you press Done, this is the order your film will use.</b>`:'';
-  nav(rightBtn,`<b>${mmss(total())}</b><br>${plural(onCount(),'photo')} · ${plural(M.length,'group')}`,cur>0,before);
+  nav(rightBtn,`<b>${plural(onCount(),'photo')}</b><br>${plural(M.length,'group')}`,cur>0,before);
 }
 function stuckHere(){ return (page==='sort'&&(screen==='organise'||screen==='board'))||(page==='answer'&&screen==='answer'); }
 async function askForHelp(b){
@@ -3365,7 +3365,7 @@ async function saveSungFix(i){
 async function voiceChosen(){                            // 9 Oct: true once a voice is chosen - or when the voices can't be fetched
   const sv=await rpc('suggest_voice',{p_token:TOKEN}).catch(e=>({error:e.message}));
   if(!sv||sv.error){ report('suggest_voice (before Finished)',new Error((sv&&sv.error)||'failed')); return true; }
-  G.voices=sv.voices||[]; G.vsuggested=sv.suggested||null; G.vwhy=sv.why||null; G.voice=sv.chosen||null;
+  G.voices=sv.voices||[]; G.vsuggested=sv.suggested||null; G.vwhy=sv.why||null; G.voice=sv.chosen||null; G.giver=giverKnown(sv);
   return !!G.voice||!G.voices.length;
 }
 const needVoice=()=>!G.voice&&G.voices.length>0;
@@ -3403,7 +3403,7 @@ async function finishFilm(b,sent){
    never shown. ⚠ `sample` is the row's own path (a content hash in the name);
    never built from the slug. Tapping a sound or a voice records it at once. */
 let G={anchors:[],genres:[],voices:[],suggested:null,why:null,vsuggested:null,vwhy:null,chosen:null,voice:null,
-       answers:{},plain:'',notice:'',guess:'',busy:false,finishMode:false};
+       answers:{},plain:'',notice:'',guess:'',busy:false,finishMode:false,giver:null,gerr:''};
 function takeChosen(c){ G.chosen=(c&&typeof c==='object')?c:null; }
 function heardSentence(){
   if(G.plain) return G.plain;
@@ -3420,6 +3420,7 @@ async function loadMusic(){
   else report('suggest_genre',new Error((sg&&sg.error)||'failed'));
   if(sv&&!sv.error){ G.voices=sv.voices||[]; G.vsuggested=sv.suggested||null; G.vwhy=sv.why||null; G.voice=sv.chosen||null; }
   else report('suggest_voice',new Error((sv&&sv.error)||'failed'));
+  G.giver=giverKnown(sv);
 }
 async function showGenre(){
   /* the fallback: Finished pressed with no sound chosen */
@@ -3473,6 +3474,7 @@ function paintMusic(){
   h+=`<h2 style="margin-top:30px">Whose voice?</h2>`;
   if(G.vwhy) h+=`<div class="clock">${esc(G.vwhy)}</div>`;
   if(G.voices.length){ h+='<div class="genres">'; G.voices.forEach(v=>{ h+=card('voice',v,G.voice===v.slug,v.slug===G.vsuggested); }); h+='</div>'; }
+  h+=giverHTML();
   st.innerHTML=h;
   if(!G.finishMode) placePreview();                    // 8 Oct (item 25): the first look at their photos, while we look at them
   if(G.finishMode){
@@ -3530,6 +3532,28 @@ async function pickGenre(slug){
 async function pickVoice(slug){
   try{ const r=await rpc('set_voice',{p_token:TOKEN,p_slug:slug}); if(!r||r.error) throw new Error((r&&r.error)||'set_voice failed'); G.voice=r.voice||slug; }
   catch(e){ report('set_voice',e,{slug}); flash(false); return; }
+  paintMusic();
+}
+/* 13 Oct 2026 (ADDITIONS B53 3, Film Standard VOX-16): A GIFT DUET'S LEAD VOICE IS THE GIVER'S. In a gift the lead sings the giver's
+   own lines, so when a gift picks the two-voice (duet) option the same screen asks whose voice leads - and nobody else ever sees it.
+   set_giver_voice(p_token, 'female' | 'male') (server-wanted-p35) saves collections.giver_voice; a giver voice the server already
+   has is shown selected. A refused or failed save says so - never a "Thank you" for an answer that was not kept.
+   Test: Song/pipeline/page_tests_b53_giver_voice. */
+const giverKnown=sv=>{ const v=(sv&&sv.giver_voice)||J.giver_voice||G.giver||null; return v==='female'||v==='male'?v:null; };
+function giverHTML(){
+  if(!(J.is_gift&&G.voice==='duet')) return '';
+  const b=(v,w)=>`<button type="button" data-giver="${v}" aria-pressed="${G.giver===v}">${w}</button>`;
+  return `<div class="card" id="givervoice" style="margin-top:14px"><h3 style="margin:0 0 10px">The lead voice sings your lines - should it sound like you?</h3>
+    <div class="acts">${b('female',"A woman's voice leads")}${b('male',"A man's voice leads")}</div>
+    <p class="small" style="margin:8px 0 0">The other voice joins in on the chorus.</p>
+    ${G.gerr?`<p class="err" id="gverr" role="alert" style="margin:8px 0 0">${esc(G.gerr)}</p>`
+      :G.giver?`<p class="lede" id="gvthanks" role="status" style="margin:8px 0 0">Thank you. You can change it until we start singing.</p>`:''}</div>`;
+}
+async function pickGiver(v,btn){
+  if(btn) btn.disabled=true;
+  try{ const r=await rpc('set_giver_voice',{p_token:TOKEN,p_voice:v}); if(!r||r.error) throw new Error((r&&r.error)||'set_giver_voice failed');
+    G.giver=r.giver_voice||v; G.gerr=''; J.giver_voice=G.giver; }
+  catch(e){ report('set_giver_voice',e,{voice:v}); G.gerr="That didn't save. Please try again."; }
   paintMusic();
 }
 let audio=null;
@@ -3645,14 +3669,14 @@ function overLimitSheet(){
   const L=OL.chapters.filter(c=>c.photos.length), lim=(PC&&PC.limits)||{}, max=+lim.max_memories||L.length;
   const min=+(((PC&&PC.memories||[])[0]||{}).min)||4, n=L.length, need=Math.max(0,n-max);
   if(!need) return `<div class="in" id="overlimit"><h3>That's it - ${n} memories</h3>
-    <p>That works for a film this length. Every answer is still there. Press Finished when you're ready.</p>
+    <p>That works for a film with this many photos. Every answer is still there. Press Finished when you're ready.</p>
     <div class="acts"><button class="yes" id="olclose" type="button">OK</button></div></div>`;
   let order=L.map((m,j)=>j).filter(j=>nIn(L,j)<min);         // small ones first, then the smallest
   if(order.length<need) order=order.concat(L.map((m,j)=>j).filter(j=>!order.includes(j)).sort((a,b)=>nIn(L,a)-nIn(L,b)));
   const rows=order.slice(0,Math.max(need,order.filter(j=>nIn(L,j)<min).length)).map(j=>{ const k=joinTargetIn(L,j,min); if(k===undefined) return '';
     return `<li><b>${esc(L[j].title||('Memory '+(j+1)))}</b>: ${plural(nIn(L,j),'photo')} <button class="b" data-fjoin="${j}" data-fwith="${k}" type="button">Join with \u201c${esc(L[k].title||('Memory '+(k+1)))}\u201d</button></li>`; }).join('');
   return `<div class="in" id="overlimit"><h3>Fewer, fuller memories first</h3>
-    <p>Your film has <b>${n}</b> memories - a film this length works best with up to <b>${max}</b>, so <b>${need}</b> ${need===1?'needs':'need'} joining with another before it's sent.</p>
+    <p>Your film has <b>${n}</b> memories - a film with this many photos works best with up to <b>${max}</b>, so <b>${need}</b> ${need===1?'needs':'need'} joining with another before it's sent.</p>
     <p>Joining keeps every answer - they move with the photos. One tap each:</p>
     <ul class="shortmems">${rows}</ul>
     <div class="acts"><button id="olsort" type="button">Go back to my memories</button></div>
@@ -3661,7 +3685,7 @@ function overLimitSheet(){
 async function showOverLimit(){
   const s=$('sheet'); OL_SHEET=()=>overLimitSheet();
   try{ OL=await groupsNow(); }catch(e){ report('over limit: load groups',e); OL=null; }
-  if(!OL){ s.innerHTML=`<div class="in"><h3>Fewer, fuller memories first</h3><p>A film this length works best with fewer memories. Please go back and join some.</p>
+  if(!OL){ s.innerHTML=`<div class="in"><h3>Fewer, fuller memories first</h3><p>A film with this many photos works best with fewer memories. Please go back and join some.</p>
     <div class="acts"><button class="yes" id="olsort" type="button">Go back to my memories</button></div></div>`; s.classList.remove('hide'); return; }
   s.innerHTML=overLimitSheet(); s.classList.remove('hide');
 }
@@ -4140,6 +4164,8 @@ document.addEventListener('click',async e=>{
   if(gc){ pickGenre(gc.dataset.genre); return; }
   const gv=t.closest('[data-voice]');
   if(gv){ pickVoice(gv.dataset.voice); return; }
+  const gg=t.closest('[data-giver]');
+  if(gg){ pickGiver(gg.dataset.giver,gg); return; }
 });
 document.addEventListener('dragstart',e=>{ const c=e.target.closest&&e.target.closest('[data-bp]');
   if(c&&screen==='board'){ e.dataTransfer.setData('text/plain',c.dataset.bp); e.dataTransfer.effectAllowed='move'; BSEL=c.dataset.bp; } });

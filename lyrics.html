@@ -343,7 +343,27 @@ function voiceHTML(){
       <p class="sub" style="margin:6px 0 0">${esc(v.plain||'')}</p>
       ${v.sample?`<button class="b" type="button" data-play="${esc(sampleUrl(v.sample))}" aria-label="Hear ${esc(v.label)}">&#9654; Hear it</button>`:''}</div>`;
   }
+  h+=giverHTML();
   return h+`<div class="err hide" id="verr" role="alert"></div></div>`;
+}
+// 13 Oct 2026 (ADDITIONS B53 3, Film Standard VOX-16): A GIFT DUET'S LEAD VOICE IS THE GIVER'S - the lead sings the giver's own lines,
+// so a gift that picks the two-voice (duet) option is asked, here, whose voice leads; nobody else sees it. set_giver_voice(p_token,
+// 'female' | 'male') (server-wanted-p35). Whether it is a gift (and a giver voice already saved) comes from journey, the start page's
+// own read. A failed save says so - never a "Thank you" for an answer that was not kept. Test: page_tests_b53_giver_voice.
+function giverHTML(){
+  if(!(VO&&VO.gift&&VO.chosen==='duet')) return '';
+  const b=(v,w)=>`<button class="b${VO.giver===v?' go':''}" type="button" data-giver="${v}" aria-pressed="${VO.giver===v}">${w}</button>`;
+  return `<div class="card" id="givervoice"><p style="margin:0 0 10px"><b>The lead voice sings your lines - should it sound like you?</b></p>
+    <div class="row">${b('female',"A woman's voice leads")}${b('male',"A man's voice leads")}</div>
+    <p class="sub" style="margin:8px 0 0">The other voice joins in on the chorus.</p>
+    ${VO.gerr?`<div class="err" id="gverr" role="alert">${esc(VO.gerr)}</div>`
+      :VO.giver?`<p class="sub" id="gvthanks" role="status" style="margin:8px 0 0">Thank you. You can change it until we start singing.</p>`:''}</div>`;
+}
+async function setGiver(v,btn){
+  try{ const r=await rpc('set_giver_voice',{p_token:TOKEN,p_voice:v}); if(!r||r.error) throw new Error((r&&r.error)||'set_giver_voice failed');
+    VO.giver=r.giver_voice||v; VO.gerr=''; }
+  catch(e){ report('set_giver_voice',e); VO.gerr='That didn’t save. Please try again.'; }
+  paint();
 }
 async function setVoice(slug,btn){
   try{ const r=await rpc('set_voice',{p_token:TOKEN,p_slug:slug}); if(!r||r.error) throw new Error((r&&r.error)||'set_voice failed');
@@ -523,6 +543,7 @@ async function answerLine(id,yes,what){
 document.addEventListener('click',ev=>{
   const t=ev.target.closest('button'); if(!t) return;
   if(t.dataset.voice){ if(VO&&VO.chosen===t.dataset.voice) return; t.disabled=true; setVoice(t.dataset.voice,t); return; }
+  if(t.dataset.giver){ if(!VO) return; t.disabled=true; setGiver(t.dataset.giver,t); return; }
   if(t.dataset.play){ try{ if(AU) AU.pause(); AU=new Audio(t.dataset.play); AU.play().catch(e=>report('play voice sample',e)); }
     catch(e){ report('play voice sample',e); } return; }
   if(t.dataset.qyes){ answerLine(t.dataset.qyes,true,null); return; }
@@ -597,6 +618,9 @@ async function load(){
   try{ const sv=await rpc('suggest_voice',{p_token:TOKEN});        // 11 Oct (B32): asked only when no voice is chosen
     VO=(sv&&!sv.error&&!sv.chosen&&(sv.voices||[]).length)?{voices:sv.voices,suggested:sv.suggested||null,why:sv.why||null,chosen:null}:null; }
   catch(_){ VO=null; }
+  if(VO){ try{ const j=await rpc('journey',{p_token:TOKEN});        // B53 3: a gift? and its giver voice, if already saved
+      const gv=(j&&j.giver_voice)||null; VO.gift=!!(j&&!j.error&&j.is_gift); VO.giver=gv==='female'||gv==='male'?gv:null; VO.gerr=''; }
+    catch(e){ report('journey (gift)',e); VO.gift=false; } }
   await loadPhotos();
   await loadStyle();
 }
