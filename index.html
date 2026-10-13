@@ -3366,6 +3366,9 @@ async function voiceChosen(){                            // 9 Oct: true once a v
   const sv=await rpc('suggest_voice',{p_token:TOKEN}).catch(e=>({error:e.message}));
   if(!sv||sv.error){ report('suggest_voice (before Finished)',new Error((sv&&sv.error)||'failed')); return true; }
   G.voices=sv.voices||[]; G.vsuggested=sv.suggested||null; G.vwhy=sv.why||null; G.voice=sv.chosen||null; G.giver=giverKnown(sv);
+  // 14 Oct (B55a, VOX-16): a gift duet whose lead voice was never answered is not finished - the PC will not sing a guessed lead,
+  // so Finished shows the music step again with the question (the duet already chosen, the lead it chose shown when it has one)
+  if(G.voice==='duet'&&J.is_gift&&!G.giver) return false;
   return !!G.voice||!G.voices.length;
 }
 const needVoice=()=>!G.voice&&G.voices.length>0;

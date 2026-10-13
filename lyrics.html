@@ -335,6 +335,7 @@ function paint(){
 
 function voiceHTML(){
   if(!VO) return '';
+  if(VO.returning) return `<div class="cards" id="voices">${giverHTML()}<div class="err hide" id="verr" role="alert"></div></div>`;
   let h=`<div class="cards" id="voices"><h2>Whose voice sings it?</h2>
     <p class="sub">${VO.chosen?'Thank you. You can change it until we start singing.':'Choose the voice for your song.'+(VO.why?' '+esc(VO.why):'')}</p>`;
   for(const v of VO.voices){
@@ -616,11 +617,15 @@ async function load(){
     try{ const r=await rpc('answer_line_question',{p_token:TOKEN,p_line:'00000000-0000-0000-0000-000000000000',p_yes:true,p_what:null});
       CANANSWER=!!(r&&r.error); }catch(_){ CANANSWER=false; } }
   try{ const sv=await rpc('suggest_voice',{p_token:TOKEN});        // 11 Oct (B32): asked only when no voice is chosen
-    VO=(sv&&!sv.error&&!sv.chosen&&(sv.voices||[]).length)?{voices:sv.voices,suggested:sv.suggested||null,why:sv.why||null,chosen:null}:null; }
+    VO=(sv&&!sv.error&&!sv.chosen&&(sv.voices||[]).length)?{voices:sv.voices,suggested:sv.suggested||null,why:sv.why||null,chosen:null}
+      // 14 Oct (B55a, VOX-16): a RETURN visit - the duet was chosen before (on the start page). A gift still sees whose voice leads:
+      // the lead it chose (journey.giver_voice, p38), or the question if it never answered (the PC will not sing a guessed lead).
+      :(sv&&!sv.error&&sv.chosen==='duet')?{voices:[],chosen:'duet',returning:true}:null; }
   catch(_){ VO=null; }
   if(VO){ try{ const j=await rpc('journey',{p_token:TOKEN});        // B53 3: a gift? and its giver voice, if already saved
       const gv=(j&&j.giver_voice)||null; VO.gift=!!(j&&!j.error&&j.is_gift); VO.giver=gv==='female'||gv==='male'?gv:null; VO.gerr=''; }
     catch(e){ report('journey (gift)',e); VO.gift=false; } }
+  if(VO&&VO.returning&&!VO.gift) VO=null;                        // not a gift: nothing to show once the voice is chosen
   await loadPhotos();
   await loadStyle();
 }
