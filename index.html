@@ -3366,9 +3366,10 @@ async function voiceChosen(){                            // 9 Oct: true once a v
   const sv=await rpc('suggest_voice',{p_token:TOKEN}).catch(e=>({error:e.message}));
   if(!sv||sv.error){ report('suggest_voice (before Finished)',new Error((sv&&sv.error)||'failed')); return true; }
   G.voices=sv.voices||[]; G.vsuggested=sv.suggested||null; G.vwhy=sv.why||null; G.voice=sv.chosen||null; G.giver=giverKnown(sv);
+  if(sv.lead_question===true||sv.lead_question===false) J.lead_question=sv.lead_question;     // 14 Oct (B59.4, p40)
   // 14 Oct (B55a, VOX-16): a gift duet whose lead voice was never answered is not finished - the PC will not sing a guessed lead,
   // so Finished shows the music step again with the question (the duet already chosen, the lead it chose shown when it has one)
-  if(G.voice==='duet'&&J.is_gift&&!G.giver) return false;
+  if(G.voice==='duet'&&asksLead()&&!G.giver) return false;              // 14 Oct (B59.4): a couple's duet too
   return !!G.voice||!G.voices.length;
 }
 const needVoice=()=>!G.voice&&G.voices.length>0;
@@ -3542,9 +3543,13 @@ async function pickVoice(slug){
    set_giver_voice(p_token, 'female' | 'male') (server-wanted-p35) saves collections.giver_voice; a giver voice the server already
    has is shown selected. A refused or failed save says so - never a "Thank you" for an answer that was not kept.
    Test: Song/pipeline/page_tests_b53_giver_voice. */
+/* 14 Oct 2026 (ADDITIONS-2026-10-13 B59.4, Nigel: a woman who picks the duet for a couple's film - "YES - her own voice leads"): the
+   question is asked for ANY duet sung by one person - a gift, or a couple's film (the owner and one other). The server says which:
+   journey / suggest_voice lead_question (server-wanted-p40). A server without that key (before p40): a gift only, as before. */
+const asksLead=()=>(J.lead_question===true||J.lead_question===false)?J.lead_question:!!J.is_gift;
 const giverKnown=sv=>{ const v=(sv&&sv.giver_voice)||J.giver_voice||G.giver||null; return v==='female'||v==='male'?v:null; };
 function giverHTML(){
-  if(!(J.is_gift&&G.voice==='duet')) return '';
+  if(!(asksLead()&&G.voice==='duet')) return '';
   const b=(v,w)=>`<button type="button" data-giver="${v}" aria-pressed="${G.giver===v}">${w}</button>`;
   return `<div class="card" id="givervoice" style="margin-top:14px"><h3 style="margin:0 0 10px">The lead voice sings your lines - should it sound like you?</h3>
     <div class="acts">${b('female',"A woman's voice leads")}${b('male',"A man's voice leads")}</div>

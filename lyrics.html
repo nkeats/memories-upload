@@ -623,7 +623,10 @@ async function load(){
       :(sv&&!sv.error&&sv.chosen==='duet')?{voices:[],chosen:'duet',returning:true}:null; }
   catch(_){ VO=null; }
   if(VO){ try{ const j=await rpc('journey',{p_token:TOKEN});        // B53 3: a gift? and its giver voice, if already saved
-      const gv=(j&&j.giver_voice)||null; VO.gift=!!(j&&!j.error&&j.is_gift); VO.giver=gv==='female'||gv==='male'?gv:null; VO.gerr=''; }
+      // 14 Oct (B59.4, Nigel): any duet sung by one person is asked - a gift or a couple's film (journey.lead_question, p40);
+      // a server without that key: a gift only, as before. VO.gift = 'this film is asked whose voice leads'.
+      const ok=!!(j&&!j.error), lq=ok&&(j.lead_question===true||j.lead_question===false)?j.lead_question:null;
+      const gv=(j&&j.giver_voice)||null; VO.gift=ok&&(lq===null?!!j.is_gift:lq); VO.giver=gv==='female'||gv==='male'?gv:null; VO.gerr=''; }
     catch(e){ report('journey (gift)',e); VO.gift=false; } }
   if(VO&&VO.returning&&!VO.gift) VO=null;                        // not a gift: nothing to show once the voice is chosen
   await loadPhotos();
