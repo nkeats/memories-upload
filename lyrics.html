@@ -356,7 +356,7 @@ function giverHTML(){
   const b=(v,w)=>`<button class="b${VO.giver===v?' go':''}" type="button" data-giver="${v}" aria-pressed="${VO.giver===v}">${w}</button>`;
   return `<div class="card" id="givervoice"><p style="margin:0 0 10px"><b>The lead voice sings your lines - should it sound like you?</b></p>
     <div class="row">${b('female',"A woman's voice leads")}${b('male',"A man's voice leads")}</div>
-    <p class="sub" style="margin:8px 0 0">The other voice joins in on the chorus.</p>
+    <p class="sub" style="margin:8px 0 0">The other voice adds a soft harmony on the chorus.</p>
     ${VO.gerr?`<div class="err" id="gverr" role="alert">${esc(VO.gerr)}</div>`
       :VO.giver?`<p class="sub" id="gvthanks" role="status" style="margin:8px 0 0">Thank you. You can change it until we start singing.</p>`:''}</div>`;
 }
