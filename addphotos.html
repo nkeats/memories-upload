@@ -81,6 +81,7 @@ button:focus-visible{outline:3px solid var(--goldline);outline-offset:2px}
 <body>
 <div class="wrap" id="stage"><p class="lede">One moment…</p></div>
 <input type="file" id="file" accept="image/*,.heic,.heif" multiple tabindex="-1" aria-label="Choose photos to add">
+<script src="pickcopy.js"></script>
 <script>
 const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
 const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
@@ -147,14 +148,38 @@ async function addOne(it,f){
   if(s.status===410){ finished(s.j); return {stop:true}; }
   if(s.j&&s.j.duplicate) return {bad:'You’ve already added that one.'};
   if(!s.j||!s.j.signed_url) return {bad:(s.j&&(s.j.detail||s.j.error))||'That one didn’t go through. Please try again.'};
-  const put=await fetch(s.j.signed_url,{method:'PUT',headers:{'Content-Type':mime||'application/octet-stream'},body:f});
+  let put;
+  try{ put=await fetch(s.j.signed_url,{method:'PUT',headers:{'Content-Type':mime||'application/octet-stream'},body:f}); }
+  catch(e){ try{ await call({action:'discard',asset_id:s.j.asset_id}); }catch(_){} throw e; }   // B66: never leave it reserved
   if(!put.ok){ await call({action:'discard',asset_id:s.j.asset_id}); return {bad:'That one didn’t go through. Please try again.'}; }
   const c=await call({action:'confirm',asset_id:s.j.asset_id,chapter_id:it.chapter_id});
   if(c.status===410){ finished(c.j); return {stop:true}; }
   if(!c.j||!c.j.ok) return {bad:(c.j&&(c.j.detail||c.j.error))||'That one didn’t go through. Please try again.'};
   it.usable=(it.usable||0)+1; if(REQ.film) REQ.film.usable=(REQ.film.usable||0)+1;
-  (it.fresh=it.fresh||[]).push(URL.createObjectURL(f));
+  (it.fresh=it.fresh||[]).push(await preview(f));
   return {ok:true};
+}
+/* 16 Oct (B66, Tester 1 moved his photos while they went in): each picked photo is first copied on her own device (pickcopy.js)
+   and sent from the copy, which is deleted once it is in. A photo that can no longer be read says so plainly - never a
+   connection message. Test: Song/pipeline/page_tests_b66_moved. */
+const MISSING_TEXT="We couldn't find this photo - it may have been moved or deleted. Please add it again.";
+async function readable(f){
+  if(window.PickCopy) return PickCopy.readable(f);
+  if(!f||!f.size) return false;
+  try{ await f.slice(0,1).arrayBuffer(); return true; }catch(_){ return false; }
+}
+async function preview(f){                         // a small picture in memory: the copy it came from is deleted next
+  try{ const b=await createImageBitmap(f,{resizeWidth:320}); const c=document.createElement('canvas'); c.width=b.width; c.height=b.height;
+       c.getContext('2d').drawImage(b,0,0); const j=await new Promise(r=>c.toBlob(r,'image/jpeg',0.8)); if(j) return URL.createObjectURL(j); }
+  catch(_){}
+  return URL.createObjectURL(f);
+}
+async function copies(files){                      // -> [{f, copy, missing}] in the order picked
+  const out=files.map(f=>({f}));
+  const PC=window.PickCopy;
+  if(!PC||!(await PC.room(files.reduce((a,f)=>a+f.size,0)))) return out;   // no copy: as before
+  for(const o of out){ const c=await PC.copy(o.f); if(c&&c.missing) o.missing=true; else if(c){ o.f=c.file; o.copy=c.name; } }
+  return out;
 }
 $('file').addEventListener('change',async()=>{
   const files=[...$('file').files]; $('file').value='';
@@ -163,8 +188,13 @@ $('file').addEventListener('change',async()=>{
   const it=REQ.items[k];
   BUSY=k; it.note={text:'Adding your photo'+(files.length>1?'s':'')+'…'}; paint();
   let added=0, bad=null;
-  for(const f of files){
-    let r; try{ r=await addOne(it,f); }catch(e){ r={bad:'That one didn’t go through. Please check your connection and try again.'}; }
+  for(const o of await copies(files)){
+    const f=o.f;
+    let r;
+    if(o.missing||!(await readable(f))) r={bad:MISSING_TEXT};
+    else { try{ r=await addOne(it,f); }
+           catch(e){ r={bad:(await readable(f))?'That one didn’t go through. Please check your connection and try again.':MISSING_TEXT}; } }
+    if(o.copy&&window.PickCopy) PickCopy.drop(o.copy);
     if(r.stop) return;
     if(r.ok) added++; else bad=r.bad;
   }

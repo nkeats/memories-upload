@@ -377,6 +377,7 @@ function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?S
 <div class="sheet hide" id="sheet"></div>
 <div class="nav hide" id="nav"></div>
 
+<script src="pickcopy.js"></script>
 <script type="module">
 /* ═══════════════════════════════════════════════════════════════════
    ONE LINK.  /?t=TOKEN  is the only address the customer ever has.
@@ -1236,6 +1237,7 @@ async function showUploadPage(){
     <div class="drop" id="drop"><b>Choose photos</b>
       <span>Or drag them here. You can send video too.</span>
       <input type="file" id="file" multiple accept="image/*,video/*,.heic,.heif" class="hide"></div>
+    <input type="file" id="refile" multiple accept="image/*,video/*,.heic,.heif" class="hide" aria-label="Add the photo again">
     <div id="filmmeter" class="hide" aria-live="polite"></div>
     <p class="lede" id="songline" aria-live="polite" style="margin:12px 0 18px"></p>
     <div id="unotices" aria-live="polite"></div>
@@ -1253,6 +1255,7 @@ async function showUploadPage(){
       <button class="chip" id="pmore" type="button">Add someone</button></p>`);
   $('drop').onclick=()=>$('file').click();
   $('file').onchange=e=>pick(e.target.files);
+  $('refile').onchange=e=>readd(e.target.files);
   $('drop').ondragover=e=>{e.preventDefault();$('drop').classList.add('over');};
   $('drop').ondragleave=()=>$('drop').classList.remove('over');
   $('drop').ondrop=e=>{e.preventDefault();$('drop').classList.remove('over');pick(e.dataTransfer.files);};
@@ -1533,66 +1536,121 @@ const CLS={exif:'exif',filename:'',modified:'',none:'none'};
    stay where she can see them. */
 let pickRun=0;
 const MAX_VIDEO_B=50*1024*1024, MAX_PHOTO_B=25*1024*1024;     // the upload function's own limits (413 above them)
+/* 16 Oct (B66, Tester 1 moved his photos to another folder while they went in - every moved one failed "Failed to fetch", and
+   the retry retried the same missing file): each picked file is first copied on her own device (pickcopy.js) and everything after
+   reads that copy. A file that can no longer be read is NOT a network failure: it says so in plain words, is never retried, and
+   gets "Add it again" - the same name and size drops back into its own place. Test: Song/pipeline/page_tests_b66_moved. */
+const MISSING_TEXT="We couldn't find this photo - it may have been moved or deleted. Please add it again.";
+async function readable(f){
+  if(window.PickCopy) return PickCopy.readable(f);
+  if(!f||!f.size) return false;
+  try{ await f.slice(0,1).arrayBuffer(); return true; }catch(_){ return false; }
+}
+function goneError(){ const e=new Error('the file could not be read'); e.gone=true; return e; }
+function lost(item){ item.status='missing'; item.err=MISSING_TEXT; }
+function dropCopy(item){ if(item.copy&&window.PickCopy) PickCopy.drop(item.copy); item.copy=null; }
+function overLimit(f){ return isVideoFile(f)?f.size>MAX_VIDEO_B:f.size>MAX_PHOTO_B; }
+async function copyIn(items,live){
+  const PC=window.PickCopy; if(!PC) return;
+  const want=items.filter(i=>!overLimit(i.file));           // too big is refused anyway - never copied
+  const bytes=want.reduce((a,i)=>a+i.file.size,0);
+  if(!want.length) return;
+  if(!(await PC.room(bytes))){ report('pick copy skipped',new Error(PC.why()),{files:want.length,mb:Math.round(bytes/1048576)}); return; }   // no copy: as before
+  let failed=0;
+  for(const item of want){
+    if(!live()) return;
+    const c=await PC.copy(item.file);
+    if(c&&c.missing) item.missing=true;
+    else if(c){ item.file=c.file; item.copy=c.name; }
+    else failed++;
+  }
+  if(failed) report('pick copy failed',new Error(PC.why()),{files:failed});   // what each browser did (user_agent is in the report)
+}
+function shasBut(item){ return queue.filter(q=>q!==item&&q.sha&&!['dup','toobig','missing'].includes(q.status)).map(q=>q.sha); }
 async function pick(files){
   if(QUOTE){ songGuide(COUNTED); return; }                // over the long tier: nothing more until a price is agreed
-  const run=++pickRun;
-  const fresh=[...files].map(f=>({file:f,status:'reading'}));
+  const run=++pickRun, live=()=>run===pickRun;           // she picked again — that pick carries on from here
+  const fresh=[...files].map(f=>({file:f,status:'reading',pickName:f.name,pickSize:f.size}));
   if(!fresh.length) return;
   queue.push(...fresh);
   $('picked').classList.remove('hide'); $('send').textContent='Add these'; $('prog').style.width='0';
   $('send').disabled=true;                                 // until every new file is read and hashed
   paintQueue();
-  const batch=queue.filter(q=>q.sha&&q.status!=='dup').map(q=>q.sha);   // so the same file chosen twice is caught too
-  let heicNote=false;
+  await copyIn(fresh,live);                                // B66: copied first, before anything else reads them
   for(const item of fresh){
-    if(run!==pickRun) return;                              // she picked again — that pick carries on from here
-    const d=await dateOf(item.file); item.at=d.at; item.src=d.src; item.device=d.device;
-    item.sha=await shaOf(item.file);                      // before any conversion: the file as she has it
-    if(isHeicFile(item.file)){
-      item.status='converting'; item.heic=true; if(!heicNote){ heicNote=true; paintQueue(); }
-      try{ item.file=await toJpeg(item.file); }
-      catch(e){ report('heic convert',e,{file:item.file.name,size:item.file.size}); item.unconverted=true; }
-      if(run!==pickRun) return;
-    }
-    if(isVideoFile(item.file)){
-      item.video=true; item.status='reading'; paintQueue();
-      const pv=await probeVideo(item.file);
-      if(run!==pickRun) return;
-      item.duration=pv.duration; item.thumb=pv.frame; item.has_speech=pv.has_speech; item.noFrame=pv.frameFailed;
-      if(pv.frameFailed) report('video frame',new Error('no frame'),{file:item.file.name,type:item.file.type,size:item.file.size});
-      item.phash=item.thumb?await phashOf(new File([item.thumb],'frame.jpg',{type:'image/jpeg'})):null;
-    }else{ item.phash=await phashOf(item.file); const th=await thumbOf(item.file);
-      item.thumb=th.blob; item.sharpness=th.sharpness; item.brightness=th.brightness; }
-    /* 16 Oct (her 115 MB .mov): too big is said BEFORE anything is sent - the server's own limits (a video 50 MB, a photo 25 MB) */
-    const mb=Math.round(item.file.size/1048576);
-    if(item.video&&item.file.size>MAX_VIDEO_B){ item.status='toobig';
-      item.err=`this video is ${mb} MB - we can take videos up to 50 MB. Trim it on your phone, or choose a shorter one.`; }
-    else if(!item.video&&item.file.size>MAX_PHOTO_B){ item.status='toobig';
-      item.err=`this photo is ${mb} MB - we can take photos up to 25 MB.`; }
-    else if(item.sha&&(alreadyIn(item.sha)||batch.includes(item.sha))) item.status='dup';
-    else { item.status='ready'; if(item.sha) batch.push(item.sha); }
-    paintQueue();
+    if(!live()) return;
+    if(!(await analyse(item,shasBut(item),live))) return;  // so the same file chosen twice is caught too
   }
-  if(run!==pickRun) return;
+  if(!live()) return;
   $('send').disabled=!queue.some(q=>q.status==='ready'||q.status==='failed');
+}
+async function analyse(item,batch,live){
+  if(item.missing||!(await readable(item.file))){ lost(item); paintQueue(); return true; }
+  const d=await dateOf(item.file); item.at=d.at; item.src=d.src; item.device=d.device;
+  item.sha=await shaOf(item.file);                        // before any conversion: the file as she has it
+  if(isHeicFile(item.file)){
+    item.status='converting'; item.heic=true; paintQueue();
+    try{ item.file=await toJpeg(item.file); dropCopy(item); }          // the JPEG is in memory: the copy is done with
+    catch(e){ report('heic convert',e,{file:item.file.name,size:item.file.size}); item.unconverted=true; }
+    if(!live()) return false;
+  }
+  if(isVideoFile(item.file)){
+    item.video=true; item.status='reading'; paintQueue();
+    const pv=await probeVideo(item.file);
+    if(!live()) return false;
+    item.duration=pv.duration; item.thumb=pv.frame; item.has_speech=pv.has_speech; item.noFrame=pv.frameFailed;
+    if(pv.frameFailed) report('video frame',new Error('no frame'),{file:item.file.name,type:item.file.type,size:item.file.size});
+    item.phash=item.thumb?await phashOf(new File([item.thumb],'frame.jpg',{type:'image/jpeg'})):null;
+  }else{ item.phash=await phashOf(item.file); const th=await thumbOf(item.file);
+    item.thumb=th.blob; item.sharpness=th.sharpness; item.brightness=th.brightness; }
+  /* 16 Oct (her 115 MB .mov): too big is said BEFORE anything is sent - the server's own limits (a video 50 MB, a photo 25 MB) */
+  const mb=Math.round(item.file.size/1048576);
+  if(item.video&&item.file.size>MAX_VIDEO_B){ item.status='toobig';
+    item.err=`this video is ${mb} MB - we can take videos up to 50 MB. Trim it on your phone, or choose a shorter one.`; }
+  else if(!item.video&&item.file.size>MAX_PHOTO_B){ item.status='toobig';
+    item.err=`this photo is ${mb} MB - we can take photos up to 25 MB.`; }
+  else if(!(await readable(item.file))) lost(item);       // no copy, and it went while we were looking at it
+  else if(item.sha&&(alreadyIn(item.sha)||batch.includes(item.sha))) item.status='dup';
+  else item.status='ready';
+  paintQueue();
+  return true;
+}
+async function readd(files){
+  const rest=[], back=[];
+  for(const f of [...files]){
+    const item=queue.find(q=>q.status==='missing'&&q.pickName===f.name&&q.pickSize===f.size);
+    if(!item){ rest.push(f); continue; }
+    const was=item.sha;
+    dropCopy(item); item.file=f; item.missing=false; item.status='reading'; item.err=''; paintQueue();
+    await copyIn([item],()=>true);
+    await analyse(item,shasBut(item),()=>true);
+    if(item.sha!==was) item.signed_url=null;              // not the same bytes after all: signed afresh
+    back.push(item);
+  }
+  $('refile').value='';
+  if(rest.length){ await pick(rest); return; }            // not one of the missing ones: an ordinary new photo
+  $('send').disabled=!queue.some(q=>q.status==='ready'||q.status==='failed');
+  if(!SENDING&&back.some(q=>q.tried&&q.status==='ready')) send();   // she had already pressed send: it carries on
 }
 function paintQueue(){
   const dups=queue.filter(q=>q.status==='dup'), rest=queue.filter(q=>q.status!=='dup');
   const n=rest.length, undated=rest.filter(q=>q.src==='none').length;
   const reading=queue.some(q=>q.status==='reading'), converting=queue.some(q=>q.status==='converting');
-  const inn=queue.filter(q=>q.status==='done').length, failed=queue.filter(q=>q.status==='failed').length;
+  const inn=queue.filter(q=>q.status==='done').length, retry=queue.filter(q=>q.status==='failed').length,
+        failed=retry+queue.filter(q=>q.status==='missing').length;
   $('summary').innerHTML=(n?`<strong>${plural(n,'photo')}</strong>`:'<strong>Nothing new</strong>')+
     (converting?' — <span class="ok">iPhone photos need converting — one moment.</span>':
      reading?' — having a look…':
      (n?(undated?` — <span class="bad">${undated} with no date</span>, which you'll place by hand later.`:' — all dated.'):''))+
     (inn&&inn<n?`<br>${inn} of them in so far.`:'')+
-    (failed?`<br><span class="bad">${failed===1?'One':failed} didn't go in</span> — the reason is next to ${failed===1?'it':'each one'}. Press the button to try again.`:'')+
+    (failed?`<br><span class="bad">${failed===1?'One':failed} didn't go in</span> — the reason is next to ${failed===1?'it':'each one'}.${retry?' Press the button to try again.':''}`:'')+
     (queue.some(q=>q.status==='held')?`<br><span class="bad">${plural(queue.filter(q=>q.status==='held').length,'photo')} not added</span> — over the longest film. Contact us for a quote; the ones already in stay.`:'')+
     (dups.length?`<br><span class="ok">You've already added ${dups.length===1?'one of these':dups.length+' of these'}</span> — we'll skip ${dups.length===1?'it':'them'}.`:'');
   const word={reading:'having a look',converting:'converting',ready:'ready',adding:'adding'};
   $('rows').innerHTML=queue.map(q=>`<div class="row"><span class="nm">${esc(q.file.name)}</span>
-    <span class="st ${q.status==='done'||q.status==='dup'?'ok':q.status==='failed'||q.status==='held'||q.status==='toobig'?'bad':'wait'}">
-      ${q.status==='done'?'in':q.status==='dup'?(q.err?esc(q.err):"you've already added this one")+(q.err||QUOTE?'':` <button class="chip" type="button" data-anyway="${queue.indexOf(q)}" style="padding:4px 10px;font-size:12.5px;margin-left:6px">Add it anyway</button>`):q.status==='failed'||q.status==='held'||q.status==='toobig'?(esc(q.err)||"didn't go in"):(word[q.status]||esc(q.status))}
+    <span class="st ${q.status==='done'||q.status==='dup'?'ok':q.status==='failed'||q.status==='held'||q.status==='toobig'||q.status==='missing'?'bad':'wait'}">
+      ${q.status==='done'?'in':q.status==='dup'?(q.err?esc(q.err):"you've already added this one")+(q.err||QUOTE?'':` <button class="chip" type="button" data-anyway="${queue.indexOf(q)}" style="padding:4px 10px;font-size:12.5px;margin-left:6px">Add it anyway</button>`):q.status==='missing'?`${esc(MISSING_TEXT)} <button class="chip" type="button" data-readd="${queue.indexOf(q)}" style="padding:4px 10px;font-size:12.5px;margin-left:6px">Add it again</button>`
+       :q.status==='failed'||q.status==='held'||q.status==='toobig'?(esc(q.err)||"didn't go in"):(word[q.status]||esc(q.status))}
       ${q.video?`<span class="tagd">video${q.duration?' · '+Math.round(q.duration)+' s':''}${q.has_speech?' · someone talking':''}${q.noFrame?' · no still — it’ll still be in your film':''}</span>`:''}
       ${q.src&&q.status!=='dup'?`<span class="tagd ${CLS[q.src]}">${LABEL[q.src]}</span>`:''}</span></div>`).join('');
 }
@@ -1603,6 +1661,7 @@ async function send(){
   if(SENDING) return;
   SENDING=true; keepOpen(true);
   try{ await sendLoop(); } finally{ SENDING=false; keepOpen(false); }
+  if(queue.some(q=>q.tried&&q.status==='ready')) return send();   // B66: added again while this loop was past it
 }
 function keepOpen(on){
   let el=$('keepopen');
@@ -1610,6 +1669,12 @@ function keepOpen(on){
     el.setAttribute('role','status'); b.parentNode.insertBefore(el,b.nextSibling); }
   el.textContent=on?'Keep this page open and your phone unlocked until it says done.':'';
   el.classList.toggle('hide',!on);
+  let w=$('keepwhere');                                    // B66: by the upload bar - a photo moved mid-upload cannot be sent
+  if(!w){ const bar=$('prog')&&$('prog').parentNode; if(!bar||!bar.parentNode) return;
+    w=document.createElement('p'); w.id='keepwhere'; w.className='lede'; w.setAttribute('role','status');
+    bar.parentNode.insertBefore(w,bar.nextSibling); }
+  w.textContent=on?'Keep your photos where they are until this says done.':'';
+  w.classList.toggle('hide',!on);
 }
 (function otherTab(){
   try{
@@ -1626,7 +1691,8 @@ async function putOnce(q){
   /* "Load failed" (the phone lost the connection): the same file again, up to 3 times, with a short wait */
   for(let i=0;;i++){
     try{ return await fetch(q.signed_url,{method:'PUT',headers:{'Content-Type':mimeOf(q.file)},body:q.file}); }
-    catch(e){ if(i>=PUT_TRIES-1) throw e; await sleep(PUT_WAIT_MS[i]||6000); }
+    catch(e){ if(!(await readable(q.file))) throw goneError();   // B66: a moved file - trying again cannot help
+      if(i>=PUT_TRIES-1) throw e; await sleep(PUT_WAIT_MS[i]||6000); }
   }
 }
 function alreadyThere(status,body){
@@ -1643,11 +1709,14 @@ async function sendLoop(){
   for(const q of todo){
     if(q.status==='done'){done++;continue;}
     if(q.status==='toobig'){done++;continue;}               // refused before sending (16 Oct)
+    if(q.status==='missing'){done++;continue;}              // B66: waits for "Add it again"
+    q.tried=true;
     /* Last look before it goes: something with the same hash may have gone in
        moments ago from this very batch, or from another device on the same link. */
     if(!q.force&&alreadyIn(q.sha)){ q.status='dup'; paintQueue(); continue; }
     q.status='adding'; paintQueue();
     try{
+      if(!(await readable(q.file))) throw goneError();     // B66: gone before it was signed - nothing reserved for it
       /* A retry after a dropped connection reuses the signed URL it already
          has rather than asking for another: one reservation per photo. (The
          server also ignores unconfirmed rows when it looks for duplicates and
@@ -1688,7 +1757,7 @@ async function sendLoop(){
         ...(q.video?{duration_s:q.duration,has_speech:q.has_speech,frame_ok:!!q.thumb,thumb_path:q.thumb_path||null}
                    :{sharpness:q.sharpness??null,brightness:q.brightness??null})});
       if(!c.ok) throw new Error(c.j.error||'confirm failed');
-      q.status='done';
+      q.status='done'; dropCopy(q);                         // B66: confirmed - the copy on her device goes at once
       remember(q.sha);
       inSoFar++; COUNTED++;                                 // provisional until gallery says otherwise
       let e=await songGuide(COUNTED);
@@ -1696,15 +1765,19 @@ async function sendLoop(){
       if(e&&QUOTE){                                         // stop here: the rest are not sent, the ones in stay
         queue.forEach(x=>{ if(x.status==='ready'||x.status==='failed'||x.status==='adding') { x.status='held'; x.err='not added — over the longest film; contact us for a quote'; } });
         paintQueue(); break; }
-    }catch(e){ q.status='failed'; q.err="didn't go in — "+e.message; report('upload',e,{file:q.file.name,size:q.file.size,mime:mimeOf(q.file),heic:!!q.heic,...(e.detail||{})}); }
+    }catch(e){
+      if(e.gone||!(await readable(q.file))){ lost(q); report('upload file gone',e,{file:q.file.name,size:q.file.size,copy:!!q.copy}); }
+      else { q.status='failed'; q.err="didn't go in — "+e.message; report('upload',e,{file:q.file.name,size:q.file.size,mime:mimeOf(q.file),heic:!!q.heic,...(e.detail||{})}); } }
     done++; $('prog').style.width=Math.round(done/Math.max(1,todo.length)*100)+'%'; paintQueue();
   }
-  const failed=queue.filter(q=>q.status==='failed').length;
-  $('send').disabled=!failed||QUOTE;
-  $('send').textContent=QUOTE?'Stopped — contact us for a quote':failed?`Try the ${failed} that didn't go in`:'All in';
+  const failed=queue.filter(q=>q.status==='failed').length, missing=queue.filter(q=>q.status==='missing').length,
+        ready=queue.filter(q=>q.status==='ready').length;
+  $('send').disabled=!(failed||ready)||QUOTE;
+  $('send').textContent=QUOTE?'Stopped — contact us for a quote':failed?`Try the ${failed} that didn't go in`:ready?'Add these'
+    :missing?(missing===1?'One photo to add again':`${missing} photos to add again`):'All in';
   $('file').value='';
-  if(!failed&&!QUOTE){ setTimeout(()=>{ if(page!=='upload'||queue.some(q=>q.status==='failed'||q.status==='held')) return;
-    queue=[]; $('picked').classList.add('hide'); $('send').textContent='Add these'; $('prog').style.width='0'; },2200); }
+  if(!failed&&!missing&&!ready&&!QUOTE){ setTimeout(()=>{ if(page!=='upload'||queue.some(q=>['failed','held','missing','ready'].includes(q.status))) return;
+    queue.forEach(dropCopy); queue=[]; $('picked').classList.add('hide'); $('send').textContent='Add these'; $('prog').style.width='0'; },2200); }
   await look();
 }
 function finished(sentence){
@@ -1773,14 +1846,14 @@ async function look(){
    plainly ("48 photos didn't go in") and CHOOSES to carry on without them. */
 let SKIP_FAILED=false;
 function notIn(){
-  return {failed:queue.filter(q=>q.status==='failed'),
+  return {failed:queue.filter(q=>q.status==='failed'||q.status==='missing'),       // B66: a moved photo is not in either
           going:SENDING||queue.some(q=>['adding','ready','reading','converting'].includes(q.status))};
 }
 function failedSheet(n){
   const s=$('sheet');
   s.innerHTML=`<div class="in" id="failedsheet"><h3>${n===1?'One photo':n+' photos'} didn't go in</h3>
     <p>${n===1?'It is':'They are'} not in your film yet. Try again - on Wi-Fi if you can, with this page open - or carry on without ${n===1?'it':'them'}.</p>
-    <p class="small">${queue.filter(q=>q.status==='failed').slice(0,6).map(q=>esc(q.file.name)).join(', ')}${n>6?' and '+(n-6)+' more':''}</p>
+    <p class="small">${queue.filter(q=>q.status==='failed'||q.status==='missing').slice(0,6).map(q=>esc(q.file.name)).join(', ')}${n>6?' and '+(n-6)+' more':''}</p>
     <div class="acts"><button class="yes" id="failedRetry" type="button">Try again</button>
     <button id="failedSkip" type="button">Carry on without ${n===1?'it':'them'}</button></div></div>`;
   s.classList.remove('hide');
@@ -3994,6 +4067,7 @@ document.addEventListener('click',async e=>{
   /* upload */
   if(t.dataset.anyway!==undefined){ const q=queue[+t.dataset.anyway]; if(q&&q.status==='dup'&&!QUOTE){ q.status='ready'; q.force=true; paintQueue(); $('send').disabled=false; } return; }
   if(t.id==='allin'){ askAllIn(); return; }
+  if(t.dataset.readd!==undefined){ $('refile').click(); return; }           // B66: the picker; same name + size = its own place
   if(t.id==='failedRetry'){ $('sheet').classList.add('hide'); send(); return; }
   if(t.id==='failedSkip'){ SKIP_FAILED=true; $('sheet').classList.add('hide'); askAllIn(); return; }
   if(t.id==='shortAdd'||t.dataset.smadd){ shortAdd(); return; }
