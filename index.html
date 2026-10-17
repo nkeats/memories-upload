@@ -393,7 +393,7 @@ function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?S
 const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
 const FN=SB+'/functions/v1';
 const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
-const BUILD='2026-10-21b';                                 // bump on every change (1 Oct: there was no stamp before)
+const BUILD='2026-10-17-b69';                               // bump on every change (1 Oct: there was no stamp before)
 document.documentElement.dataset.build=BUILD;
 let TOKEN=new URLSearchParams(location.search).get('t')||'';
 /* ?a=<answer token> — somebody else answering the same memories (on a film
@@ -1551,21 +1551,49 @@ function goneError(){ const e=new Error('the file could not be read'); e.gone=tr
 function lost(item){ item.status='missing'; item.err=MISSING_TEXT; }
 function dropCopy(item){ if(item.copy&&window.PickCopy) PickCopy.drop(item.copy); item.copy=null; }
 function overLimit(f){ return isVideoFile(f)?f.size>MAX_VIDEO_B:f.size>MAX_PHOTO_B; }
+/* 17 Oct (B69, after Nigel's phone test: the log could not say which phone the photos came from, or prove the copy ran - a check
+   that cannot be read back does not count): ONE line per batch of photos picked, success or not, in the page's own log (flow
+   report_error, at 'pick copy'): "Safari 18 / iOS · copy used · 4 photos". The browser family and major version and the OS family
+   ONLY - no file name, no film link (url ''), no user agent (''), no email; detail is the build alone. The token goes with it, as
+   with every report, only so the server files the line against the film (flow v16 does not store it).
+   Test: Song/pipeline/page_tests_b69_batchline. */
+function browserLine(ua,touch){
+  ua=String(ua||'');
+  const tries=[[/EdgA?\/(\d+)/,'Edge'],[/EdgiOS\/(\d+)/,'Edge'],[/SamsungBrowser\/(\d+)/,'Samsung Internet'],[/OPR\/(\d+)/,'Opera'],
+               [/CriOS\/(\d+)/,'Chrome'],[/FxiOS\/(\d+)/,'Firefox'],[/Firefox\/(\d+)/,'Firefox'],[/Chrome\/(\d+)/,'Chrome'],
+               [/Version\/(\d+)[\d.]* (?:Mobile\/\S+ )?Safari\//,'Safari']];
+  let b='Browser', v='';
+  for(const [re,name] of tries){ const m=ua.match(re); if(m){ b=name; v=m[1]; break; } }
+  const os=/iPhone|iPad|iPod/.test(ua)||(/Macintosh/.test(ua)&&touch>1)?'iOS':/Android/.test(ua)?'Android':/Windows/.test(ua)?'Windows'
+          :/CrOS/.test(ua)?'ChromeOS':/Macintosh|Mac OS X/.test(ua)?'macOS':/Linux/.test(ua)?'Linux':'another OS';
+  return `${b}${v?' '+v:''} / ${os}`;
+}
+window.browserLine=browserLine;
+function batchLine(copy,n){
+  try{
+    const msg=`${browserLine(navigator.userAgent,navigator.maxTouchPoints||0)} · ${copy} · ${n} photo${n===1?'':'s'}`;
+    fetch(FN+(ASK?'/answer-flow':'/flow'),{method:'POST',keepalive:true,headers:HDR,
+      body:JSON.stringify({token:TOKEN,action:'report_error',page:'index.html',at:'pick copy',what:'pick copy',message:msg,
+        detail:{build:BUILD},url:'',user_agent:''})}).catch(()=>{});
+  }catch(_){}
+}
 async function copyIn(items,live){
-  const PC=window.PickCopy; if(!PC) return;
+  const n=items.length, PC=window.PickCopy;
+  if(!PC) return batchLine('copy skipped: no private-storage copy on this page',n);
   const want=items.filter(i=>!overLimit(i.file));           // too big is refused anyway - never copied
   const bytes=want.reduce((a,i)=>a+i.file.size,0);
-  if(!want.length) return;
-  if(!(await PC.room(bytes))){ report('pick copy skipped',new Error(PC.why()),{files:want.length,mb:Math.round(bytes/1048576)}); return; }   // no copy: as before
-  let failed=0;
+  if(!want.length) return batchLine('copy skipped: every file is over the size limit',n);
+  if(!(await PC.room(bytes))) return batchLine('copy skipped: '+PC.why(),n);   // no copy: as before
+  let failed=0, done=0;
   for(const item of want){
-    if(!live()) return;
+    if(!live()) break;                                     // she picked again - this batch's line still says what happened
     const c=await PC.copy(item.file);
+    done++;
     if(c&&c.missing) item.missing=true;
     else if(c){ item.file=c.file; item.copy=c.name; }
     else failed++;
   }
-  if(failed) report('pick copy failed',new Error(PC.why()),{files:failed});   // what each browser did (user_agent is in the report)
+  batchLine(failed?`copy partly used: ${failed} of ${done} failed: ${PC.why()}`:done<want.length?`copy used for ${done} of ${want.length} (picked again)`:'copy used',n);
 }
 function shasBut(item){ return queue.filter(q=>q!==item&&q.sha&&!['dup','toobig','missing'].includes(q.status)).map(q=>q.sha); }
 async function pick(files){

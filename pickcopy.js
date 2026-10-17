@@ -45,7 +45,8 @@
     dir=await top.getDirectoryHandle(TAB,{create:true});
     return true;
   }
-  var ready=open().catch(function(e){ dir=null; why='private storage refused: '+((e&&e.name)||'')+' '+((e&&e.message)||''); return false; });
+  /* 17 Oct (B69): a reason carries an error's NAME only - its message could carry a file name, and the reason goes in the log */
+  var ready=open().catch(function(e){ dir=null; why='private storage refused: '+((e&&e.name)||'unknown'); return false; });
 
   async function room(bytes){
     if(!(await ready)||!dir) return false;
@@ -69,7 +70,7 @@
     }catch(e){
       try{ await dir.removeEntry(name); }catch(_){}
       if(gone(e)||!(await readable(f))) return {missing:true};
-      why='the copy failed: '+((e&&e.name)||'')+' '+((e&&e.message)||''); return null;
+      why='the copy failed: '+((e&&e.name)||'unknown'); return null;
     }
   }
   async function drop(name){
