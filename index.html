@@ -3012,7 +3012,7 @@ async function showAnswer(){
     let fq=[];
     try{ const r=await rpc('film_questions',{p_token:TOKEN});
       if(!r||r.error||!r.ok) throw new Error((r&&r.error)||'film_questions: bad reply');
-      fq=Array.isArray(r.questions)?r.questions:[]; }
+      fq=Array.isArray(r.questions)?r.questions:[]; FQ.name=r.name||''; }
     catch(e){ report('film_questions',e); }
     if(page!=='answer') return;
     /* 12 Oct night (INT-25): the heart questions (at:'end') are asked LAST, after every group - what it all meant, once the
@@ -3107,16 +3107,42 @@ function paintFilmQ(){
     ${q.setting?'':SAY_IT}
     <h2 style="margin-top:14px">${esc(q.question||'')}</h2>
     ${q.hint?`<p class="fqhint" style="color:var(--fg2);font-size:15px;line-height:1.5;margin:-4px 0 12px;max-width:56ch">${esc(q.hint)}</p>`:''}
-    ${q.setting?settingInput(q):`<textarea id="fqans" placeholder="${atEndQ?'In your own words — a few sentences is plenty.':'Tell us what happened — one particular time is best. A few sentences is plenty.'}" ${FQ.busy?'disabled':''}>${esc(FQ.draft)}</textarea>`}
-    <p class="lede" style="margin-top:10px"><button class="chip" id="fqskip" type="button" ${FQ.busy?'disabled':''}>Skip</button></p>
+    ${q.setting?settingInput(q):q._alt?`<textarea id="fqelsebox" placeholder="In your own words — a few sentences is plenty." ${FQ.busy?'disabled':''}>${esc(q._altDraft||'')}</textarea>`
+      :`<textarea id="fqans" placeholder="${atEndQ?'In your own words — a few sentences is plenty.':'Tell us what happened — one particular time is best. A few sentences is plenty.'}" ${FQ.busy?'disabled':''}>${esc(FQ.draft)}</textarea>`}
+    <p class="lede" style="margin-top:10px"><button class="chip" id="fqskip" type="button" ${FQ.busy?'disabled':''}>Skip</button>
+      ${q.setting?'':`<button class="chip" id="fqelse" type="button" aria-pressed="${!!q._alt}" ${FQ.busy?'disabled':''}>${esc(elseLabel())}</button>`}</p>
     <div style="margin-top:22px">${inviteCard()}</div>`;
   $('stage').className='';
   nav(`<button class="go" id="fqnext" ${FQ.busy?'disabled':''}>${FQ.busy?'Saving…':'Next →'}</button>`,
       atEndQ?'The heart of it':'Before the photos', FQ.i>0&&!FQ.busy, FQ.err?`<span class="fqerr" role="alert">${esc(FQ.err)}</span>`:'');
   $('sheet').classList.add('hide');
 }
+/* 17 Oct (B68.4, Tester 1): beside Skip, "Tell us something else about {name} instead" - a free box in place of the question. Its
+   words go to answer_instead (server-wanted-p41): their OWN answer (instead_<key>, the replaced question recorded with it), which the
+   writer reads like any other; the question itself is saved as skipped, so skips are still counted. {name} only when the film's
+   questions are about them (an anniversary's "Ash"; a holiday's are about the trip -> "Tell us something else instead"). */
+function elseLabel(){
+  const n=FQ.name||'', all=(FQ.list||[]).concat(FQ.end||[]);
+  return n&&all.some(q=>!q.setting&&String(q.question||'').includes(n))?`Tell us something else about ${n} instead`:'Tell us something else instead';
+}
+async function saveInstead(q){
+  const text=(q._altDraft||'').trim();
+  if(!text){ const b=$('fqelsebox'); if(b) b.focus(); return; }
+  FQ.busy=true; FQ.err=''; paintFilmQ();
+  try{ const r=await rpc('answer_instead',{p_token:TOKEN,p_key:q.key,p_answer:text});
+    if(!r||r.error||r.ok!==true) throw new Error((r&&r.error)||'answer_instead: bad reply'); }
+  catch(e){ report('answer_instead',e,{key:q.key}); FQ.busy=false; FQ.err='That didn’t save. Please press Next again.'; paintFilmQ(); return; }
+  if(page!=='answer'||screen!=='film') return;
+  Object.assign(q,{answer:'',skipped:true,done:true,instead:text}); delete q._draft;
+  FQ.busy=false;
+  const nx=nextAsked(FQ.i+1);
+  if(nx>=0){ goFilmQ(nx); scrollTo(0,0); return; }
+  if(FQ.phase==='end'){ if(HEART) return heartThanks(); scrollTo(0,0); return paintAllDone(); }
+  await toGroups();
+}
 async function saveFilmQ(skip){
   const q=FQ.list[FQ.i]; if(!q||FQ.busy) return;
+  if(!skip&&q._alt&&!q.setting) return saveInstead(q);
   const text=skip?'':(FQ.draft||'').trim();
   FQ.busy=true; FQ.err=''; paintFilmQ();
   try{ const r=q.setting?await rpc('answer_setting',{p_token:TOKEN,p_key:q.key,p_answer:text})
@@ -3205,7 +3231,7 @@ async function showHeart(){
   let fq=[];
   try{ const r=await rpc('film_questions',{p_token:TOKEN});
     if(!r||r.error||!r.ok) throw new Error((r&&r.error)||'film_questions: bad reply');
-    fq=(Array.isArray(r.questions)?r.questions:[]).filter(q=>q&&q.at==='end'); }
+    fq=(Array.isArray(r.questions)?r.questions:[]).filter(q=>q&&q.at==='end'); FQ.name=r.name||''; }
   catch(e){ report('heart questions',e);
     plain(`<h1>Couldn’t load the questions</h1><p class="do">Please try the link again in a moment.</p>
       <button class="big" id="retryRoute">Try again</button>`); return; }
@@ -4328,6 +4354,8 @@ document.addEventListener('click',async e=>{
     answerTurn(false); return; }
   if(t.id==='askip'){ answerTurn(true); return; }
   if(t.id==='fqnext'){ saveFilmQ(false); return; }
+  if(t.id==='fqelse'){ const q=FQ.list[FQ.i]; if(!q||FQ.busy) return; q._alt=!q._alt; FQ.err=''; paintFilmQ();
+    const b=$(q._alt?'fqelsebox':'fqans'); if(b) b.focus(); return; }
   if(t.id==='fqskip'){ saveFilmQ(true); return; }
   if(t.id==='funext'){ saveFollow(false); return; }
   if(t.id==='fuskip'){ saveFollow(true); return; }
@@ -4389,6 +4417,7 @@ document.addEventListener('input',e=>{
   if(e.target.id==='ans'){ draft=e.target.value; countUp();
     if(isPick(TURN)&&!turnBusy){ const b=$('anext'); if(b) b.disabled=!draft.trim(); } }
   if(e.target.id==='fuans'){ FU.draft=e.target.value; }
+  if(e.target.id==='fqelsebox'){ const q=FQ.list[FQ.i]; if(q) q._altDraft=e.target.value; return; }
   if(e.target.id==='fqans'||e.target.id==='fqdate'){ FQ.draft=e.target.value; const q=FQ.list[FQ.i]; if(q) q._draft=FQ.draft; }
   if(e.target.id==='what'){ whatDraft=e.target.value; const b=$('awrongsend'); if(b) b.disabled=!whatDraft.trim(); }
   if(e.target.id==='helpAsk'){ HELP.asked=e.target.value; }
