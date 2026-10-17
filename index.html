@@ -243,7 +243,7 @@ a:hover{text-decoration-thickness:2px!important}
 button,.b,.chip,.quiet,input[type=button],input[type=submit]{min-height:44px!important;min-width:44px!important;font-size:18px!important;
   background:var(--goldsoft)!important;color:var(--fg)!important;border:2px solid var(--goldline)!important;border-radius:10px!important;
   padding:10px 16px!important;cursor:pointer;font-weight:600}
-button.go,button.yes,button.big,button.b.yes,#go,#open,#fqnext,#tosort,#send,#allinYes,#rpick,.acts .yes{background:var(--brass)!important;
+button.go,button.yes,button.big,button.b.yes,#go,#open,#fqnext,#funext,#tosort,#send,#allinYes,#rpick,.acts .yes{background:var(--brass)!important;
   color:#1F1A12!important;border-color:var(--goldline)!important}
 button[aria-pressed=true]{background:var(--brass)!important;color:#1F1A12!important}
 button:disabled{opacity:.55}
@@ -393,7 +393,7 @@ function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?S
 const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
 const FN=SB+'/functions/v1';
 const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
-const BUILD='2026-10-17-b69';                               // bump on every change (1 Oct: there was no stamp before)
+const BUILD='2026-10-18-b73';                               // bump on every change (1 Oct: there was no stamp before)
 document.documentElement.dataset.build=BUILD;
 let TOKEN=new URLSearchParams(location.search).get('t')||'';
 /* ?a=<answer token> — somebody else answering the same memories (on a film
@@ -3103,7 +3103,7 @@ function paintFilmQ(){
     ${q.setting?'':SAY_IT}
     <h2 style="margin-top:14px">${esc(q.question||'')}</h2>
     ${q.hint?`<p class="fqhint" style="color:var(--fg2);font-size:15px;line-height:1.5;margin:-4px 0 12px;max-width:56ch">${esc(q.hint)}</p>`:''}
-    ${q.setting?settingInput(q):`<textarea id="fqans" placeholder="${atEndQ?'In your own words — a few sentences is plenty.':'Tell us what happened — a few sentences is plenty.'}" ${FQ.busy?'disabled':''}>${esc(FQ.draft)}</textarea>`}
+    ${q.setting?settingInput(q):`<textarea id="fqans" placeholder="${atEndQ?'In your own words — a few sentences is plenty.':'Tell us what happened — one particular time is best. A few sentences is plenty.'}" ${FQ.busy?'disabled':''}>${esc(FQ.draft)}</textarea>`}
     <p class="lede" style="margin-top:10px"><button class="chip" id="fqskip" type="button" ${FQ.busy?'disabled':''}>Skip</button></p>
     <div style="margin-top:22px">${inviteCard()}</div>`;
   $('stage').className='';
@@ -3128,10 +3128,68 @@ async function saveFilmQ(skip){
   if(page!=='answer'||screen!=='film') return;
   Object.assign(q,{answer:text,skipped:!text,done:true}); delete q._draft;
   FQ.busy=false;
+  const fk=followKind(q,text);                           // 18 Oct (B73.3): at most ONE follow-up, never a second
+  if(fk&&await followOk()&&page==='answer'&&screen==='film'){
+    FU.done.add(q.key); Object.assign(FU,{q,kind:fk,draft:'',busy:false,err:''}); paintFollow(); scrollTo(0,0); return; }
+  return afterFilmQ();
+}
+async function afterFilmQ(){
   const nx=nextAsked(FQ.i+1);                            // 8 Oct (A12): the next question whose "only if" holds
   if(nx>=0){ goFilmQ(nx); scrollTo(0,0); return; }
   if(FQ.phase==='end'){ if(HEART) return heartThanks(); scrollTo(0,0); return paintAllDone(); }   // INT-25: back to the end
   await toGroups();
+}
+/* ═══ ONE FOLLOW-UP ON A FILM QUESTION - 18 Oct 2026, ADDITIONS-2026-10-15 B73.3 ═══
+   Research (Business\Lyric emotion craft and interview questions.docx): one particular time beats "always" (measured); a general or
+   very short answer gets ONE "tell me more" (measured / practitioner). Code only - no model. Always skippable; never a second.
+     an answer with always / used to / every time / whenever / all the time / lots of (whole words) -> 'one_time'
+     else an answer under 15 words -> 'more'
+     never: a skipped answer, a settings question, saying, must, leave_out, hard_time, missing, furthest, notice
+   rpc answer_film_followup {p_token, p_key, p_kind, p_answer} -> {ok, key:<key>_more} (server-wanted-p41-interview-questions.sql);
+   the server writes the question text. Before the server has it (HTTP 404) no follow-up is ever shown - asked once a visit with
+   kind 'probe', which the live function refuses ("unknown kind") without writing anything. */
+const FU_NONE=new Set(['saying','must','leave_out','hard_time','missing','furthest','notice']);
+const FU_TEXT={one_time:'Pick one of those times. What happened that day?',
+               more:'Tell us a little more: who was there, where were you, what happened next?'};
+const FU_ALWAYS=/\b(always|used to|every time|whenever|all the time|lots of)\b/i;
+let FU={ok:null,q:null,kind:'',draft:'',busy:false,err:'',done:new Set()};
+function followKind(q,text){
+  if(!q||q.setting||!text||FU_NONE.has(q.key)||FU.done.has(q.key)) return null;
+  if(FU_ALWAYS.test(text)) return 'one_time';
+  return text.split(/\s+/).filter(Boolean).length<15?'more':null;
+}
+async function followOk(){
+  if(FU.ok!==null) return FU.ok;
+  try{ const r=await rpc('answer_film_followup',{p_token:TOKEN,p_key:'',p_kind:'probe',p_answer:''}); FU.ok=!!(r&&r.error); }
+  catch(_){ FU.ok=false; }                               // no function on this server (or no reply): never a follow-up this visit
+  return FU.ok;
+}
+function paintFollow(){
+  screen='film'; atEnd=false;
+  const q=FU.q; if(!q) return;
+  $('stage').innerHTML=`<div class="step">${esc(q.part||'')} · one more</div>
+    ${SAY_IT}
+    <p class="lede" id="fuabout" style="margin:14px 0 0;color:var(--fg2)">${esc(q.question||'')}</p>
+    <h2 id="fuq" style="margin-top:6px">${esc(FU_TEXT[FU.kind]||'')}</h2>
+    <textarea id="fuans" placeholder="A few sentences is plenty." ${FU.busy?'disabled':''}>${esc(FU.draft)}</textarea>
+    <p class="lede" style="margin-top:10px"><button class="chip" id="fuskip" type="button" ${FU.busy?'disabled':''}>Skip</button></p>`;
+  $('stage').className='';
+  nav(`<button class="go" id="funext" ${FU.busy?'disabled':''}>${FU.busy?'Saving…':'Next →'}</button>`,
+      FQ.phase==='end'?'The heart of it':'Before the photos', false, FU.err?`<span class="fqerr" role="alert">${esc(FU.err)}</span>`:'');
+  $('sheet').classList.add('hide');
+}
+async function saveFollow(skip){
+  const q=FU.q; if(!q||FU.busy) return;
+  const text=skip?'':(FU.draft||'').trim();
+  if(!text){ FU.q=null; return afterFilmQ(); }           // Skip, or nothing written: nothing saved, on as before
+  FU.busy=true; FU.err=''; paintFollow();
+  try{ const r=await rpc('answer_film_followup',{p_token:TOKEN,p_key:q.key,p_kind:FU.kind,p_answer:text});
+    if(!r||r.error||r.ok!==true) throw new Error((r&&r.error)||'answer_film_followup: bad reply'); }
+  catch(e){ report('answer_film_followup',e,{key:q.key});
+    FU.busy=false; FU.err='That didn’t save. Please press Next again, or Skip.'; paintFollow(); return; }
+  if(page!=='answer'||screen!=='film') return;
+  FU.busy=false; FU.q=null;
+  return afterFilmQ();
 }
 /* ═══ THE HEART QUESTIONS ON THEIR OWN (?heart=1) - 12 Oct night, ADDITIONS B40d / INT-25 ═══
    A film already made: only the questions marked at:'end', one per screen, Skip on each, then thank you. Nothing else on
@@ -4265,6 +4323,8 @@ document.addEventListener('click',async e=>{
   if(t.id==='askip'){ answerTurn(true); return; }
   if(t.id==='fqnext'){ saveFilmQ(false); return; }
   if(t.id==='fqskip'){ saveFilmQ(true); return; }
+  if(t.id==='funext'){ saveFollow(false); return; }
+  if(t.id==='fuskip'){ saveFollow(true); return; }
   if(t.id==='fqnotyet'){ FQ.draft='Not decided yet'; const q=FQ.list[FQ.i]; if(q) q._draft=FQ.draft; saveFilmQ(false); return; }
   if(t.dataset&&t.dataset.fqchoice!==undefined){ FQ.draft=t.dataset.fqchoice; const q=FQ.list[FQ.i]; if(q) q._draft=FQ.draft; saveFilmQ(false); return; }
   if(t.id==='aelse'){ answerTurn(true,true); return; }
@@ -4322,6 +4382,7 @@ document.addEventListener('input',e=>{
   if(e.target.id==='nm'){ M[cur].title=e.target.value; queueSave(); if(screen==='organise') orgNav(); }
   if(e.target.id==='ans'){ draft=e.target.value; countUp();
     if(isPick(TURN)&&!turnBusy){ const b=$('anext'); if(b) b.disabled=!draft.trim(); } }
+  if(e.target.id==='fuans'){ FU.draft=e.target.value; }
   if(e.target.id==='fqans'||e.target.id==='fqdate'){ FQ.draft=e.target.value; const q=FQ.list[FQ.i]; if(q) q._draft=FQ.draft; }
   if(e.target.id==='what'){ whatDraft=e.target.value; const b=$('awrongsend'); if(b) b.disabled=!whatDraft.trim(); }
   if(e.target.id==='helpAsk'){ HELP.asked=e.target.value; }
