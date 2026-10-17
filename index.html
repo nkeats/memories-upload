@@ -1305,12 +1305,13 @@ async function filmMeter(container){
   if(+sa.duplicates) aside.push(`${sa.duplicates} repeat${+sa.duplicates===1?'':'s'} not counted`);
   if(+sa.blurry) aside.push(`${sa.blurry} blurry photo${+sa.blurry===1?'':'s'} set aside`);
   const price=cur.price_cents!=null&&!m.needs_quote?` \u00b7 ${money(+cur.price_cents,m.currency)}`:'';
+  /* 17 Oct (B68.1, Tester 1): the song line sits DIRECTLY under the bar, where people look while deciding how many photos to add */
   container.innerHTML=`<p class="meterbig" id="metertime">Your film: ${plural(n,'photo')}</p>
-    <p class="lede" id="meterstory">Songs usually run 3 to 7 minutes - yours will follow your story.</p>
     <div class="meterbar" role="img" aria-label="Your film has ${plural(n,'photo')}; a film needs at least ${minP}.">
       <div class="meterfill${n<minP?' short':''}" style="width:${pct(n).toFixed(1)}%"></div>
       ${marks.map(k=>`<span class="metermark" style="left:${pct(k.at).toFixed(1)}%"><span>${esc(k.label)}</span></span>`).join('')}
     </div>
+    <p class="lede" id="meterstory">Songs usually run 3 to 7 minutes - yours will follow your story.</p>
     <p class="metertier" id="metertier">${m.needs_quote?'':esc(cur.label||'')}${esc(price)}</p>
     ${price&&(m.before_tax||m.currency==='usd')?`<p class="lede" id="metertax">US prices are before sales tax.</p>`:''}
     ${line?`<p class="meterline" id="meterline">${esc(line)}</p>`:''}
@@ -3022,6 +3023,9 @@ async function toGroups(){
    One per screen, its part as the heading. Next and Skip both save; a save
    that fails says so and stays put — never on to the next as if it had gone. */
 let FQ={list:[],i:0,draft:'',busy:false,err:'',pr:{}};
+/* 17 Oct (B68.3, Tester 1): once at the top of each story-question screen (film questions and memory questions - one question a
+   screen, so once a page); never on the settings questions, which are not stories */
+const SAY_IT=`<p class="lede" id="sayit" style="margin:6px 0 0">Write it how you’d say it out loud. Spelling and grammar don’t matter.</p>`;
 /* 8 Oct 2026 (A12): THE SETTINGS QUESTIONS ("Before we start" - what to call them, the day it is shown, where) - get_settings /
    answer_setting (server-wanted-p27-tribute.sql). They SET the film and never reach the song as facts. A question may carry
    "only if" another answer is one of a list ("come round tomorrow" only for a memorial later on). Before the server has them
@@ -3068,6 +3072,7 @@ function paintFilmQ(){
   const q=FQ.list[FQ.i]; if(!q) return;
   const atEndQ=FQ.phase==='end';
   $('stage').innerHTML=`<div class="step">${esc(q.part||'')} · <b>${FQ.i+1}</b> of ${FQ.list.length}</div>
+    ${q.setting?'':SAY_IT}
     <h2 style="margin-top:14px">${esc(q.question||'')}</h2>
     ${q.hint?`<p class="fqhint" style="color:var(--fg2);font-size:15px;line-height:1.5;margin:-4px 0 12px;max-width:56ch">${esc(q.hint)}</p>`:''}
     ${q.setting?settingInput(q):`<textarea id="fqans" placeholder="${atEndQ?'In your own words — a few sentences is plenty.':'Tell us what happened — a few sentences is plenty.'}" ${FQ.busy?'disabled':''}>${esc(FQ.draft)}</textarea>`}
@@ -3165,7 +3170,7 @@ function paintTurn(){
   m.shown=true;                                             // she has seen this group's questions in this visit (see closeOnServer)
   if(isPick(t)){ paintPick(); return; }
   /* ⚠ No "question n of N": there is no N. It stops when it has enough. */
-  let h=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')}</div>`;
+  let h=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')}</div>`+SAY_IT;
   h+=inviteCard();
   h+=tips('answer');
   h+=photosStrip(m,t);
@@ -3196,7 +3201,7 @@ function paintTurn(){
 function paintPick(){
   const m=M[cur], t=TURN;
   const sel=PICK&&PICK.turn===t.turn_id?PICK.id:null;
-  let h=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')}</div>`;
+  let h=`<div class="step">Group <b>${cur+1}</b> of ${M.length} · ${esc(m.title||'')}</div>`+SAY_IT;
   h+=inviteCard();
   h+=tips('answer');
   if(t.because_of) h+=`<p class="said">You said: <i>“${esc(String(t.because_of).trim())}”</i></p>`;
@@ -3532,16 +3537,23 @@ function paintMusic(){
   }
   /* the three questions */
   h+=`<div class="card" style="margin-top:8px">`;
-  G.anchors.forEach((a,i)=>{ h+=`<label for="a_${esc(a.key)}" style="margin-top:${i?14:0}px">${esc(a.ask)}</label>
-    <input type="text" class="anchor" id="a_${esc(a.key)}" data-key="${esc(a.key)}" value="${esc(G.answers[a.key]||'')}" placeholder="Anything you like" autocomplete="off">`; });
-  h+=`<div style="margin-top:16px"><button class="big" id="gnext" ${G.busy?'disabled':''}>${G.busy?'One moment…':'See what we heard →'}</button></div></div>`;
+  /* 17 Oct (B68.2, Tester 1; Film Standard Q9 - music prompts stay optional): "We don't really have one" on the music they love
+     ('favourite', every occasion) skips its box and goes straight to the sounds, to choose by ear. Nothing is sent for it - no
+     set_anchor, never an empty answer the writer could read as a fact. Tapped again, the box comes back. */
+  G.anchors.forEach((a,i)=>{ const none=a.key==='favourite'&&G.noFav;
+    h+=`<label for="a_${esc(a.key)}" style="margin-top:${i?14:0}px">${esc(a.ask)}</label>
+    <input type="text" class="anchor${none?' hide':''}" id="a_${esc(a.key)}" data-key="${esc(a.key)}" value="${esc(G.answers[a.key]||'')}" placeholder="Anything you like" autocomplete="off">
+    ${a.key==='favourite'?`<p class="lede" style="margin:8px 0 0"><button class="chip" id="anomusic" type="button" aria-pressed="${!!G.noFav}">We don’t really have one – let me listen</button></p>`:''}`; });
+  if(G.anchors.some(a=>!(a.key==='favourite'&&G.noFav)))           // a box left to fill (an anniversary's year, "these days")
+    h+=`<div style="margin-top:16px"><button class="big" id="gnext" ${G.busy?'disabled':''}>${G.busy?'One moment…':'See what we heard →'}</button></div>`;
+  h+=`</div>`;
   /* what we heard */
   if(G.notice) h+=`<div class="clock">${esc(G.notice)}${G.guess?`<br><span style="color:var(--fg2)">Our guess: ${esc(G.guess)}</span>`:''}</div>`;
   if(heard) h+=`<div class="card"><h2 style="margin:0 0 8px">Here\u2019s what we heard</h2><p class="do" style="margin-bottom:12px">${esc(heard)}</p>
     ${confirmedHeard?`<p class="lede" style="margin:0"><span class="sug on">chosen</span> That\u2019s the sound we\u2019ll use. Tap one below if you\u2019d rather.</p>`
       :`<div class="acts"><button class="yes" id="gyes">Yes, that\u2019s right</button></div>`}</div>`;
   /* the nine */
-  h+=`<h2 style="margin-top:26px">${heard?'Or choose a sound':'Choose a sound'}</h2>
+  h+=`<h2 style="margin-top:26px" id="gsounds" tabindex="-1">${heard?'Or choose a sound':'Choose a sound'}</h2>
     <p class="lede">Tap ▶ to hear a little of each. Tap the one that feels most like the two of you.</p>`;
   if(G.suggested&&G.why){ const sug=G.genres.find(g=>g.slug===G.suggested);
     h+=`<div class="clock"><b>We\u2019d suggest ${esc(sug?sug.label:G.suggested)}.</b><br>${esc(G.why)}</div>`; }
@@ -3567,7 +3579,7 @@ function paintMusic(){
    then suggest_genre again so the recommendation reflects the year. */
 async function translateGenre(){
   const b=$('gnext'); if(!b||G.busy) return;
-  const given=G.anchors.filter(a=>(G.answers[a.key]||'').trim());
+  const given=G.anchors.filter(a=>(G.answers[a.key]||'').trim()&&!(a.key==='favourite'&&G.noFav));
   if(!given.length){ const f=document.querySelector('input.anchor'); if(f) f.focus(); return; }
   G.busy=true; b.disabled=true; b.textContent='One moment…';
   const fail=()=>{ G.busy=false; paintMusic(); const before=$('nav').querySelector('.before'); if(before) before.textContent="That didn't go through. Please try again."; };
@@ -4237,6 +4249,9 @@ document.addEventListener('click',async e=>{
   if(t.id==='tomusic'){ toMusic(); return; }
   /* the music */
   if(t.id==='gnext'){ translateGenre(); return; }
+  if(t.id==='anomusic'){ G.noFav=!G.noFav; if(G.noFav) delete G.answers.favourite; paintMusic();
+    if(G.noFav){ const s=$('gsounds'); if(s){ s.scrollIntoView({behavior:'smooth',block:'start'}); s.focus({preventScroll:true}); } }
+    return; }
   if(t.id==='gyes'){ keepHeard(); return; }
   if(t.id==='glist'){ loadMusic().then(paintMusic); return; }
   if(t.id==='gdone'){ finishGenre(); return; }
