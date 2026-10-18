@@ -3148,7 +3148,9 @@ async function afterFilmQ(){
    rpc answer_film_followup {p_token, p_key, p_kind, p_answer} -> {ok, key:<key>_more} (server-wanted-p41-interview-questions.sql);
    the server writes the question text. Before the server has it (HTTP 404) no follow-up is ever shown - asked once a visit with
    kind 'probe', which the live function refuses ("unknown kind") without writing anything. */
-const FU_NONE=new Set(['saying','must','leave_out','hard_time','missing','furthest','notice']);
+/* exactly the keys the server refuses (B74.1; messages, wishes and meaning questions too) - page_tests_b73_followup SAME */
+const FU_NONE=new Set(['saying','must','leave_out','hard_time','missing','furthest','notice',
+  'hear_now','more_time','wish','promise','meant','know','heart_meant','heart_see','heart_remember','heart_moment']);
 const FU_TEXT={one_time:'Pick one of those times. What happened that day?',
                more:'Tell us a little more: who was there, where were you, what happened next?'};
 const FU_ALWAYS=/\b(always|used to|every time|whenever|all the time|lots of)\b/i;
