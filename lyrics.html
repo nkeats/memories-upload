@@ -31,6 +31,12 @@
   approved (like the words and photographs). The preview is the style's look (frame, lettering, darkening), not the exact
   frame: in the film the words are placed away from faces and beside a photograph that does not fill the screen - the
   preview says so. No style answer (the RPC missing) = no style section, as before. Test: pipeline/page_tests_front "STYLE".
+  20 Oct 2026 (ADDITIONS-2026-10-15 B78.1 - Tester 1 approved with "Is this right?" questions unanswered): while any line still has
+  its question (not answered Yes / No, not changed) the bar says "n question(s) still to answer" - a tap scrolls to the first - and
+  "These words are right" waits (disabled). The server refuses too (server-wanted-p42-questions-open.sql: 'questions open', as JSON
+  from approve_lyric or as the guard's HTTP 400) - the page then shows the first open question. B78.3: a line they write that is
+  too long to sing as one phrase (over 10 syllables, counted as the pipeline counts a word it has no dictionary entry for) also
+  says "That's a lot to sing in one line - try splitting it." Test: Song/pipeline/page_tests_b78_questions.
 -->
 <style>
 :root{--ink:#0C0D10;--panel:#15171C;--p2:#1D1F26;--line:#2A2E37;--l2:#3C414C;
@@ -244,6 +250,11 @@ const TOKEN=new URLSearchParams(location.search).get('t')||'';
 const $=id=>document.getElementById(id);
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const words=s=>s&&s.trim()?s.trim().split(/\s+/).length:0;
+// 20 Oct (B78.3): syllables by vowel groups - the pipeline's own fallback (checks.syllables) for a word without a dictionary entry
+const syl=w=>{ w=String(w).toLowerCase().replace(/[^a-z']/g,'').replace(/^'+|'+$/g,'').replace(/'(s|re|ll|ve|d|m)$/,'').replace(/'/g,'');
+  if(!w) return 0; let n=(w.match(/[aeiouy]+/g)||[]).length; if(w.endsWith('e')&&n>1&&!/(le|ee|ye)$/.test(w)) n--; return Math.max(1,n); };
+const lineSyl=s=>(String(s||'').match(/[A-Za-z][A-Za-z']*/g)||[]).reduce((a,w)=>a+syl(w),0);
+const SYL_MAX=10;                  // the pipeline's line budget (lyrics.LINE_SYL_MAX); a slow song is 8 - the page is not told the pace
 
 async function rpc(name,args){
   const r=await fetch(`${SB}/rest/v1/rpc/${name}`,{method:'POST',headers:HDR,body:JSON.stringify(args)});
@@ -281,6 +292,7 @@ function paint(){
   const done=L.status==='approved';
   const changed=L.lines.filter(l=>l.edited).length;
   const asks=L.lines.filter(l=>l.question&&!l.edited).length;
+  const oq=openQs().length;          // B78.1: questions not yet answered - the words wait for them
   let h=`<h1>The words to your song</h1>`;
   if(NOTES.must_be_in&&!done) h+=`<p class="note" id="mustbein" role="note" style="margin:0 0 16px">${esc(NOTES.must_be_in)}</p>`;
   h+= done
@@ -313,7 +325,7 @@ function paint(){
           <div class="qbtns"><button class="b go" data-qsend="${l.id}">Send</button><button class="b" data-qcancel="1">Cancel</button></div>`;
       h+=`<div class="err hide" id="qerr-${l.id}" role="alert"></div></div>`;
     }
-    else if(l.question && !l.edited && !done) h+=`<div class="q"><b>Is this right?</b> ${esc(l.question)} If not, tap the line above and change it.</div>`;
+    else if(l.question && !l.edited && !done) h+=`<div class="q" id="q-${l.id}"><b>Is this right?</b> ${esc(l.question)} If not, tap the line above and change it.</div>`;
   }
   if(sec!==null) h+='</div>';
   h+=pickerHTML();
@@ -326,7 +338,8 @@ function paint(){
        <button class="b" data-back="1">Not yet</button>
        <button class="b go" data-approve="1">Yes — make my song</button>`
     : `<div class="tally">${changed?`<b>${changed}</b> line${changed===1?'':'s'} changed`:'No changes yet'}</div>
-       <button class="b go" data-ready="1" ${open||cardOpen?'disabled':''}>These words are right</button>`;
+       ${oq?`<button class="b" id="qleft" data-firstq="1">${oq} question${oq===1?'':'s'} still to answer</button>`:''}
+       <button class="b go" data-ready="1" ${open||cardOpen||oq?'disabled':''}>These words are right</button>`;
   const ta=$('ta');
   if(ta){ ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length); ta.addEventListener('input',hint); hint(); }
   const cta=$('cta');
@@ -505,6 +518,9 @@ function hint(){
   if(off>=3){ el.className='hint warn';
     el.textContent=`This line is now ${n>was?'longer':'shorter'} (${n} words, it was ${was}). It may be sung ${n>was?'faster':'slower'} than the lines around it.`; }
   else { el.className='hint'; el.textContent=`Keep it about ${was} words so it still fits the tune.`; }
+  const v=$('ta').value;                                  // 20 Oct (B78.3): their own line, too long to sing as one phrase
+  if(v.trim()!==String(l.text||'').trim() && lineSyl(v)>SYL_MAX){ el.className='hint warn';
+    el.textContent+=" That's a lot to sing in one line - try splitting it."; }
 }
 
 async function save(id){
@@ -521,9 +537,22 @@ async function save(id){
 
 function alertLine(msg){ $('nin').insertAdjacentHTML('afterbegin',`<div class="err" style="flex-basis:100%">${esc(msg)}</div>`); }
 
+// 20 Oct (B78.1): the lines whose "Is this right?" question is still open - not answered here, not changed
+function openQs(){ return (L&&L.lines||[]).filter(l=>l.question&&!l.edited&&!ANS[l.id]); }
+function toFirstQ(){ const f=openQs()[0]; const q=f&&$('q-'+f.id); if(!q) return;
+  q.scrollIntoView({behavior:'smooth',block:'center'}); const y=q.querySelector('[data-qyes]')||q; if(y.focus) y.focus({preventScroll:true}); }
+
 async function approve(){
   try{
-    const r=await rpc('approve_lyric',{p_token:TOKEN});
+    // B78.1: the server refuses while a question is open - approve_lyric's JSON {error:'questions open', message} or the lyrics
+    // guard's HTTP 400 {message:'questions open', hint} (server-wanted-p42-questions-open.sql); both are read here
+    const res=await fetch(`${SB}/rest/v1/rpc/approve_lyric`,{method:'POST',headers:HDR,body:JSON.stringify({p_token:TOKEN})});
+    const t=await res.text(); let r=null; try{ r=t?JSON.parse(t):null; }catch(_){}
+    if(r&&(r.error==='questions open'||r.message==='questions open')){
+      await load(); confirming=false; paint(); toFirstQ();
+      $('nin').insertAdjacentHTML('afterbegin',`<div class="err" role="alert" style="flex-basis:100%">${esc((r.error?r.message:r.hint)||'Please answer the questions first - tap Yes or No under each.')}</div>`);
+      return; }
+    if(!res.ok) throw new Error(`approve_lyric: HTTP ${res.status}`);
     if(r&&r.error) throw new Error(r.error);
     await load(); confirming=false; paint(); window.scrollTo(0,0);
   }catch(e){ report('approve',e); confirming=false; paint();
@@ -592,7 +621,9 @@ document.addEventListener('click',ev=>{
   if(t.dataset.line){ open=t.dataset.line; cardOpen=null; confirming=false; paint(); }
   else if(t.dataset.cancel){ open=null; paint(); }
   else if(t.dataset.save){ t.disabled=true; save(t.dataset.save); }
+  else if(t.dataset.firstq){ toFirstQ(); }
   else if(t.dataset.ready){
+    if(openQs().length){ toFirstQ(); return; }                     // 20 Oct (B78.1): every question answered first
     if(VO&&!VO.chosen){ const er=$('verr'), box=$('voices');      // 11 Oct (B32): the voice is chosen before the words are sent
       if(er){ er.textContent='Please choose whose voice sings it first.'; er.classList.remove('hide'); }
       if(box) box.scrollIntoView({behavior:'smooth',block:'center'}); return; }
