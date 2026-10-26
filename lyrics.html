@@ -52,7 +52,7 @@ p.lede{color:var(--fg2);font-size:16.5px;line-height:1.6;margin:0 0 26px;max-wid
 .sec h3{font-size:13px;color:var(--fg3);letter-spacing:.06em;text-transform:uppercase;font-weight:500;margin:0 0 8px}
 .ln{display:block;width:100%;text-align:left;background:none;border:1px solid transparent;border-radius:7px;
   color:var(--fg);font-family:"Newsreader",serif;font-size:clamp(19px,4.8vw,22px);line-height:1.45;
-  padding:7px 10px;margin:0 -10px;cursor:pointer}
+  padding:7px 10px;margin:0 -10px;cursor:pointer;white-space:pre-line}   /* B79: a split line's two printed halves */
 .ln{text-decoration:underline dotted var(--l2);text-underline-offset:6px;text-decoration-thickness:1px}
 .ln:hover,.ln:focus{border-color:var(--line);outline:none}
 .ln.readonly{text-decoration:none}
@@ -254,7 +254,10 @@ const words=s=>s&&s.trim()?s.trim().split(/\s+/).length:0;
 const syl=w=>{ w=String(w).toLowerCase().replace(/[^a-z']/g,'').replace(/^'+|'+$/g,'').replace(/'(s|re|ll|ve|d|m)$/,'').replace(/'/g,'');
   if(!w) return 0; let n=(w.match(/[aeiouy]+/g)||[]).length; if(w.endsWith('e')&&n>1&&!/(le|ee|ye)$/.test(w)) n--; return Math.max(1,n); };
 const lineSyl=s=>(String(s||'').match(/[A-Za-z][A-Za-z']*/g)||[]).reduce((a,w)=>a+syl(w),0);
-const SYL_MAX=10;                  // the pipeline's line budget (lyrics.LINE_SYL_MAX); a slow song is 8 - the page is not told the pace
+// 26 Oct (B79 Q1): the pipeline splits only a line over 12 syllables (lyrics.SPLIT_OVER_SYL), and a split line is ONE sung line
+// printed on two lines (a newline inside it) - so the hint counts each printed line, and warns over 12, as the pipeline does
+const SYL_MAX=12;
+const longestPrinted=s=>Math.max(0,...String(s||'').split('\n').map(lineSyl));
 
 async function rpc(name,args){
   const r=await fetch(`${SB}/rest/v1/rpc/${name}`,{method:'POST',headers:HDR,body:JSON.stringify(args)});
@@ -519,7 +522,7 @@ function hint(){
     el.textContent=`This line is now ${n>was?'longer':'shorter'} (${n} words, it was ${was}). It may be sung ${n>was?'faster':'slower'} than the lines around it.`; }
   else { el.className='hint'; el.textContent=`Keep it about ${was} words so it still fits the tune.`; }
   const v=$('ta').value;                                  // 20 Oct (B78.3): their own line, too long to sing as one phrase
-  if(v.trim()!==String(l.text||'').trim() && lineSyl(v)>SYL_MAX){ el.className='hint warn';
+  if(v.trim()!==String(l.text||'').trim() && longestPrinted(v)>SYL_MAX){ el.className='hint warn';
     el.textContent+=" That's a lot to sing in one line - try splitting it."; }
 }
 
