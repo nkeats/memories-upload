@@ -3054,6 +3054,9 @@ let FQ={list:[],i:0,draft:'',busy:false,err:'',pr:{}};
 /* 17 Oct (B68.3, Tester 1): once at the top of each story-question screen (film questions and memory questions - one question a
    screen, so once a page); never on the settings questions, which are not stories */
 const SAY_IT=`<p class="lede" id="sayit" style="margin:6px 0 0">Write it how you’d say it out loud. Spelling and grammar don’t matter.</p>`;
+/* 30 Oct 2026 (ADDITIONS-2026-10-15 B83.2 - Nigel: "People have trouble putting their emotions and feelings into words"): ONE line before
+   the first question marked at:'end' (what it meant) - shown once, on that question only. Test: Song/pipeline/page_tests_b83_end_intro */
+const END_INTRO=`<p class="lede" id="endintro" style="margin:10px 0 0;font-weight:600">These last few are about what it meant. There's no right answer - write it the way you'd say it to a friend, even half a sentence.</p>`;
 /* 8 Oct 2026 (A12): THE SETTINGS QUESTIONS ("Before we start" - what to call them, the day it is shown, where) - get_settings /
    answer_setting (server-wanted-p27-tribute.sql). They SET the film and never reach the song as facts. A question may carry
    "only if" another answer is one of a list ("come round tomorrow" only for a memorial later on). Before the server has them
@@ -3100,6 +3103,7 @@ function paintFilmQ(){
   const q=FQ.list[FQ.i]; if(!q) return;
   const atEndQ=FQ.phase==='end';
   $('stage').innerHTML=`<div class="step">${esc(q.part||'')} · <b>${FQ.i+1}</b> of ${FQ.list.length}</div>
+    ${atEndQ&&FQ.i===nextAsked(0)?END_INTRO:''}
     ${q.setting?'':SAY_IT}
     <h2 style="margin-top:14px">${esc(q.question||'')}</h2>
     ${q.hint?`<p class="fqhint" style="color:var(--fg2);font-size:15px;line-height:1.5;margin:-4px 0 12px;max-width:56ch">${esc(q.hint)}</p>`:''}
