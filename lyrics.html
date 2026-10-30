@@ -331,6 +331,7 @@ function paint(){
     else if(l.question && !l.edited && !done) h+=`<div class="q" id="q-${l.id}"><b>Is this right?</b> ${esc(l.question)} If not, tap the line above and change it.</div>`;
   }
   if(sec!==null) h+='</div>';
+  h+=chorusHTML(done);
   h+=pickerHTML();
   $('stage').innerHTML=h;
 
@@ -378,13 +379,13 @@ function giverHTML(){
 }
 async function setGiver(v,btn){
   try{ const r=await rpc('set_giver_voice',{p_token:TOKEN,p_voice:v}); if(!r||r.error) throw new Error((r&&r.error)||'set_giver_voice failed');
-    VO.giver=r.giver_voice||v; VO.gerr=''; }
+    VO.giver=r.giver_voice||v; VO.gerr=''; await loadChorus(); }
   catch(e){ report('set_giver_voice',e); VO.gerr='That didn’t save. Please try again.'; }
   paint();
 }
 async function setVoice(slug,btn){
   try{ const r=await rpc('set_voice',{p_token:TOKEN,p_slug:slug}); if(!r||r.error) throw new Error((r&&r.error)||'set_voice failed');
-    VO.chosen=r.voice||slug; paint(); }
+    VO.chosen=r.voice||slug; await loadChorus(); paint(); }
   catch(e){ report('set_voice',e); if(btn) btn.disabled=false; const er=$('verr');
     if(er){ er.textContent='That didn’t save. Please try again.'; er.classList.remove('hide'); } }
 }
@@ -579,6 +580,7 @@ document.addEventListener('click',ev=>{
   if(t.dataset.giver){ if(!VO) return; t.disabled=true; setGiver(t.dataset.giver,t); return; }
   if(t.dataset.play){ try{ if(AU) AU.pause(); AU=new Audio(t.dataset.play); AU.play().catch(e=>report('play voice sample',e)); }
     catch(e){ report('play voice sample',e); } return; }
+  if(t.dataset.resing){ t.disabled=true; resingChorus(t); return; }    // 30 Oct (B82.2): the one free re-sing
   if(t.dataset.qyes){ answerLine(t.dataset.qyes,true,null); return; }
   if(t.dataset.qno){ QNO=t.dataset.qno; paint(); const w=$('qwhat'); if(w) w.focus(); return; }
   if(t.dataset.qcancel){ QNO=null; paint(); return; }
@@ -665,6 +667,43 @@ async function load(){
   if(VO&&VO.returning&&!VO.gift) VO=null;                        // not a gift: nothing to show once the voice is chosen
   await loadPhotos();
   await loadStyle();
+  await loadChorus();
+}
+
+/* 30 Oct 2026 (ADDITIONS-2026-10-15 B82.2 - Nigel 30 Oct; PRM-04's chorus preview moved to the words stage): HEAR YOUR CHORUS before the
+   words are approved. chorus_clip(p_token) -> {on, status, url, words_match, resing}; request_chorus_resing(p_token) - the ONE free
+   re-sing after a chorus line (or the voice) changed (server-wanted-p43-chorus-clip.sql; the PC sings it, pipeline/chorus_clip.py).
+   A clip that isn't ready never holds back "These words are right". A server without chorus_clip, or the setting off: nothing shown.
+   Test: Song/pipeline/page_tests_b82_chorus. */
+let CH=null, CHT=null, CHERR='';
+async function loadChorus(){
+  try{ const c=await rpc('chorus_clip',{p_token:TOKEN}); CH=(c&&!c.error&&c.on===true&&c.status!=='none')?c:null; }catch(_){ CH=null; }
+  clearTimeout(CHT);
+  if(CH&&(CH.status==='queued'||CH.status==='making'))            // being sung: look again in 30 s (never while a line is open)
+    CHT=setTimeout(async()=>{ await loadChorus(); if(L&&L.status!=='approved'&&!open&&!cardOpen&&!confirming) paint(); },30000);
+}
+function chorusHTML(done){
+  if(!CH||done) return '';
+  const ready=CH.status==='ready'&&!!CH.url, busy=CH.status==='queued'||CH.status==='making';
+  let h=`<div class="cards" id="chorus"><h2>Hear your chorus</h2>`;
+  if(ready) h+=`<audio id="chorusclip" controls preload="none" src="${esc(CH.url)}" style="width:100%;margin:4px 0 8px"></audio>`;
+  else if(busy&&VO&&!VO.chosen) h+=`<p class="sub" role="status">Choose whose voice sings it, above, and we’ll sing your chorus in that voice. You can still approve the words without it.</p>`;
+  else if(busy) h+=`<p class="sub" role="status">We’re singing your chorus now - it takes a few minutes. You can still approve the words without it.</p>`;
+  else h+=`<p class="sub" role="status">Your chorus clip isn’t ready. You can still approve the words.</p>`;
+  if(CH.resing==='available') h+=`<button class="b" type="button" data-resing="1">Hear the new chorus</button>`;
+  else if(CH.resing==='used'&&CH.words_match===false)
+    h+=`<p class="sub" id="resingused">You’ve heard your new chorus once - your changes will be sung in the finished song.</p>`;
+  if(CHERR) h+=`<div class="err" role="alert">${esc(CHERR)}</div>`;
+  h+=`<p class="sub" style="margin:8px 0 0">The finished song is recorded after you approve, in the same style and voice - it won't be note-for-note this clip.</p>`;
+  return h+'</div>';
+}
+async function resingChorus(btn){
+  CHERR='';
+  try{ const r=await rpc('request_chorus_resing',{p_token:TOKEN});
+    if(!r||r.error){ CHERR=(r&&r.message)||'That didn’t go through. Please try again.'; if(r&&r.error) report('request_chorus_resing',new Error(r.error)); }
+    await loadChorus(); }
+  catch(e){ report('request_chorus_resing',e); CHERR='That didn’t go through. Please try again.'; }
+  paint();
 }
 
 (async()=>{
