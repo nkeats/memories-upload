@@ -216,7 +216,8 @@ function form(){
   const r=C.retention||{};
   $('stage').innerHTML=`<h1>Turn your memories into a film, with its own song</h1>
     <p class="do">Your photographs, your stories, and a song written from what you tell us. It takes about half an hour, and you can stop and come back.</p>
-    ${INV?`<div class="box" id="invite"><h2>You’re testing ${esc(INV.label)}</h2><p class="lede" style="margin:0">Thank you for helping us try out the questions for ${esc(INV.label.toLowerCase())} films before they’re open to everyone. Everything else works just as it will for customers.</p></div>`
+    ${INV&&INV.open?`<div class="box" id="invite"><h2>You’re testing Sing Me a Memory</h2><p class="lede" style="margin:0">Thank you for trying ${/^[aeiou]/i.test(INV.label)?'an':'a'} ${esc(INV.label.toLowerCase())} film for us. It’s free, and everything works just as it does for customers.</p></div>`
+      :INV?`<div class="box" id="invite"><h2>You’re testing ${esc(INV.label)}</h2><p class="lede" style="margin:0">Thank you for helping us try out the questions for ${esc(INV.label.toLowerCase())} films before they’re open to everyone. Everything else works just as it will for customers.</p></div>`
       :INV_MSG?`<div class="box" id="invite"><p class="err" style="margin:0">${esc(INV_MSG)}</p></div>`:''}
     <div class="box"><h2>What is it for?</h2>
       <div class="occ" role="group" aria-label="The occasion">${C.occasions.map(o=>`<button type="button" data-occ="${esc(o.slug)}" aria-pressed="${OCC===o.slug}">${esc(o.label)}</button>`).join('')}</div>
@@ -313,7 +314,9 @@ document.addEventListener('click',ev=>{
     if(INVITE&&OPARAM){                                          // a tester's invite: only with the server's yes
       let r=null;
       try{ r=await rpc('check_invite',{p_occasion:OPARAM,p_code:INVITE}); }catch(e){ if(!(e&&e.status===404)) report('check_invite',e); }
-      if(r&&r.ok&&r.occasion){ INV={code:INVITE,slug:r.occasion.slug,label:r.occasion.label}; C.occasions=[r.occasion]; OCC=r.occasion.slug; }
+      if(r&&r.ok&&r.occasion){ INV={code:INVITE,slug:r.occasion.slug,label:r.occasion.label,
+                                    open:C.occasions.some(o=>o.slug===r.occasion.slug)};   // 1 Nov (B85): already open to everyone?
+                                C.occasions=[r.occasion]; OCC=r.occasion.slug; }
       else INV_MSG=SAY[(r&&r.error)||'invite not valid']||SAY['invite not valid'];
     }else if(OPARAM&&C.occasions.some(o=>o.slug===OPARAM)) OCC=OPARAM;   // ?o= alone: a public occasion chosen for them
     form();
