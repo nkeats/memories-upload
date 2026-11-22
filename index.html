@@ -2009,11 +2009,18 @@ function noteRate(){
   if(!last||last[1]!==scan.described) RATE.push([now,scan.described]);
   if(RATE.length>12) RATE.shift();
 }
+/* 22 Nov (Tester 4: "0 of 29 - about 2 minutes left" for 45 minutes while our PC was cut off): an estimate ONLY from a rate
+   measured on this page, and never while any photo waits for our check (that wait is the PC's, and no page can time it).
+   No guess from DESC_S_PER_PHOTO any more - with nothing measured, no time is said. */
 function secondsLeft(){
-  const left=Math.max(0,scan.total-scan.described); if(!left) return 0;
+  const left=Math.max(0,scan.total-scan.described); if(!left||scan.checking>0) return 0;
   if(RATE.length>=2){ const [t0,d0]=RATE[0], [t1,d1]=RATE[RATE.length-1];
     if(d1>d0&&t1>t0) return left*((t1-t0)/1000)/(d1-d0); }
-  return left*DESC_S_PER_PHOTO;
+  return 0;
+}
+function uploadedLine(){
+  return (scan.total===1?`Your photo is safely uploaded. We're checking it now`:`All ${plural(scan.total,'photo')} are safely uploaded. We're checking them now`)
+    +`; you can close this page and come back any time from your email.`;
 }
 function leftWords(sec){
   if(sec<=10) return '';
@@ -2070,7 +2077,7 @@ function notUsedLine(){
 function scanLine(){
   if(scan.done) return `All ${plural(scan.total,'photo')} looked at.`+(notUsedLine()?' '+notUsedLine():'');
   if(scan.offline) return `Your connection dropped - we'll carry on as soon as it's back.`;
-  if(scan.checking>0&&!scan.stalled) return `Checking your photos so they're safe to use - ${scan.checking} still being checked`;
+  if(scan.checking>0&&!scan.stalled) return uploadedLine();
   if(scan.stalled&&scan.onlyClipsLeft) return `All your photos looked at. We couldn't look inside your video clips - they'll still be in your film.`;
   if(scan.stalled) return `Some photos are taking longer to look at - we're still on it.`;
   if(!scan.total) return `Looking at each of your photos so we can ask you the right questions\u2026`;
@@ -2080,6 +2087,7 @@ function scanLine(){
 function scanShort(){
   if(scan.done) return `All ${scan.total} looked at`;
   if(scan.offline) return 'Connection dropped - carrying on when it’s back';
+  if(scan.checking>0&&!scan.stalled) return `All ${scan.total} uploaded · checking them`;   // 22 Nov: the bar said "0 of 29 · about 2 minutes left"
   if(scan.stalled) return 'Still on it';
   if(!scan.total) return 'Looking at your photos';
   const left=leftWords(secondsLeft());
@@ -2087,6 +2095,7 @@ function scanShort(){
 }
 function scanExtra(){
   if(scan.done) return '';
+  if(scan.checking>0&&!scan.stalled) return scan.seen?`<span class="seen">Just looked at: “${esc(scan.seen)}”</span>`:'';   // the line says it already
   return (scan.seen?`<span class="seen">Just looked at: \u201c${esc(scan.seen)}\u201d</span><br>`:'')+
     `<span class="leave">You can close this page - we'll keep going, and the link in your email brings you back here.</span>`;
 }

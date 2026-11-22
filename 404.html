@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sing Me A Memory</title>
+<!-- 22 Nov 2026 (Tester 4: "404 not found" on his iPhone from the link in his welcome email). GitHub Pages serves this page for any
+     address it doesn't have. A link that a mail app or a link-checker re-encoded (index.html%3Ft=..., %3D, a capital letter,
+     .htm) arrives here with the whole token still in it - so we decode it and go straight to the right page. Nothing is sent
+     anywhere; only this page's own address is read. Test: Song/pipeline/page_tests_404_recover.py -->
+<style>
+:root{--bg:#0c0d10;--fg:#f2ede4;--fg2:#c9c2b6;--brass:#D4A24C}
+@media (prefers-color-scheme: light){:root{--bg:#faf7f1;--fg:#1f1a12;--fg2:#4a4236;--brass:#A87A22}}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+main{max-width:520px;margin:0 auto;padding:48px 16px}
+h1{font-size:24px;margin:0 0 14px}
+p{color:var(--fg2);margin:0 0 14px}
+a{color:var(--brass)}
+</style>
+</head>
+<body>
+<main id="m"><p>Opening your film&hellip;</p></main>
+<script>
+(function(){
+  var PAGES=['index','film','lyrics','addphotos','start','watch','deep','agree','make','stock'];
+  function fix(href){
+    var s=String(href||''), i;
+    for(i=0;i<3;i++){ try{ var d=decodeURIComponent(s); if(d===s) break; s=d; }catch(e){ break; } }
+    s=s.replace(/&amp;/gi,'&');
+    var m=s.match(/\/([A-Za-z]+)\.html?(?:[?&](.*))?$/i) || s.match(/\/([A-Za-z]+)\.html?\?(.*)$/i);
+    var page=m&&PAGES.indexOf(m[1].toLowerCase())>=0?m[1].toLowerCase():null, q=m&&m[2]?m[2]:'';
+    var t=s.match(/[?&]t=([A-Za-z0-9]{20,})/);
+    if(!page&&t) page='index';
+    if(!page) return null;
+    q=q.replace(/#.*$/,'').replace(/[)\]>.,;'"]+$/,'');
+    return '/'+page+'.html'+(q?'?'+q:'');
+  }
+  window.__fix404=fix;
+  var to=fix(location.href);
+  var here=location.pathname+location.search;
+  if(to&&to!==here){ location.replace(to); return; }
+  document.getElementById('m').innerHTML='<h1>This page isn’t here</h1>'+
+    '<p>Please open the link in your email from Sing Me A Memory again. If it still doesn’t open, reply to that email and we’ll send you a fresh one.</p>'+
+    '<p><a href="/start.html">Start a new film</a></p>';
+})();
+</script>
+</body>
+</html>
