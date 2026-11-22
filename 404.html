@@ -8,7 +8,7 @@
 <!-- 22 Nov 2026 (Tester 4: "404 not found" on his iPhone from the link in his welcome email). GitHub Pages serves this page for any
      address it doesn't have. A link that a mail app or a link-checker re-encoded (index.html%3Ft=..., %3D, a capital letter,
      .htm) arrives here with the whole token still in it - so we decode it and go straight to the right page. Nothing is sent
-     anywhere; only this page's own address is read. Test: Song/pipeline/page_tests_404_recover.py -->
+     anywhere; only this page's own address is read. Test: Song/pipeline/page_tests_t4_wait.py (404 LINK) -->
 <style>
 :root{--bg:#0c0d10;--fg:#f2ede4;--fg2:#c9c2b6;--brass:#D4A24C}
 @media (prefers-color-scheme: light){:root{--bg:#faf7f1;--fg:#1f1a12;--fg2:#4a4236;--brass:#A87A22}}
@@ -42,7 +42,8 @@ a{color:var(--brass)}
   if(to&&to!==here){ location.replace(to); return; }
   document.getElementById('m').innerHTML='<h1>This page isn’t here</h1>'+
     '<p>Please open the link in your email from Sing Me A Memory again. If it still doesn’t open, reply to that email and we’ll send you a fresh one.</p>'+
-    '<p><a href="/start.html">Start a new film</a></p>';
+    '<p><a href="/start.html">Start a new film</a></p>'+
+    '<footer id="bizline" style="font-size:18px;line-height:1.5;color:var(--fg2);text-align:center;padding:28px 0 0">Sing Me a Memory is a business name of NLK Trading Pty Ltd, ABN 46 654 918 215</footer>';
 })();
 </script>
 </body>
