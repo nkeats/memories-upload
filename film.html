@@ -237,7 +237,7 @@ function tribute(){ return /tribute|memorial|funeral/.test(String(OCC||'').toLow
 function paint(){
   let h='';
   if(D.erasure&&D.erasure.status&&D.erasure.status!=='none'){
-    $('stage').innerHTML=`<h1>Your film is being deleted</h1><p class="lede">You asked us to delete everything. It is being removed now, and this link will stop working. Thank you for making it with us.</p>`;
+    $('stage').innerHTML=`<h1>Your film is being deleted</h1><p class="lede">We've received your request. Everything is deleted within minutes, and we'll email you when it's done.</p>`;
     return;
   }
   if(D.film_ready){
