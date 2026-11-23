@@ -395,7 +395,7 @@ const FN=SB+'/functions/v1';
 const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
 const BUILD='2026-10-18-b73';                               // bump on every change (1 Oct: there was no stamp before)
 document.documentElement.dataset.build=BUILD;
-let TOKEN=new URLSearchParams(location.search).get('t')||'';
+let TOKEN=((new URLSearchParams(location.search).get('t')||'').match(/^[A-Za-z0-9_-]+/)||[''])[0];   // 23 Nov (B92): a mail app's trailing ')' or '.' is not the token
 /* ?a=<answer token> — somebody else answering the same memories (on a film
    with two people, BOTH accounts go in the song). whos_answering turns it into
    the collection's token and who they are; everything after that is asked AS

@@ -246,7 +246,7 @@ function __pv(b){ try{ return (b&&/\/preview\/[^/]*$/.test(location.pathname))?S
 const SB='https://wkgkkxeooldeyzjfzmhu.supabase.co';
 const KEY='sb_publishable_0HpiB8JZzbOq3Vd9lRjuXg_V_4jQnp_';
 const HDR={'Content-Type':'application/json','apikey':KEY,'Authorization':'Bearer '+KEY};
-const TOKEN=new URLSearchParams(location.search).get('t')||'';
+const TOKEN=((new URLSearchParams(location.search).get('t')||'').match(/^[A-Za-z0-9_-]+/)||[''])[0];   // 23 Nov (B92): a mail app's trailing ')' or '.' is not the token
 const $=id=>document.getElementById(id);
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const words=s=>s&&s.trim()?s.trim().split(/\s+/).length:0;
