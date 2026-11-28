@@ -19,7 +19,7 @@
   a second answerer's link does not (the lyric is the buyer's to approve).
   1 Oct: THE CARDS above the lyric - "Your film opens with... and ends with..." - from get_lyric's cards {start, finish,
   start_suggested, finish_suggested}. The customer changes the words (start <= 60, finish <= 90 characters) or removes a
-  card; set_cards(p_token, p_start, p_finish): "" = no card, null = use our suggestion. approve_lyric writes the cards
+  card; set_cards(p_token, p_start, p_finish): null = use our suggestion ("" no card - removed 28 Nov, B98, see below). approve_lyric writes the cards
   shown into the film. Nothing is put on screen in their film that they have not seen here.
   3 Oct (Nigel): THE CARD PHOTOGRAPHS beside the words - the opening and closing photographs we chose (get_card_photos: {start:
   {auto, chosen}, finish: {auto, chosen}, choices: [asset ids of the film's photographs that show its people], locked}); "Choose a
@@ -392,12 +392,17 @@ async function setVoice(slug,btn){
 
 /* THE CARDS (1 Oct). One card at a time is open for editing (cardOpen 'start' | 'finish'). */
 let cardOpen=null;
-const CARD={start:{lab:'Your film opens with',max:60,none:'No opening card',remove:'No opening card',add:'Add an opening card'},
-            finish:{lab:'and ends with',max:90,none:'No closing card',remove:'No closing card',add:'Add a closing card'}};
+/* 28 Nov 2026 (B98, Nigel - Tester 3's Christmas gift closed on "Happy Anniversary", words he never saw: he had taken the opening card
+   away, and since B95 every film carries both cards, so the film put one back). A CARD IS NEVER TAKEN AWAY NOW - there is no "No
+   card" button (set_cards refuses '' from server-wanted-p48). Both cards always show the words the film will carry (get_lyric's
+   cards: their words, else our suggestion, else the occasion's default - lyric_cards p48, the PC's titles.shown_cards), and the
+   customer is asked plainly to change them if the occasion is not what we guessed. Test: Song/pipeline/page_tests_b98_style_cards. */
+const CARD={start:{lab:'Your film opens with',max:60,none:'No words yet',add:'Write the opening words'},
+            finish:{lab:'and ends with',max:90,none:'No words yet',add:'Write the closing words'}};
 const cardOf=k=>{ const c=(L&&L.cards)||{}; const t=c[k]; return {text:(t==null?'':String(t)), suggested:!!c[k+'_suggested']}; };
 function cardsHTML(done){
   let h=`<div class="cards"><h2>The words on screen</h2>
-    <p class="sub">${done?'These are the words at the start and the end of your film.':'Your film opens and closes on a photograph with a few words over it. Change them, or take a card away if you would rather not have one.'}</p>`;
+    <p class="sub">${done?'These are the words at the start and the end of your film.':'Your film opens and closes on a photograph with a few words over it. Please read them: if your film is for a different occasion than we’ve guessed – a Christmas or birthday present, say – change the words to suit.'}</p>`;
   for(const k of ['start','finish']){
     const c=cardOf(k), m=CARD[k];
     h+=`<div class="card"><p class="lab">${m.lab}…</p>`;
@@ -409,7 +414,7 @@ function cardsHTML(done){
     }else if(c.text){
       h+=`<p class="words">${esc(c.text)}</p>${c.suggested&&!done?`<p class="tag">Our suggestion, from what you told us.</p>`:''}`;
       h+=photoHTML(k,done);
-      if(!done) h+=`<div class="row"><button class="b" data-cedit="${k}">Change the words</button><button class="b" data-cremove="${k}">${m.remove}</button></div>`;
+      if(!done) h+=`<div class="row"><button class="b" data-cedit="${k}">Change the words</button></div>`;
     }else{
       h+=`<p class="none">${m.none}</p>`;
       if(!done) h+=`<div class="row"><button class="b" data-cedit="${k}">${m.add}</button></div>`;
@@ -613,9 +618,10 @@ document.addEventListener('click',ev=>{
   }
   if(t.dataset.cedit){ cardOpen=t.dataset.cedit; open=null; confirming=false; paint(); return; }
   if(t.dataset.ccancel){ cardOpen=null; paint(); return; }
-  if(t.dataset.csave||t.dataset.cremove){
-    const k=t.dataset.csave||t.dataset.cremove;
-    const v=t.dataset.cremove?'':($('cta').value||'').trim().slice(0,CARD[k].max);   // an emptied card is no card
+  if(t.dataset.csave){
+    const k=t.dataset.csave;
+    const v=($('cta').value||'').trim().slice(0,CARD[k].max);
+    if(!v){ const er=$('cerr'); if(er){ er.textContent='A card needs a few words – every film opens and closes with them.'; er.classList.remove('hide'); } return; }   // B98
     t.disabled=true;
     setCard(k,v).then(()=>{ cardOpen=null; paint(); })
       .catch(e=>{ report('set cards',e); t.disabled=false; const er=$('cerr');

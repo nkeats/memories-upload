@@ -3682,6 +3682,11 @@ function paintMusic(){
   /* the nine */
   h+=`<h2 style="margin-top:26px" id="gsounds" tabindex="-1">${heard?'Or choose a sound':'Choose a sound'}</h2>
     <p class="lede">Tap ▶ to hear a little of each. Tap the one that feels most like the two of you.</p>`;
+  if(G.conflict){ const cg=G.genres.find(g=>g.slug===G.conflict.slug), lab=cg?cg.label:G.conflict.slug;     // B98: ask, never override
+    h+=`<div class="card" id="gconf" tabindex="-1" role="alertdialog" aria-labelledby="gconfh"><h2 id="gconfh" style="margin:0 0 8px">Which sound should we sing it in?</h2>
+      <p class="do" style="margin-bottom:12px">You told us you love “${esc(G.conflict.note)}”. ${esc(lab)} is a different sound.</p>
+      <div class="acts">${G.conflict.named.map(n=>`<button class="yes" type="button" data-gconfpick="${esc(n.slug)}">${esc(n.label)} – what I told you</button>`).join(' ')}
+      <button class="chip" type="button" data-gconfkeep="${esc(G.conflict.slug)}">${esc(lab)}</button></div></div>`; }
   if(G.suggested&&G.why){ const sug=G.genres.find(g=>g.slug===G.suggested);
     h+=`<div class="clock"><b>We\u2019d suggest ${esc(sug?sug.label:G.suggested)}.</b><br>${esc(G.why)}</div>`; }
   if(G.genres.length){ h+='<div class="genres">'; G.genres.forEach(g=>{ h+=card('genre',g,!!(c&&c.slug===g.slug),g.slug===G.suggested); }); h+='</div>'; }
@@ -3736,11 +3741,29 @@ async function keepHeard(){
   try{ const sg=await rpc('suggest_genre',{p_token:TOKEN}); if(sg&&!sg.error) takeChosen(sg.chosen); }catch(_){}
   paintMusic();
 }
-async function pickGenre(slug){
+async function pickGenre(slug,keep){
   /* p_plain named as well: set_genre has two overloads on the server (19 Sep)
      and PostgREST cannot choose between them without it. */
+  /* 28 Nov 2026 (B98, Nigel - Tester 3 typed "Rnb", then tapped Modern indie, and his song was sung as indie): a card that is a
+     DIFFERENT style from the one their own words name is never taken silently. genre_conflict (server-wanted-p48) says so; the page
+     asks "Which sound should we sing it in?" with both, and saves nothing until they answer. Their words' style -> that card. The
+     card -> set_genre, then keep_genre_card (genre_kept_at: the PC's style_gate sings it only then). A server without
+     genre_conflict (before p48): as before - the PC stops the song instead, nothing bought. Test: Song/pipeline/page_tests_b98_style_cards. */
+  if(!keep){
+    let cf=null; try{ cf=await rpc('genre_conflict',{p_token:TOKEN,p_slug:slug}); }catch(_){ cf=null; }
+    if(cf&&cf.conflict&&Array.isArray(cf.named)&&cf.named.length){
+      G.conflict={slug,note:cf.note||'',named:cf.named}; paintMusic();
+      const q=$('gconf'); if(q){ q.scrollIntoView({behavior:'smooth',block:'center'}); q.focus({preventScroll:true}); }
+      return;
+    }
+  }
+  G.conflict=null;
   try{ const r=await rpc('set_genre',{p_token:TOKEN,p_slug:slug,p_plain:null}); if(!r||r.error) throw new Error((r&&r.error)||'set_genre failed'); }
   catch(e){ report('set_genre',e,{slug}); flash(false); return; }
+  if(keep){
+    try{ const k=await rpc('keep_genre_card',{p_token:TOKEN}); if(!k||k.error) throw new Error((k&&k.error)||'keep_genre_card failed'); }
+    catch(e){ report('keep_genre_card',e,{slug}); flash(false); return; }
+  }
   G.plain=''; G.fresh=false;
   try{ const sg=await rpc('suggest_genre',{p_token:TOKEN}); if(sg&&!sg.error) takeChosen(sg.chosen); }catch(_){}
   paintMusic();
@@ -4388,6 +4411,8 @@ document.addEventListener('click',async e=>{
   if(t.id==='gdone'){ finishGenre(); return; }
   const gp=t.closest('[data-play]');
   if(gp){ playSample(gp.dataset.play,gp); return; }
+  if(t.dataset.gconfpick){ pickGenre(t.dataset.gconfpick); return; }                 // B98: the style their words name
+  if(t.dataset.gconfkeep){ pickGenre(t.dataset.gconfkeep,true); return; }            // B98: the card, kept over their words
   const gc=t.closest('[data-genre]');
   if(gc){ pickGenre(gc.dataset.genre); return; }
   const gv=t.closest('[data-voice]');
